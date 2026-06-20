@@ -22,15 +22,22 @@ Two layers of "business rules" stay separate: **orchestration** rules live in th
 
 | Vertical | What it is | Tools |
 |---|---|---|
-| **secretary** | the reception / scheduling entry point for any client | `list_schedulable_hosts`, `check_availability`, `book_appointment`, `list_appointments`, `cancel_appointment` |
+| **scheduler** | the agenda capability — ships the **SECRETARY** persona, the universal reception/scheduling front door for any client | `list_schedulable_hosts`, `check_availability`, `book_appointment`, `list_appointments`, `update_appointment_status`, `cancel_appointment` |
 
 More verticals (bookkeeper, restaurant, veterinary, …) follow the same shape.
+
+**Capability vs persona.** `scheduler` is the *capability* (the agenda machine); the
+**SECRETARY** is the default *persona* that ships with it (prompt slots in
+`scheduler/prompts/`) — the out-of-the-box front door that works for any company with
+zero config. A company that needs a richer receptionist adds its **own** persona
+host-side (via cogno-persona), targeting this same `scheduler` capability and composing
+extra tool sources with `CompositeDispatcher` — **without** touching the scheduler.
 
 ## Run a vertical
 
 ```bash
 pip install cogno-praxis            # pulls the mcp SDK
-python -m cogno_praxis.secretary.server      # serves over stdio
+python -m cogno_praxis.scheduler.server      # serves the demo over stdio
 ```
 
 The host connects to it with cogno-mcp:
@@ -39,7 +46,7 @@ The host connects to it with cogno-mcp:
 import sys
 from cogno_mcp import MCPDispatcher, stdio_session
 
-async with stdio_session(sys.executable, args=["-m", "cogno_praxis.secretary.server"]) as s:
+async with stdio_session(sys.executable, args=["-m", "cogno_praxis.scheduler.server"]) as s:
     dispatcher = await MCPDispatcher.create(s)
     # bind to the SECRETARY persona + run the pipeline:
     await pipe.run_turn(ctx, cfg, dispatcher=dispatcher)     # cogno-soma
@@ -49,23 +56,26 @@ Tool **annotations** (`readOnlyHint` / `destructiveHint`) flow through cogno-mcp
 the EGO's read-only mask + confirmation gate — e.g. `cancel_appointment` is destructive,
 so the EGO holds it for confirmation.
 
-## Anatomy of a vertical (`secretary`)
+## Anatomy of a vertical (`scheduler`)
 
 - `store.py` — domain types (`Host`, `Appointment`) + an `AppointmentStore` **port**
   (Protocol) with an in-memory default. Appointments are structured domain data, not
   conversation memory, so the vertical owns its store (host plugs a real DB adapter);
   `cogno-engram` stays for episodic/KG memory.
-- `service.py` — pure reception logic (book / cancel / availability) over the store.
+- `service.py` — pure scheduling logic (book / cancel / availability / status
+  lifecycle + the "from tomorrow on" rule) over the store.
 - `server.py` — the thin FastMCP wrapper exposing the service as annotated tools.
-- `persona/` — the SECRETARY persona prompt slots (system / scope / limits / voice),
-  loaded by the host via `cogno-persona`.
+  `build_server(service)` is the only injection seam (see `examples/run_with_db.py`).
+- `prompts/` — the bundled **SECRETARY** persona slots (system / scope / limits / voice),
+  loaded by the host via `cogno-persona`. The capability is persona-agnostic; SECRETARY
+  is simply its default face.
 
 ## Development
 
 ```bash
 pip install -e ".[dev]"
 pytest tests/unit -q            # service + server (in-process), no network
-pytest tests/integration -q     # secretary server over stdio via cogno-mcp (the real loop)
+pytest tests/integration -q     # scheduler server over stdio via cogno-mcp (the real loop)
 ruff check cogno_praxis tests && mypy cogno_praxis
 python examples/host_min.py     # spawn the server + run a reception flow
 ```

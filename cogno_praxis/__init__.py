@@ -5,7 +5,8 @@ FastMCP server the host orchestrates via cogno-mcp. Verticals own their domain l
 + data behind their own store ports (infra-agnostic); the host stays the thin
 assembler (persona, pipeline, dispatcher composition, RBAC, orchestration rules).
 
-First vertical: ``secretary`` — the reception/scheduling entry point for any client.
+First vertical: ``scheduler`` — the agenda capability, shipping the **SECRETARY**
+persona (the universal reception/scheduling front door for any client).
 """
 
 __version__ = "0.1.0"
