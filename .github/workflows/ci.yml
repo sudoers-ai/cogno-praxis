@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          # The integration test drives the server through cogno-mcp (→ cogno-anima).
+          # Those cogno libs are not on PyPI yet — install the chain from git.
+          pip install "cogno-homeo @ git+https://github.com/sudoers-ai/cogno-homeo.git"
+          pip install "cogno-synapse @ git+https://github.com/sudoers-ai/cogno-synapse.git"
+          pip install "cogno-anima @ git+https://github.com/sudoers-ai/cogno-anima.git"
+          pip install "cogno-mcp @ git+https://github.com/sudoers-ai/cogno-mcp.git"
+      - name: Lint (ruff)
+        run: ruff check cogno_praxis tests examples
+      - name: Type-check (mypy)
+        run: mypy cogno_praxis
+      - name: Unit tests
+        run: pytest tests/unit -q --cov=cogno_praxis --cov-report=term-missing --cov-fail-under=90
+      - name: Integration tests (secretary server over stdio via cogno-mcp)
+        run: pytest tests/integration -q
