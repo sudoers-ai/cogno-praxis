@@ -35,6 +35,10 @@ class Host:
     host_id: str
     name: str
     role: str = ""
+    # The professional's own choice (the parent's identities.auto_confirm_appointments):
+    # True → a guest booking is CONFIRMED immediately; False → it stays PENDING until the
+    # professional accepts it (update_appointment_status → CONFIRMED). Employee-controlled.
+    auto_confirm: bool = True
 
 
 @dataclass

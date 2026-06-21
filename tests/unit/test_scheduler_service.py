@@ -42,8 +42,18 @@ def test_availability_unknown_host_raises():
 def test_book_then_slot_disappears():
     svc = _svc()
     appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
-    assert appt.status == PENDING
+    assert appt.status == CONFIRMED          # dr_silva auto_confirms (default)
     assert "09:00" not in svc.check_availability("dr_silva", "2026-07-01")
+
+
+def test_auto_confirm_false_keeps_pending():
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_x"] = Host("dr_x", "Dr. X", "GP", auto_confirm=False)
+    svc = SchedulerService(store, today=lambda: _TODAY)
+    appt = svc.book("dr_x", "2026-07-01", "09:00", "Ana")
+    assert appt.status == PENDING            # waits for the professional to accept
+    accepted = svc.update_status(appt.appointment_id, "CONFIRMED")
+    assert accepted.status == CONFIRMED
 
 
 def test_book_unknown_host_raises():

@@ -52,6 +52,23 @@ class SchedulerConfig:
         parts = str(value).split(":")
         return time(int(parts[0]), int(parts[1]))
 
+    def to_dict(self) -> dict:
+        """Round-trippable raw form (feeds set_settings merges + get_schedule_settings)."""
+        return {
+            "timezone": self.timezone,
+            "work_start": f"{self.work_start:%H:%M}",
+            "work_end": f"{self.work_end:%H:%M}",
+            "lunch_start": f"{self.lunch_start:%H:%M}",
+            "lunch_end": f"{self.lunch_end:%H:%M}",
+            "work_saturdays": self.work_saturdays,
+            "work_sundays": self.work_sundays,
+            "slot_duration_minutes": self.slot_duration_minutes,
+            "booking_delay_days": self.booking_delay_days,
+            "booking_window_days": self.booking_window_days,
+            "cooldown_days": self.cooldown_days,
+            "max_active_per_client": self.max_active_per_client,
+        }
+
     def __repr__(self) -> str:
         return (f"SchedulerConfig(work={self.work_start:%H:%M}-{self.work_end:%H:%M}, "
                 f"lunch={self.lunch_start:%H:%M}-{self.lunch_end:%H:%M}, "

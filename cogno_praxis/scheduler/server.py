@@ -119,6 +119,43 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         return (f"Cancelled {appt.appointment_id} ({appt.with_name} on {appt.date} "
                 f"at {appt.time}){suffix}.")
 
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    def get_schedule_settings() -> str:
+        """Show the tenant's current scheduling rules (hours, lunch, weekends, slot, policy)."""
+        s = svc.get_settings()
+        return "Schedule settings: " + ", ".join(f"{k}={v}" for k, v in s.items())
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
+    def set_schedule_settings(
+        work_start: str = "", work_end: str = "", lunch_start: str = "", lunch_end: str = "",
+        slot_duration_minutes: Optional[int] = None,
+        work_saturdays: Optional[bool] = None, work_sundays: Optional[bool] = None,
+        booking_window_days: Optional[int] = None, cooldown_days: Optional[int] = None,
+        max_active_per_client: Optional[int] = None,
+    ) -> str:
+        """Change the tenant's scheduling rules (only the fields you pass change).
+
+        Times are 'HH:MM'. Use for "abre às 08:00", "passa a atender sábados",
+        "máximo 1 agendamento por cliente". Re-computes the available slots immediately.
+        """
+        overrides = {
+            "work_start": work_start or None, "work_end": work_end or None,
+            "lunch_start": lunch_start or None, "lunch_end": lunch_end or None,
+            "slot_duration_minutes": slot_duration_minutes,
+            "work_saturdays": work_saturdays, "work_sundays": work_sundays,
+            "booking_window_days": booking_window_days, "cooldown_days": cooldown_days,
+            "max_active_per_client": max_active_per_client,
+        }
+        s = svc.set_settings(**overrides)
+        return "Updated schedule settings: " + ", ".join(f"{k}={v}" for k, v in s.items())
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
+    def set_auto_confirm(host_id: str, auto_confirm: bool) -> str:
+        """Set whether a professional's bookings auto-confirm (True) or wait for their
+        manual acceptance (False). A professional sets their OWN; a supervisor sets any."""
+        host = svc.set_auto_confirm(host_id, auto_confirm)
+        return f"{host.host_id} auto_confirm is now {host.auto_confirm}."
+
     return mcp
 
 
@@ -129,7 +166,9 @@ def _seeded_service() -> SchedulerService:
     plus the front desk."""
     store = InMemoryAppointmentStore()
     store.hosts["dr_silva"] = Host("dr_silva", "Dr. Silva", "General Practitioner")
-    store.hosts["dr_souza"] = Host("dr_souza", "Dr. Souza", "Cardiologist")
+    # dr_souza requires manual acceptance (auto_confirm=False) → bookings stay PENDING until
+    # the professional accepts; dr_silva auto-confirms. Demonstrates the per-professional flag.
+    store.hosts["dr_souza"] = Host("dr_souza", "Dr. Souza", "Cardiologist", auto_confirm=False)
     store.hosts["ana"] = Host("ana", "Ana Reception", "Front Desk")
     # Optional fixed clock for deterministic harnesses — a host running this server over
     # stdio can set COGNO_SCHEDULER_TODAY so the subprocess agrees with the host's [TODAY]

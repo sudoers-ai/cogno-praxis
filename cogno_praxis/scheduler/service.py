@@ -24,6 +24,7 @@ from cogno_praxis.scheduler.store import (
     CANCELED,
     COMPLETED,
     CONFIRMED,
+    PENDING,
     VALID_STATUS,
     Appointment,
     AppointmentStore,
@@ -69,11 +70,44 @@ class SchedulerService:
         # host injects config + location (country/state → holidays) per tenant. With none,
         # sensible defaults apply (classic 09–17 working day, no holiday filtering).
         self._config = config or SchedulerConfig()
+        self._country, self._state = country, state
+        self._holidays = list(holidays) if holidays is not None else None
         self._engine = AvailabilityEngine(self._config, country=country, state=state,
-                                          holidays=holidays)
+                                          holidays=self._holidays)
         self._slots: tuple[str, ...] = tuple(self._engine.slot_starts())
         # Injectable clock keeps the "start from tomorrow" rule deterministic in tests.
         self._today: Callable[[], date] = today or date.today
+
+    # ── settings (config read/write — the host authorises WHO via RBAC) ──
+    def get_settings(self) -> dict:
+        """The tenant's current scheduling rules (hours/lunch/weekends/slot/policy)."""
+        return self._config.to_dict()
+
+    def set_settings(self, **overrides: object) -> dict:
+        """Update scheduling rules and rebuild the availability engine. Only the fields
+        passed (non-None) change; raises on a malformed value. The *vertical* applies the
+        change; the *host* decides who may call it (supervisor) — this is just the writer.
+        """
+        raw = {**self._config.to_dict(),
+               **{k: v for k, v in overrides.items() if v is not None}}
+        try:
+            new_config = SchedulerConfig(raw)
+        except (ValueError, TypeError) as exc:
+            raise SchedulerError(f"invalid schedule settings: {exc}") from exc
+        self._config = new_config
+        self._engine = AvailabilityEngine(self._config, country=self._country,
+                                          state=self._state, holidays=self._holidays)
+        self._slots = tuple(self._engine.slot_starts())
+        return self._config.to_dict()
+
+    def set_auto_confirm(self, host_id: str, value: bool) -> Host:
+        """Set a professional's auto_confirm flag (the EMPLOYEE's own choice; the host pins
+        host_id to the caller's own agenda for non-supervisors via RBAC)."""
+        host = self.store.get_host(host_id)
+        if host is None:
+            raise SchedulerError(f"unknown host: {host_id}")
+        host.auto_confirm = bool(value)
+        return host
 
     # ── reads ──────────────────────────────────────────────────────────
     def list_hosts(self) -> list[Host]:
@@ -94,7 +128,8 @@ class SchedulerService:
     # ── writes ─────────────────────────────────────────────────────────
     def book(self, host_id: str, date: str, time: str, with_name: str,
              notes: str = "") -> Appointment:
-        if self.store.get_host(host_id) is None:
+        host = self.store.get_host(host_id)
+        if host is None:
             raise SchedulerError(f"unknown host: {host_id}")
         self._require_future(date)
         self._require_working_day(date)
@@ -118,9 +153,13 @@ class SchedulerService:
             free_txt = ", ".join(free) if free else "none that day"
             raise SchedulerError(
                 f"{time} on {date} is already booked. Free slots on {date}: {free_txt}")
+        # The professional's auto_confirm decides: instant CONFIRMED, or PENDING until they
+        # accept (update_appointment_status). The booker's *role* never enters here — RBAC is
+        # the host's job; the vertical only reads the professional's own setting.
+        status = CONFIRMED if host.auto_confirm else PENDING
         appt = Appointment(
             appointment_id=uuid.uuid4().hex[:8], host_id=host_id, date=date,
-            time=time, with_name=with_name, notes=notes)   # status defaults to PENDING
+            time=time, with_name=with_name, status=status, notes=notes)
         self.store.add(appt)
         return appt
 

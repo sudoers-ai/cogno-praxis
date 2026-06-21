@@ -127,6 +127,40 @@ def test_single_active_lets_you_rebook_after_cancel():
     svc.book("dr_silva", _WED, "11:00", "Ana")                    # now allowed
 
 
+def test_get_and_set_settings_rebuild_slots():
+    svc = _svc()
+    assert svc.get_settings()["work_start"] == "09:00"
+    assert "08:00" not in svc._slots
+    updated = svc.set_settings(work_start="08:00", slot_duration_minutes=60)
+    assert updated["work_start"] == "08:00"
+    assert "08:00" in svc.check_availability("dr_silva", _WED)   # engine recomputed
+
+
+def test_set_settings_invalid_value_raises():
+    with pytest.raises(SchedulerError, match="invalid schedule settings"):
+        _svc().set_settings(work_start="notatime")
+
+
+def test_set_settings_only_changes_passed_fields():
+    svc = _svc()
+    svc.set_settings(work_saturdays=True)
+    s = svc.get_settings()
+    assert s["work_saturdays"] is True and s["work_start"] == "09:00"   # rest untouched
+
+
+def test_set_auto_confirm_toggles_booking_status():
+    svc = _svc()
+    svc.set_auto_confirm("dr_silva", False)
+    assert svc.book("dr_silva", _WED, "09:00", "Ana").status == "PENDING"
+    svc.set_auto_confirm("dr_silva", True)
+    assert svc.book("dr_silva", _WED, "10:00", "Bob").status == "CONFIRMED"
+
+
+def test_set_auto_confirm_unknown_host_raises():
+    with pytest.raises(SchedulerError, match="unknown host"):
+        _svc().set_auto_confirm("ghost", False)
+
+
 def test_cooldown_blocks_until_elapsed():
     store = InMemoryAppointmentStore()
     store.hosts["dr_silva"] = Host("dr_silva", "Dr. Silva", "GP")
