@@ -149,6 +149,75 @@ def test_resolve_date_weekdays():
     assert svc.resolve_date("terça") == "2026-07-07"
 
 
+def test_block_whole_day_removes_all_slots():
+    svc = _svc()
+    blocks = svc.block_schedule("dr_silva", "2026-07-01")
+    assert len(blocks) == len(svc._slots)
+    assert all(b.is_block and b.status == CONFIRMED for b in blocks)
+    assert svc.check_availability("dr_silva", "2026-07-01") == []
+
+
+def test_block_single_slot():
+    svc = _svc()
+    svc.block_schedule("dr_silva", "2026-07-01", start_time="09:00")
+    free = svc.check_availability("dr_silva", "2026-07-01")
+    assert "09:00" not in free and "10:00" in free
+
+
+def test_block_time_range():
+    svc = _svc()
+    svc.block_schedule("dr_silva", "2026-07-01", start_time="09:00", end_time="11:00")
+    free = svc.check_availability("dr_silva", "2026-07-01")
+    assert "09:00" not in free and "10:00" not in free   # [09:00, 11:00)
+    assert "11:00" in free                                # end is exclusive
+
+
+def test_block_refuses_when_client_booked_in_range():
+    svc = _svc()
+    svc.book("dr_silva", "2026-07-01", "10:00", "Ana")
+    with pytest.raises(SchedulerError, match="client appointments exist"):
+        svc.block_schedule("dr_silva", "2026-07-01")        # whole day clashes with Ana@10:00
+
+
+def test_block_is_idempotent():
+    svc = _svc()
+    first = svc.block_schedule("dr_silva", "2026-07-01", start_time="09:00")
+    second = svc.block_schedule("dr_silva", "2026-07-01", start_time="09:00")
+    assert len(first) == 1 and second == []                 # already blocked → skipped
+
+
+def test_block_allows_today_but_not_past():
+    svc = _svc()  # today = 2026-06-30
+    # blocking today is allowed (a host can mark today unavailable), unlike booking
+    assert svc.block_schedule("dr_silva", _TODAY.isoformat(), start_time="09:00")
+    with pytest.raises(SchedulerError, match="in the past"):
+        svc.block_schedule("dr_silva", "2026-06-01")
+
+
+def test_block_unknown_host_raises():
+    with pytest.raises(SchedulerError, match="unknown host"):
+        _svc().block_schedule("ghost", "2026-07-01")
+
+
+def test_block_invalid_single_slot_raises():
+    with pytest.raises(SchedulerError, match="not a bookable slot"):
+        _svc().block_schedule("dr_silva", "2026-07-01", start_time="03:00")
+
+
+def test_block_empty_range_raises():
+    with pytest.raises(SchedulerError, match="no bookable slots"):
+        _svc().block_schedule("dr_silva", "2026-07-01", start_time="12:00", end_time="13:00")
+
+
+def test_block_does_not_appear_as_client_booking():
+    svc = _svc()
+    svc.block_schedule("dr_silva", "2026-07-01", start_time="09:00")
+    # a block carries no client name → filtering by a real name never returns it
+    assert svc.list_appointments(with_name="Ana") == []
+    blocks = [a for a in svc.list_appointments() if a.is_block]
+    assert len(blocks) == 1
+
+
 def test_resolve_date_unparseable_raises():
     with pytest.raises(SchedulerError, match="could not resolve"):
         _svc().resolve_date("qualquer coisa sem data")

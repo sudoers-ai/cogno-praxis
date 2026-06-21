@@ -27,11 +27,12 @@ async def test_tools_and_annotations():
     tools = await _server().list_tools()
     ann = {t.name: t.annotations for t in tools}
     assert set(ann) == {"resolve_date", "list_schedulable_hosts", "check_availability",
-                        "book_appointment", "list_appointments",
+                        "book_appointment", "block_schedule", "list_appointments",
                         "update_appointment_status", "cancel_appointment"}
     assert ann["resolve_date"].readOnlyHint is True
     assert ann["check_availability"].readOnlyHint is True
     assert ann["book_appointment"].readOnlyHint is False
+    assert ann["block_schedule"].readOnlyHint is False
     assert ann["update_appointment_status"].readOnlyHint is False
     assert ann["cancel_appointment"].destructiveHint is True
 
@@ -83,6 +84,26 @@ async def test_empty_state_messages():
     empty = build_server(SchedulerService(InMemoryAppointmentStore(), today=lambda: _TODAY))
     assert "No schedulable hosts" in _text(await empty.call_tool("list_schedulable_hosts", {}))
     assert "No appointments" in _text(await empty.call_tool("list_appointments", {}))
+
+
+async def test_block_schedule_tool():
+    mcp = _server()
+    out = _text(await mcp.call_tool(
+        "block_schedule", {"host_id": "dr_silva", "date": "2026-07-01",
+                           "description": "Férias"}))
+    assert "Blocked" in out and "Férias" in out
+    # the whole day is now gone from availability
+    avail = _text(await mcp.call_tool(
+        "check_availability", {"host_id": "dr_silva", "date": "2026-07-01"}))
+    assert "no free slots" in avail.lower()
+
+
+async def test_block_schedule_conflict_errors():
+    mcp = _server()
+    await mcp.call_tool("book_appointment", {
+        "host_id": "dr_silva", "date": "2026-07-01", "time": "09:00", "with_name": "Ana"})
+    with pytest.raises(Exception):   # a client booking in range → SchedulerError as tool error
+        await mcp.call_tool("block_schedule", {"host_id": "dr_silva", "date": "2026-07-01"})
 
 
 async def test_no_free_slots_message():

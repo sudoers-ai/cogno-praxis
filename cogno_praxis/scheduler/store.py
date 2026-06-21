@@ -48,6 +48,14 @@ class Appointment:
     cancel_reason: str = ""      # filled when status -> CANCELED
     notes: str = ""
 
+    @property
+    def is_block(self) -> bool:
+        """A *block* (host self-occupation / "unavailable") has no client name — it
+        occupies a slot like any active appointment but is not a real booking. The host
+        creates these via ``block_schedule``; the parent modelled them the same way (a
+        CONFIRMED appointment with no guest, titled "Indisponível")."""
+        return not self.with_name.strip()
+
 
 @runtime_checkable
 class AppointmentStore(Protocol):

@@ -19,7 +19,9 @@ from datetime import date, timedelta
 from typing import Callable, Optional, Sequence
 
 from cogno_praxis.scheduler.store import (
+    ACTIVE_STATUS,
     CANCELED,
+    CONFIRMED,
     VALID_STATUS,
     Appointment,
     AppointmentStore,
@@ -112,6 +114,56 @@ class SchedulerService:
         self.store.update(appt)
         return appt
 
+    def block_schedule(self, host_id: str, date: str, *, start_time: str = "",
+                       end_time: str = "", description: str = "") -> list[Appointment]:
+        """Make a host unavailable for a slot, a time range, or the whole day.
+
+        Mirrors the parent's ``block_schedule``: a block is a host self-occupation,
+        stored as a CONFIRMED appointment **with no client** (``is_block``) so it removes
+        the slot from availability exactly like a real booking. With no ``start_time`` the
+        **entire working day** is blocked; with ``start_time`` alone a single slot; with
+        both, every slot in ``[start_time, end_time)``. Refuses if a real client booking
+        already sits in the range (never silently bury a patient). Idempotent: an
+        already-blocked slot is skipped, not duplicated.
+
+        **Role-blind:** *who* may block (the parent's GUEST-can't / EMPLOYEE-own-only rule)
+        is the host's call — the host scopes ``host_id`` per identity and gates tool
+        visibility; the vertical only enforces the domain rules (future date, no conflict).
+        """
+        if self.store.get_host(host_id) is None:
+            raise SchedulerError(f"unknown host: {host_id}")
+        self._require_not_past(date)
+        targets = self._slots_in_range(start_time, end_time)
+        active = {a.time: a for a in self.store.list(host_id=host_id)
+                  if a.date == date and a.status in ACTIVE_STATUS}
+        conflicts = sorted(t for t in targets if t in active and not active[t].is_block)
+        if conflicts:
+            raise SchedulerError(
+                f"cannot block {date}: client appointments exist at {', '.join(conflicts)}")
+        note = description.strip() or "Bloqueado"
+        created: list[Appointment] = []
+        for t in targets:
+            if t in active:        # already blocked → idempotent skip
+                continue
+            appt = Appointment(
+                appointment_id=uuid.uuid4().hex[:8], host_id=host_id, date=date,
+                time=t, with_name="", status=CONFIRMED, notes=note)
+            self.store.add(appt)
+            created.append(appt)
+        return created
+
+    def _slots_in_range(self, start_time: str, end_time: str) -> list[str]:
+        if not start_time:
+            return list(self._slots)                       # whole working day
+        if not end_time:
+            if start_time not in self._slots:
+                raise SchedulerError(f"{start_time} is not a bookable slot")
+            return [start_time]                            # single slot
+        targets = [s for s in self._slots if start_time <= s < end_time]
+        if not targets:
+            raise SchedulerError(f"no bookable slots between {start_time} and {end_time}")
+        return targets
+
     # ── date resolution ────────────────────────────────────────────────
     def resolve_date(self, expression: str) -> str:
         """Deterministically resolve a relative/named date phrase to an ISO date.
@@ -147,3 +199,13 @@ class SchedulerService:
         if d <= self._today():
             raise SchedulerError(
                 f"{iso_date} is today or in the past; scheduling starts from tomorrow")
+
+    def _require_not_past(self, iso_date: str) -> None:
+        """Blocking is allowed from today on (a host can mark *today* as unavailable),
+        only a strictly past date is refused — mirrors the parent's ``block_schedule``."""
+        try:
+            d = date.fromisoformat(iso_date)
+        except ValueError as exc:
+            raise SchedulerError(f"invalid date: {iso_date} (use YYYY-MM-DD)") from exc
+        if d < self._today():
+            raise SchedulerError(f"{iso_date} is in the past; cannot block past dates")

@@ -64,6 +64,22 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         return (f"Booked {appt.appointment_id}: {with_name} with {host_id} "
                 f"on {date} at {time} [{appt.status}].")
 
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
+    def block_schedule(host_id: str, date: str, start_time: str = "", end_time: str = "",
+                       description: str = "") -> str:
+        """Make a host unavailable, removing slots from availability (a self-occupation).
+
+        No start_time blocks the WHOLE working day; start_time alone blocks one slot; both
+        block every slot in [start_time, end_time). Refuses if a client booking sits in the
+        range. Use for "Dr. Silva is out on Friday" / "block the afternoon".
+        """
+        blocks = svc.block_schedule(host_id, date, start_time=start_time,
+                                    end_time=end_time, description=description)
+        if not blocks:
+            return f"{host_id} had no free slots to block on {date} (already taken/blocked)."
+        return (f"Blocked {host_id} on {date} at: "
+                f"{', '.join(b.time for b in blocks)} [{blocks[0].notes}].")
+
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def list_appointments(with_name: str = "", host_id: str = "") -> str:
         """List appointments, optionally filtered by client name or host."""
