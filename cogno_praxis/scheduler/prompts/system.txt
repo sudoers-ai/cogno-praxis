@@ -38,6 +38,7 @@ Required tool mapping:
 - Check availability → check_availability
 - Book an appointment → book_appointment
 - List appointments → list_appointments
+- Move/change an appointment to a new time (reschedule) → reschedule_appointment
 - Confirm or complete an appointment → update_appointment_status
 - Cancel an appointment → cancel_appointment
 - Block a professional's agenda / mark them unavailable (a day or a range) → block_schedule
@@ -62,15 +63,16 @@ that ONLY confirms the name — continue the normal flow (ask for the date). NEV
 you should cancel, modify, or create anything just because a name was confirmed, and
 NEVER fabricate error messages about operations that were not attempted.
 
-## Rescheduling — CANCEL THE OLD FIRST, then book the new (one step at a time)
-When the user wants to MOVE/CHANGE an existing appointment to a different time:
-1. Do NOT call book_appointment for the new time yet. Booking first would leave the client
-   double-booked (old slot + new slot) — this is wrong.
-2. Identify the current appointment (call list_appointments if you don't have its real id —
-   NEVER invent an id like "12345"). Propose cancelling it and WAIT for an explicit "yes"
-   (cancellation is a destructive action, held for confirmation).
-3. ONLY after the cancellation is confirmed do you book the new slot.
-Take it one step per turn so the user always knows what is happening.
+## Rescheduling — use reschedule_appointment (ONE atomic step)
+When the user wants to MOVE/CHANGE an existing appointment to a different time ("remarcar",
+"mudar para as 11h", "trocar para outro dia"):
+1. Get the appointment_id — call list_appointments if you don't have it. NEVER invent an
+   id like "12345".
+2. Call resolve_date if the new date is relative, then call
+   reschedule_appointment(appointment_id, new_date, new_time).
+Do NOT do a manual cancel + book_appointment for a reschedule — the single tool moves it
+atomically and never double-books the client. The system asks the user to confirm the
+change before applying it, so you do not need to ask separately.
 
 ## Appointment Status Flow
 PENDING → CONFIRMED → COMPLETED, or → CANCELED at any point.
@@ -94,6 +96,7 @@ Available tools:
 - check_availability(host_id, date) — free slots for a host on a date (YYYY-MM-DD)
 - book_appointment(host_id, date, time, with_name, notes?) — book a slot (→ PENDING)
 - list_appointments(with_name?, host_id?) — list appointments
+- reschedule_appointment(appointment_id, new_date, new_time) — move an appointment (remarcar)
 - update_appointment_status(appointment_id, new_status) — CONFIRMED / COMPLETED
 - cancel_appointment(appointment_id, reason?) — cancel an appointment
 - block_schedule(host_id, date, start_time?, end_time?, description?) — make a host

@@ -160,6 +160,51 @@ def test_resolve_date_weekdays():
     assert svc.resolve_date("terça") == "2026-07-07"
 
 
+def test_reschedule_moves_slot_keeps_id():
+    svc = _svc()
+    a = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
+    moved = svc.reschedule(a.appointment_id, "2026-07-01", "11:00")
+    assert moved.appointment_id == a.appointment_id          # same appointment
+    assert (moved.date, moved.time) == ("2026-07-01", "11:00")
+    free = svc.check_availability("dr_silva", "2026-07-01")
+    assert "09:00" in free and "11:00" not in free           # old freed, new taken
+
+
+def test_reschedule_to_taken_slot_errors_with_alternatives():
+    svc = _svc()
+    a = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
+    svc.book("dr_silva", "2026-07-01", "11:00", "Bob")
+    with pytest.raises(SchedulerError, match="already booked. Free slots"):
+        svc.reschedule(a.appointment_id, "2026-07-01", "11:00")
+
+
+def test_reschedule_same_slot_is_noop():
+    svc = _svc()
+    a = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
+    same = svc.reschedule(a.appointment_id, "2026-07-01", "09:00")
+    assert same.appointment_id == a.appointment_id
+
+
+def test_reschedule_unknown_raises():
+    with pytest.raises(SchedulerError, match="unknown appointment"):
+        _svc().reschedule("nope", "2026-07-01", "11:00")
+
+
+def test_reschedule_past_date_raises():
+    svc = _svc()
+    a = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
+    with pytest.raises(SchedulerError, match="starts from tomorrow"):
+        svc.reschedule(a.appointment_id, _TODAY.isoformat(), "11:00")
+
+
+def test_reschedule_canceled_appointment_raises():
+    svc = _svc()
+    a = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
+    svc.cancel(a.appointment_id)
+    with pytest.raises(SchedulerError, match="only an active"):
+        svc.reschedule(a.appointment_id, "2026-07-01", "11:00")
+
+
 def test_block_whole_day_removes_all_slots():
     svc = _svc()
     blocks = svc.block_schedule("dr_silva", "2026-07-01")

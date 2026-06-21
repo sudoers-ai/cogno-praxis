@@ -129,6 +129,40 @@ class SchedulerService:
         self.store.update(appt)
         return appt
 
+    def reschedule(self, appointment_id: str, new_date: str, new_time: str) -> Appointment:
+        """Move an existing appointment to a new date/time in ONE atomic step (keeps the id).
+
+        This is the dedicated "remarcar" path — far more reliable than asking a model to
+        orchestrate cancel + rebook, and it never leaves the client double-booked. Domain
+        rules mirror book: future date, valid+free slot (a conflict carries the free slots).
+        Moving to the slot it already occupies is a no-op. The appointment keeps its status
+        (the host may treat a reschedule as needing re-confirmation via its own flow).
+        """
+        appt = self.store.get(appointment_id)
+        if appt is None:
+            raise SchedulerError(f"unknown appointment: {appointment_id}")
+        if appt.status not in ACTIVE_STATUS:
+            raise SchedulerError(
+                f"appointment {appointment_id} is {appt.status}; only an active "
+                f"appointment can be rescheduled")
+        self._require_future(new_date)
+        if new_time not in self._slots:
+            raise SchedulerError(f"{new_time} is not a bookable slot")
+        if (new_date, new_time) == (appt.date, appt.time):
+            return appt                                       # already there → no-op
+        taken = {a.time for a in self.store.list(host_id=appt.host_id)
+                 if a.date == new_date and a.status in ACTIVE_STATUS
+                 and a.appointment_id != appointment_id}
+        if new_time in taken:
+            free = [s for s in self._slots if s not in taken]
+            free_txt = ", ".join(free) if free else "none that day"
+            raise SchedulerError(
+                f"{new_time} on {new_date} is already booked. Free slots on {new_date}: {free_txt}")
+        appt.date = new_date
+        appt.time = new_time
+        self.store.update(appt)
+        return appt
+
     def block_schedule(self, host_id: str, date: str, *, start_time: str = "",
                        end_time: str = "", description: str = "") -> list[Appointment]:
         """Make a host unavailable for a slot, a time range, or the whole day.

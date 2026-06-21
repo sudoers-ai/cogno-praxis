@@ -28,13 +28,16 @@ async def test_tools_and_annotations():
     ann = {t.name: t.annotations for t in tools}
     assert set(ann) == {"resolve_date", "list_schedulable_hosts", "check_availability",
                         "book_appointment", "block_schedule", "list_appointments",
-                        "update_appointment_status", "cancel_appointment"}
+                        "reschedule_appointment", "update_appointment_status",
+                        "cancel_appointment"}
     assert ann["resolve_date"].readOnlyHint is True
     assert ann["check_availability"].readOnlyHint is True
     assert ann["book_appointment"].readOnlyHint is False
     assert ann["block_schedule"].readOnlyHint is False
     assert ann["update_appointment_status"].readOnlyHint is False
     assert ann["cancel_appointment"].destructiveHint is True
+    # reschedule is a confirmed (destructive) action → EGO gate B holds it
+    assert ann["reschedule_appointment"].destructiveHint is True
 
 
 async def test_list_hosts_tool():
@@ -84,6 +87,22 @@ async def test_empty_state_messages():
     empty = build_server(SchedulerService(InMemoryAppointmentStore(), today=lambda: _TODAY))
     assert "No schedulable hosts" in _text(await empty.call_tool("list_schedulable_hosts", {}))
     assert "No appointments" in _text(await empty.call_tool("list_appointments", {}))
+
+
+async def test_reschedule_tool_moves_appointment():
+    mcp = _server()
+    booked = _text(await mcp.call_tool(
+        "book_appointment",
+        {"host_id": "dr_silva", "date": "2026-07-01", "time": "09:00", "with_name": "Ana"}))
+    appt_id = booked.split()[1].rstrip(":")
+    out = _text(await mcp.call_tool(
+        "reschedule_appointment",
+        {"appointment_id": appt_id, "new_date": "2026-07-01", "new_time": "11:00"}))
+    assert "Rescheduled" in out and "11:00" in out
+    # 09:00 is free again, 11:00 is now taken
+    avail = _text(await mcp.call_tool(
+        "check_availability", {"host_id": "dr_silva", "date": "2026-07-01"}))
+    assert "09:00" in avail and "11:00" not in avail
 
 
 async def test_block_schedule_tool():

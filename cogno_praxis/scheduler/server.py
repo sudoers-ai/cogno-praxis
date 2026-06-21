@@ -91,6 +91,18 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         return "\n".join(f"{a.appointment_id}: {a.with_name} with {a.host_id} "
                          f"on {a.date} at {a.time} [{a.status}]" for a in appts)
 
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
+    def reschedule_appointment(appointment_id: str, new_date: str, new_time: str) -> str:
+        """Move an existing appointment to a new date/time in ONE step (keeps the same id).
+
+        Use this for "remarcar" / "mudar o horário" / "trocar para outro dia" — NOT a
+        separate cancel + book. Get the appointment_id first (list_appointments) and call
+        resolve_date for a relative new date. The new slot must be free and in the future.
+        """
+        appt = svc.reschedule(appointment_id, new_date, new_time)
+        return (f"Rescheduled {appt.appointment_id}: {appt.with_name} with {appt.host_id} "
+                f"is now on {appt.date} at {appt.time} [{appt.status}].")
+
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     def update_appointment_status(appointment_id: str, new_status: str) -> str:
         """Move an appointment along its lifecycle (CONFIRMED / COMPLETED / etc.)."""
