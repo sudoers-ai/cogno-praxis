@@ -39,8 +39,13 @@ class SchedulerConfig:
         self.work_saturdays: bool = raw.get("work_saturdays", False)
         self.work_sundays: bool = raw.get("work_sundays", False)
         self.slot_duration_minutes: int = int(raw.get("slot_duration_minutes", 60))
-        # Business-policy knobs (enforced by the service; 0/None = disabled).
+        # Business-policy knobs (enforced by the service; 0/None = disabled → no behaviour
+        # change unless a tenant opts in). booking_delay_days kept for parent-config fidelity.
         self.booking_delay_days: int = int(raw.get("booking_delay_days", 0))
+        self.booking_window_days: int = int(raw.get("booking_window_days", 0))
+        self.cooldown_days: int = int(raw.get("cooldown_days", 0))
+        _mac = raw.get("max_active_per_client")
+        self.max_active_per_client: Optional[int] = int(_mac) if _mac is not None else None
 
     @staticmethod
     def _parse_time(value: str) -> time:

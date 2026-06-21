@@ -22,6 +22,7 @@ from cogno_praxis.scheduler.engine import AvailabilityEngine, SchedulerConfig
 from cogno_praxis.scheduler.store import (
     ACTIVE_STATUS,
     CANCELED,
+    COMPLETED,
     CONFIRMED,
     VALID_STATUS,
     Appointment,
@@ -97,6 +98,7 @@ class SchedulerService:
             raise SchedulerError(f"unknown host: {host_id}")
         self._require_future(date)
         self._require_working_day(date)
+        self._enforce_policies(host_id, date, time, with_name)
         if time not in self._slots:
             raise SchedulerError(f"{time} is not a bookable slot")
         if time in self.store.booked_times(host_id, date):
@@ -262,6 +264,52 @@ class SchedulerService:
         if d <= self._today():
             raise SchedulerError(
                 f"{iso_date} is today or in the past; scheduling starts from tomorrow")
+
+    def _enforce_policies(self, host_id: str, iso_date: str, time: str, with_name: str) -> None:
+        """Opt-in business guards (ported from the parent; all OFF by default so behaviour
+        is unchanged unless a tenant configures them):
+
+        - **booking window** (`booking_window_days`) — reject a date too far ahead
+          (the parent's DATE_TOO_FAR; guards against an LLM weekday miscalc / abuse).
+        - **single active** (`max_active_per_client`) — a client may not hold more active
+          appointments than allowed (the parent's ACTIVE_APPOINTMENT_EXISTS); this is what
+          stops the "same client booked at 9h AND 11h" inconsistency at the root.
+        - **cooldown** (`cooldown_days`) — wait N days after the last COMPLETED appointment
+          before booking again (the parent's COOLDOWN_ACTIVE).
+        """
+        cfg = self._config
+        client = with_name.strip()
+        # booking window — how far ahead a booking is allowed
+        if cfg.booking_window_days > 0:
+            d = date.fromisoformat(iso_date)
+            max_date = self._today() + timedelta(days=cfg.booking_window_days)
+            if d > max_date:
+                raise SchedulerError(
+                    f"{iso_date} is beyond the booking window of {cfg.booking_window_days} "
+                    f"days (latest bookable date: {max_date.isoformat()})")
+        if not client:                      # a block / nameless hold skips client policies
+            return
+        mine = [a for a in self.store.list(with_name=client) if a.status in ACTIVE_STATUS]
+        # single-active — re-booking the SAME slot is idempotent (handled later), not a 2nd
+        if cfg.max_active_per_client is not None:
+            already_here = any(a.host_id == host_id and a.date == iso_date and a.time == time
+                               for a in mine)
+            if not already_here and len(mine) >= cfg.max_active_per_client:
+                ex = mine[0]
+                raise SchedulerError(
+                    f"{client} already has an active appointment on {ex.date} at {ex.time} "
+                    f"(id {ex.appointment_id}); cancel or reschedule it before booking another")
+        # cooldown — N days after the last COMPLETED appointment
+        if cfg.cooldown_days > 0:
+            completed = [date.fromisoformat(a.date) for a in self.store.list(with_name=client)
+                         if a.status == COMPLETED]
+            if completed:
+                eligible = max(completed) + timedelta(days=cfg.cooldown_days)
+                remaining = (eligible - self._today()).days
+                if remaining > 0:
+                    raise SchedulerError(
+                        f"{client} must wait {remaining} more day(s) after the last "
+                        f"appointment before booking again")
 
     def _require_working_day(self, iso_date: str) -> None:
         """Reject a holiday or a non-working weekday (per the tenant's config + location).
