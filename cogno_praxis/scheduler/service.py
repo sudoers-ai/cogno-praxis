@@ -13,8 +13,9 @@ are the host's job, not the scheduler's.
 
 from __future__ import annotations
 
+import unicodedata
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from typing import Callable, Optional, Sequence
 
 from cogno_praxis.scheduler.store import (
@@ -30,6 +31,17 @@ from cogno_praxis.scheduler.store import (
 DEFAULT_SLOTS: tuple[str, ...] = (
     "09:00", "10:00", "11:00", "14:00", "15:00", "16:00",
 )
+
+# Weekday name → Python weekday index (Mon=0). PT + EN, accent-folded.
+_WEEKDAYS = {
+    "segunda": 0, "terca": 1, "quarta": 2, "quinta": 3, "sexta": 4, "sabado": 5, "domingo": 6,
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4,
+    "saturday": 5, "sunday": 6,
+}
+
+
+def _fold(s: str) -> str:
+    return unicodedata.normalize("NFKD", s.lower()).encode("ascii", "ignore").decode("ascii")
 
 
 class SchedulerError(RuntimeError):
@@ -99,6 +111,31 @@ class SchedulerService:
         appt.cancel_reason = reason
         self.store.update(appt)
         return appt
+
+    # ── date resolution ────────────────────────────────────────────────
+    def resolve_date(self, expression: str) -> str:
+        """Deterministically resolve a relative/named date phrase to an ISO date.
+
+        Handles "hoje/today", "amanhã/tomorrow", "depois de amanhã", and weekday names
+        (PT + EN, with or without "próxima"/"que vem") → the NEXT occurrence of that
+        weekday strictly after today (if today is that weekday, +7). This exists because
+        LLM weekday arithmetic is unreliable; the model calls this instead of guessing.
+        Raises ``SchedulerError`` when no date can be parsed (the caller then asks / uses
+        an explicit date).
+        """
+        e = _fold(expression)
+        today = self._today()
+        if "depois de amanha" in e or "day after tomorrow" in e:
+            return (today + timedelta(days=2)).isoformat()
+        if "amanha" in e or "tomorrow" in e:
+            return (today + timedelta(days=1)).isoformat()
+        if "hoje" in e or "today" in e:
+            return today.isoformat()
+        for word, wd in _WEEKDAYS.items():
+            if word in e:
+                ahead = (wd - today.weekday()) % 7 or 7   # strictly the NEXT occurrence
+                return (today + timedelta(days=ahead)).isoformat()
+        raise SchedulerError(f"could not resolve a date from: {expression!r}")
 
     # ── domain rules ───────────────────────────────────────────────────
     def _require_future(self, iso_date: str) -> None:
