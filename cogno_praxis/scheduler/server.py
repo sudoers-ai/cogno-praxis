@@ -15,6 +15,8 @@ Run the demo standalone (stdio):  ``python -m cogno_praxis.scheduler.server``
 
 from __future__ import annotations
 
+import os
+from datetime import date
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -107,11 +109,21 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
 
 
 def _seeded_service() -> SchedulerService:
-    """A small demo service so the standalone server is immediately usable."""
+    """A small demo service so the standalone server is immediately usable.
+
+    Two bookable professionals (so a SUPERVISOR overseeing *all* agendas is meaningful)
+    plus the front desk."""
     store = InMemoryAppointmentStore()
     store.hosts["dr_silva"] = Host("dr_silva", "Dr. Silva", "General Practitioner")
+    store.hosts["dr_souza"] = Host("dr_souza", "Dr. Souza", "Cardiologist")
     store.hosts["ana"] = Host("ana", "Ana Reception", "Front Desk")
-    return SchedulerService(store)
+    # Optional fixed clock for deterministic harnesses — a host running this server over
+    # stdio can set COGNO_SCHEDULER_TODAY so the subprocess agrees with the host's [TODAY]
+    # anchor (avoids an off-by-one where "amanhã" resolves against a different "today").
+    # Production leaves it unset → the real date.
+    iso = os.environ.get("COGNO_SCHEDULER_TODAY")
+    clock = (lambda: date.fromisoformat(iso)) if iso else None
+    return SchedulerService(store, today=clock)
 
 
 # In-memory DEMO server for standalone stdio runs / tests (NOT for production —
