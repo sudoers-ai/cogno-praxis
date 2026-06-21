@@ -12,6 +12,16 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,5 +43,7 @@ jobs:
         run: mypy cogno_praxis
       - name: Unit tests
         run: pytest tests/unit -q --cov=cogno_praxis --cov-report=term-missing --cov-fail-under=90
-      - name: Integration tests (scheduler server over stdio via cogno-mcp)
+      - name: Integration tests (scheduler server over stdio via cogno-mcp; + Postgres store)
+        env:
+          COGNO_TEST_PG_DSN: postgresql://postgres:postgres@localhost:5432/postgres
         run: pytest tests/integration -q || [ $? -eq 5 ]

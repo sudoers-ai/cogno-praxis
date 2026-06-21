@@ -35,6 +35,10 @@ Issues = "https://github.com/sudoers-ai/cogno-praxis/issues"
 holidays = [
     "holidays>=0.40",
 ]
+# Postgres AppointmentStore adapter (HASH(scope)-partitioned). In-memory is the default.
+postgres = [
+    "psycopg[binary]>=3.1",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23.0",
@@ -42,6 +46,7 @@ dev = [
     "ruff>=0.5",
     "mypy>=1.8",
     "holidays>=0.40",
+    "psycopg[binary]>=3.1",
 ]
 
 [build-system]

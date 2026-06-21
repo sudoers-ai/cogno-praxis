@@ -25,7 +25,7 @@ from mcp.types import ToolAnnotations
 
 from cogno_praxis.scheduler.engine import SchedulerConfig
 from cogno_praxis.scheduler.service import SchedulerService
-from cogno_praxis.scheduler.store import Host, InMemoryAppointmentStore
+from cogno_praxis.scheduler.store import AppointmentStore, Host, InMemoryAppointmentStore
 
 
 def build_server(service: Optional[SchedulerService] = None, *, name: str = "cogno-scheduler") -> FastMCP:
@@ -164,12 +164,27 @@ def _seeded_service() -> SchedulerService:
 
     Two bookable professionals (so a SUPERVISOR overseeing *all* agendas is meaningful)
     plus the front desk."""
-    store = InMemoryAppointmentStore()
-    store.hosts["dr_silva"] = Host("dr_silva", "Dr. Silva", "General Practitioner")
     # dr_souza requires manual acceptance (auto_confirm=False) → bookings stay PENDING until
     # the professional accepts; dr_silva auto-confirms. Demonstrates the per-professional flag.
-    store.hosts["dr_souza"] = Host("dr_souza", "Dr. Souza", "Cardiologist", auto_confirm=False)
-    store.hosts["ana"] = Host("ana", "Ana Reception", "Front Desk")
+    demo_hosts = [
+        Host("dr_silva", "Dr. Silva", "General Practitioner"),
+        Host("dr_souza", "Dr. Souza", "Cardiologist", auto_confirm=False),
+        Host("ana", "Ana Reception", "Front Desk"),
+    ]
+    # Persistence: a host can point the scheduler at Postgres (COGNO_SCHEDULER_DSN +
+    # COGNO_SCHEDULER_SCOPE = the tenant); otherwise the in-memory demo store.
+    dsn = os.environ.get("COGNO_SCHEDULER_DSN")
+    if dsn:
+        from cogno_praxis.scheduler.stores.postgres import PgAppointmentStore
+        pg = PgAppointmentStore(dsn, os.environ.get("COGNO_SCHEDULER_SCOPE", "default"))
+        for h in demo_hosts:
+            pg.add_host(h)
+        store: AppointmentStore = pg
+    else:
+        mem = InMemoryAppointmentStore()
+        for h in demo_hosts:
+            mem.hosts[h.host_id] = h
+        store = mem
     # Optional fixed clock for deterministic harnesses — a host running this server over
     # stdio can set COGNO_SCHEDULER_TODAY so the subprocess agrees with the host's [TODAY]
     # anchor (avoids an off-by-one where "amanhã" resolves against a different "today").
