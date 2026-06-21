@@ -63,6 +63,17 @@ def test_double_booking_raises():
         svc.book("dr_silva", "2026-07-01", "09:00", "Bob")
 
 
+def test_book_is_idempotent_for_same_client():
+    svc = _svc()
+    a = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
+    b = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")     # identical → returns existing
+    assert b.appointment_id == a.appointment_id
+    assert len(svc.list_appointments()) == 1                   # not duplicated
+    # a DIFFERENT client at the same slot still conflicts
+    with pytest.raises(SchedulerError, match="already booked"):
+        svc.book("dr_silva", "2026-07-01", "09:00", "Bob")
+
+
 def test_same_slot_different_date_ok():
     svc = _svc()
     svc.book("dr_silva", "2026-07-01", "09:00", "Ana")

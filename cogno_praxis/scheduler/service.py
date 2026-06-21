@@ -87,7 +87,22 @@ class SchedulerService:
         if time not in self._slots:
             raise SchedulerError(f"{time} is not a bookable slot")
         if time in self.store.booked_times(host_id, date):
-            raise SchedulerError(f"{time} on {date} is already booked")
+            # Idempotent: re-booking the IDENTICAL appointment (same host/date/time/client)
+            # returns the existing one instead of erroring. This makes the host's EGO↔judge
+            # correction loop safe — a retry that re-issues the same booking succeeds rather
+            # than colliding with its own first attempt. A *different* client still conflicts.
+            existing = next(
+                (a for a in self.store.list(host_id=host_id)
+                 if a.date == date and a.time == time and a.status in ACTIVE_STATUS), None)
+            if (existing and with_name.strip() and not existing.is_block
+                    and existing.with_name.strip().lower() == with_name.strip().lower()):
+                return existing
+            # Carry the free alternatives IN the error (the parent's SLOT_UNAVAILABLE
+            # pattern) so the model offers them in one shot instead of re-looping.
+            free = [s for s in self._slots if s not in self.store.booked_times(host_id, date)]
+            free_txt = ", ".join(free) if free else "none that day"
+            raise SchedulerError(
+                f"{time} on {date} is already booked. Free slots on {date}: {free_txt}")
         appt = Appointment(
             appointment_id=uuid.uuid4().hex[:8], host_id=host_id, date=date,
             time=time, with_name=with_name, notes=notes)   # status defaults to PENDING
