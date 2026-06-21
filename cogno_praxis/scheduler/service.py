@@ -16,8 +16,9 @@ from __future__ import annotations
 import unicodedata
 import uuid
 from datetime import date, timedelta
-from typing import Callable, Optional, Sequence
+from typing import Callable, Iterable, Optional
 
+from cogno_praxis.scheduler.engine import AvailabilityEngine, SchedulerConfig
 from cogno_praxis.scheduler.store import (
     ACTIVE_STATUS,
     CANCELED,
@@ -29,7 +30,8 @@ from cogno_praxis.scheduler.store import (
     InMemoryAppointmentStore,
 )
 
-# Default bookable slots (a real deployment configures these per host).
+# The default working day (SchedulerConfig defaults: 09:00–17:00, 60-min, lunch 12:00–14:00)
+# yields exactly these slot starts — the classic set, before any tenant config.
 DEFAULT_SLOTS: tuple[str, ...] = (
     "09:00", "10:00", "11:00", "14:00", "15:00", "16:00",
 )
@@ -55,11 +57,20 @@ class SchedulerService:
         self,
         store: Optional[AppointmentStore] = None,
         *,
-        slots: Sequence[str] = DEFAULT_SLOTS,
+        config: Optional[SchedulerConfig] = None,
+        country: Optional[str] = None,
+        state: Optional[str] = None,
+        holidays: Optional[Iterable[date]] = None,
         today: Optional[Callable[[], date]] = None,
     ) -> None:
         self.store: AppointmentStore = store or InMemoryAppointmentStore()
-        self._slots = tuple(slots)
+        # The tenant's rules (hours/lunch/weekends/slot) drive the availability engine; the
+        # host injects config + location (country/state → holidays) per tenant. With none,
+        # sensible defaults apply (classic 09–17 working day, no holiday filtering).
+        self._config = config or SchedulerConfig()
+        self._engine = AvailabilityEngine(self._config, country=country, state=state,
+                                          holidays=holidays)
+        self._slots: tuple[str, ...] = tuple(self._engine.slot_starts())
         # Injectable clock keeps the "start from tomorrow" rule deterministic in tests.
         self._today: Callable[[], date] = today or date.today
 
@@ -71,6 +82,7 @@ class SchedulerService:
         if self.store.get_host(host_id) is None:
             raise SchedulerError(f"unknown host: {host_id}")
         self._require_future(date)
+        self._require_working_day(date)
         taken = self.store.booked_times(host_id, date)
         return [s for s in self._slots if s not in taken]
 
@@ -84,6 +96,7 @@ class SchedulerService:
         if self.store.get_host(host_id) is None:
             raise SchedulerError(f"unknown host: {host_id}")
         self._require_future(date)
+        self._require_working_day(date)
         if time not in self._slots:
             raise SchedulerError(f"{time} is not a bookable slot")
         if time in self.store.booked_times(host_id, date):
@@ -146,6 +159,7 @@ class SchedulerService:
                 f"appointment {appointment_id} is {appt.status}; only an active "
                 f"appointment can be rescheduled")
         self._require_future(new_date)
+        self._require_working_day(new_date)
         if new_time not in self._slots:
             raise SchedulerError(f"{new_time} is not a bookable slot")
         if (new_date, new_time) == (appt.date, appt.time):
@@ -248,6 +262,13 @@ class SchedulerService:
         if d <= self._today():
             raise SchedulerError(
                 f"{iso_date} is today or in the past; scheduling starts from tomorrow")
+
+    def _require_working_day(self, iso_date: str) -> None:
+        """Reject a holiday or a non-working weekday (per the tenant's config + location).
+        Called after the date is already validated as a future ISO date."""
+        working, reason = self._engine.is_working_day(date.fromisoformat(iso_date))
+        if not working:
+            raise SchedulerError(f"{iso_date}: {reason}")
 
     def _require_not_past(self, iso_date: str) -> None:
         """Blocking is allowed from today on (a host can mark *today* as unavailable),

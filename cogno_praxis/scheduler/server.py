@@ -15,6 +15,7 @@ Run the demo standalone (stdio):  ``python -m cogno_praxis.scheduler.server``
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import date
 from typing import Optional
@@ -22,6 +23,7 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from cogno_praxis.scheduler.engine import SchedulerConfig
 from cogno_praxis.scheduler.service import SchedulerService
 from cogno_praxis.scheduler.store import Host, InMemoryAppointmentStore
 
@@ -135,7 +137,14 @@ def _seeded_service() -> SchedulerService:
     # Production leaves it unset → the real date.
     iso = os.environ.get("COGNO_SCHEDULER_TODAY")
     clock = (lambda: date.fromisoformat(iso)) if iso else None
-    return SchedulerService(store, today=clock)
+    # Optional per-tenant rules + location, injected by the host (same stdio-env channel):
+    # COGNO_SCHEDULER_CONFIG = the schedule_config JSON (hours/lunch/weekends/slot);
+    # COGNO_SCHEDULER_COUNTRY / _STATE = location → holiday calendar.
+    raw = os.environ.get("COGNO_SCHEDULER_CONFIG")
+    cfg = SchedulerConfig(json.loads(raw)) if raw else None
+    return SchedulerService(store, config=cfg, today=clock,
+                            country=os.environ.get("COGNO_SCHEDULER_COUNTRY"),
+                            state=os.environ.get("COGNO_SCHEDULER_STATE"))
 
 
 # In-memory DEMO server for standalone stdio runs / tests (NOT for production —
