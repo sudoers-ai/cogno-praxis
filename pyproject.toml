@@ -65,6 +65,13 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
 
+[tool.coverage.run]
+# The Postgres adapter is real DB glue exercised by tests/integration against a
+# live server (CI's postgres service); the unit-coverage gate measures the
+# infra-free logic, so omit it here to keep the 90% floor meaningful instead of
+# counting an always-skipped-in-unit adapter as 0%.
+omit = ["*/scheduler/stores/postgres.py"]
+
 [tool.ruff]
 line-length = 110
 target-version = "py310"
