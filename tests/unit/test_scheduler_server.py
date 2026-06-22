@@ -26,9 +26,10 @@ def _text(call_result):
 async def test_tools_and_annotations():
     tools = await _server().list_tools()
     ann = {t.name: t.annotations for t in tools}
-    assert set(ann) == {"list_schedulable_hosts", "check_availability",
+    assert set(ann) == {"resolve_date", "list_schedulable_hosts", "check_availability",
                         "book_appointment", "list_appointments",
                         "update_appointment_status", "cancel_appointment"}
+    assert ann["resolve_date"].readOnlyHint is True
     assert ann["check_availability"].readOnlyHint is True
     assert ann["book_appointment"].readOnlyHint is False
     assert ann["update_appointment_status"].readOnlyHint is False

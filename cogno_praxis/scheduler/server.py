@@ -39,6 +39,16 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
                          for h in hosts)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    def resolve_date(expression: str) -> str:
+        """Resolve a relative/named date ('amanhã', 'próxima sexta', 'quarta') to YYYY-MM-DD.
+
+        Always call this for a relative or weekday phrase instead of computing the date
+        yourself, then use the returned YYYY-MM-DD in check_availability / book_appointment.
+        """
+        iso = svc.resolve_date(expression)
+        return f"{expression} = {iso}"
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def check_availability(host_id: str, date: str) -> str:
         """List free time slots for a host on a date (YYYY-MM-DD, from tomorrow on)."""
         free = svc.check_availability(host_id, date)

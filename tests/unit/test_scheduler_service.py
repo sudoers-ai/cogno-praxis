@@ -131,6 +131,29 @@ def test_book_malformed_date_raises():
         _svc().book("dr_silva", "07/01/2026", "09:00", "Ana")
 
 
+def test_resolve_date_relative():
+    svc = _svc()  # today = 2026-06-30 (Tuesday)
+    assert svc.resolve_date("amanhã") == "2026-07-01"
+    assert svc.resolve_date("tomorrow") == "2026-07-01"
+    assert svc.resolve_date("depois de amanhã") == "2026-07-02"
+    assert svc.resolve_date("hoje") == "2026-06-30"
+
+
+def test_resolve_date_weekdays():
+    svc = _svc()  # today = 2026-06-30 (Tuesday, weekday=1)
+    assert svc.resolve_date("próxima sexta-feira") == "2026-07-03"   # Fri
+    assert svc.resolve_date("sexta que vem") == "2026-07-03"
+    assert svc.resolve_date("quarta") == "2026-07-01"                 # Wed (next day)
+    assert svc.resolve_date("segunda") == "2026-07-06"               # next Monday
+    # today is Tuesday → "terça" means the NEXT one, +7
+    assert svc.resolve_date("terça") == "2026-07-07"
+
+
+def test_resolve_date_unparseable_raises():
+    with pytest.raises(SchedulerError, match="could not resolve"):
+        _svc().resolve_date("qualquer coisa sem data")
+
+
 def test_store_is_injectable_port():
     assert isinstance(InMemoryAppointmentStore(), __import__(
         "cogno_praxis.scheduler.store", fromlist=["AppointmentStore"]).AppointmentStore)
