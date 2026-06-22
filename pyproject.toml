@@ -30,12 +30,23 @@ Repository = "https://github.com/sudoers-ai/cogno-praxis"
 Issues = "https://github.com/sudoers-ai/cogno-praxis/issues"
 
 [project.optional-dependencies]
+# Holiday-aware availability (country/state). Without it, holiday filtering is simply off
+# (the host can still inject an explicit holiday set); weekends/hours always apply.
+holidays = [
+    "holidays>=0.40",
+]
+# Postgres AppointmentStore adapter (HASH(scope)-partitioned). In-memory is the default.
+postgres = [
+    "psycopg[binary]>=3.1",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=5.0",
     "ruff>=0.5",
     "mypy>=1.8",
+    "holidays>=0.40",
+    "psycopg[binary]>=3.1",
 ]
 
 [build-system]
@@ -53,6 +64,13 @@ cogno_praxis = ["py.typed"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.coverage.run]
+# The Postgres adapter is real DB glue exercised by tests/integration against a
+# live server (CI's postgres service); the unit-coverage gate measures the
+# infra-free logic, so omit it here to keep the 90% floor meaningful instead of
+# counting an always-skipped-in-unit adapter as 0%.
+omit = ["*/scheduler/stores/postgres.py"]
 
 [tool.ruff]
 line-length = 110

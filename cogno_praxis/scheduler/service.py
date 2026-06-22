@@ -16,10 +16,15 @@ from __future__ import annotations
 import unicodedata
 import uuid
 from datetime import date, timedelta
-from typing import Callable, Optional, Sequence
+from typing import Callable, Iterable, Optional
 
+from cogno_praxis.scheduler.engine import AvailabilityEngine, SchedulerConfig
 from cogno_praxis.scheduler.store import (
+    ACTIVE_STATUS,
     CANCELED,
+    COMPLETED,
+    CONFIRMED,
+    PENDING,
     VALID_STATUS,
     Appointment,
     AppointmentStore,
@@ -27,7 +32,8 @@ from cogno_praxis.scheduler.store import (
     InMemoryAppointmentStore,
 )
 
-# Default bookable slots (a real deployment configures these per host).
+# The default working day (SchedulerConfig defaults: 09:00–17:00, 60-min, lunch 12:00–14:00)
+# yields exactly these slot starts — the classic set, before any tenant config.
 DEFAULT_SLOTS: tuple[str, ...] = (
     "09:00", "10:00", "11:00", "14:00", "15:00", "16:00",
 )
@@ -53,13 +59,55 @@ class SchedulerService:
         self,
         store: Optional[AppointmentStore] = None,
         *,
-        slots: Sequence[str] = DEFAULT_SLOTS,
+        config: Optional[SchedulerConfig] = None,
+        country: Optional[str] = None,
+        state: Optional[str] = None,
+        holidays: Optional[Iterable[date]] = None,
         today: Optional[Callable[[], date]] = None,
     ) -> None:
         self.store: AppointmentStore = store or InMemoryAppointmentStore()
-        self._slots = tuple(slots)
+        # The tenant's rules (hours/lunch/weekends/slot) drive the availability engine; the
+        # host injects config + location (country/state → holidays) per tenant. With none,
+        # sensible defaults apply (classic 09–17 working day, no holiday filtering).
+        self._config = config or SchedulerConfig()
+        self._country, self._state = country, state
+        self._holidays = list(holidays) if holidays is not None else None
+        self._engine = AvailabilityEngine(self._config, country=country, state=state,
+                                          holidays=self._holidays)
+        self._slots: tuple[str, ...] = tuple(self._engine.slot_starts())
         # Injectable clock keeps the "start from tomorrow" rule deterministic in tests.
         self._today: Callable[[], date] = today or date.today
+
+    # ── settings (config read/write — the host authorises WHO via RBAC) ──
+    def get_settings(self) -> dict:
+        """The tenant's current scheduling rules (hours/lunch/weekends/slot/policy)."""
+        return self._config.to_dict()
+
+    def set_settings(self, **overrides: object) -> dict:
+        """Update scheduling rules and rebuild the availability engine. Only the fields
+        passed (non-None) change; raises on a malformed value. The *vertical* applies the
+        change; the *host* decides who may call it (supervisor) — this is just the writer.
+        """
+        raw = {**self._config.to_dict(),
+               **{k: v for k, v in overrides.items() if v is not None}}
+        try:
+            new_config = SchedulerConfig(raw)
+        except (ValueError, TypeError) as exc:
+            raise SchedulerError(f"invalid schedule settings: {exc}") from exc
+        self._config = new_config
+        self._engine = AvailabilityEngine(self._config, country=self._country,
+                                          state=self._state, holidays=self._holidays)
+        self._slots = tuple(self._engine.slot_starts())
+        return self._config.to_dict()
+
+    def set_auto_confirm(self, host_id: str, value: bool) -> Host:
+        """Set a professional's auto_confirm flag (the EMPLOYEE's own choice; the host pins
+        host_id to the caller's own agenda for non-supervisors via RBAC)."""
+        host = self.store.get_host(host_id)
+        if host is None:
+            raise SchedulerError(f"unknown host: {host_id}")
+        host.auto_confirm = bool(value)
+        return host
 
     # ── reads ──────────────────────────────────────────────────────────
     def list_hosts(self) -> list[Host]:
@@ -69,6 +117,7 @@ class SchedulerService:
         if self.store.get_host(host_id) is None:
             raise SchedulerError(f"unknown host: {host_id}")
         self._require_future(date)
+        self._require_working_day(date)
         taken = self.store.booked_times(host_id, date)
         return [s for s in self._slots if s not in taken]
 
@@ -79,16 +128,38 @@ class SchedulerService:
     # ── writes ─────────────────────────────────────────────────────────
     def book(self, host_id: str, date: str, time: str, with_name: str,
              notes: str = "") -> Appointment:
-        if self.store.get_host(host_id) is None:
+        host = self.store.get_host(host_id)
+        if host is None:
             raise SchedulerError(f"unknown host: {host_id}")
         self._require_future(date)
+        self._require_working_day(date)
+        self._enforce_policies(host_id, date, time, with_name)
         if time not in self._slots:
             raise SchedulerError(f"{time} is not a bookable slot")
         if time in self.store.booked_times(host_id, date):
-            raise SchedulerError(f"{time} on {date} is already booked")
+            # Idempotent: re-booking the IDENTICAL appointment (same host/date/time/client)
+            # returns the existing one instead of erroring. This makes the host's EGO↔judge
+            # correction loop safe — a retry that re-issues the same booking succeeds rather
+            # than colliding with its own first attempt. A *different* client still conflicts.
+            existing = next(
+                (a for a in self.store.list(host_id=host_id)
+                 if a.date == date and a.time == time and a.status in ACTIVE_STATUS), None)
+            if (existing and with_name.strip() and not existing.is_block
+                    and existing.with_name.strip().lower() == with_name.strip().lower()):
+                return existing
+            # Carry the free alternatives IN the error (the parent's SLOT_UNAVAILABLE
+            # pattern) so the model offers them in one shot instead of re-looping.
+            free = [s for s in self._slots if s not in self.store.booked_times(host_id, date)]
+            free_txt = ", ".join(free) if free else "none that day"
+            raise SchedulerError(
+                f"{time} on {date} is already booked. Free slots on {date}: {free_txt}")
+        # The professional's auto_confirm decides: instant CONFIRMED, or PENDING until they
+        # accept (update_appointment_status). The booker's *role* never enters here — RBAC is
+        # the host's job; the vertical only reads the professional's own setting.
+        status = CONFIRMED if host.auto_confirm else PENDING
         appt = Appointment(
             appointment_id=uuid.uuid4().hex[:8], host_id=host_id, date=date,
-            time=time, with_name=with_name, notes=notes)   # status defaults to PENDING
+            time=time, with_name=with_name, status=status, notes=notes)
         self.store.add(appt)
         return appt
 
@@ -111,6 +182,91 @@ class SchedulerService:
         appt.cancel_reason = reason
         self.store.update(appt)
         return appt
+
+    def reschedule(self, appointment_id: str, new_date: str, new_time: str) -> Appointment:
+        """Move an existing appointment to a new date/time in ONE atomic step (keeps the id).
+
+        This is the dedicated "remarcar" path — far more reliable than asking a model to
+        orchestrate cancel + rebook, and it never leaves the client double-booked. Domain
+        rules mirror book: future date, valid+free slot (a conflict carries the free slots).
+        Moving to the slot it already occupies is a no-op. The appointment keeps its status
+        (the host may treat a reschedule as needing re-confirmation via its own flow).
+        """
+        appt = self.store.get(appointment_id)
+        if appt is None:
+            raise SchedulerError(f"unknown appointment: {appointment_id}")
+        if appt.status not in ACTIVE_STATUS:
+            raise SchedulerError(
+                f"appointment {appointment_id} is {appt.status}; only an active "
+                f"appointment can be rescheduled")
+        self._require_future(new_date)
+        self._require_working_day(new_date)
+        if new_time not in self._slots:
+            raise SchedulerError(f"{new_time} is not a bookable slot")
+        if (new_date, new_time) == (appt.date, appt.time):
+            return appt                                       # already there → no-op
+        taken = {a.time for a in self.store.list(host_id=appt.host_id)
+                 if a.date == new_date and a.status in ACTIVE_STATUS
+                 and a.appointment_id != appointment_id}
+        if new_time in taken:
+            free = [s for s in self._slots if s not in taken]
+            free_txt = ", ".join(free) if free else "none that day"
+            raise SchedulerError(
+                f"{new_time} on {new_date} is already booked. Free slots on {new_date}: {free_txt}")
+        appt.date = new_date
+        appt.time = new_time
+        self.store.update(appt)
+        return appt
+
+    def block_schedule(self, host_id: str, date: str, *, start_time: str = "",
+                       end_time: str = "", description: str = "") -> list[Appointment]:
+        """Make a host unavailable for a slot, a time range, or the whole day.
+
+        Mirrors the parent's ``block_schedule``: a block is a host self-occupation,
+        stored as a CONFIRMED appointment **with no client** (``is_block``) so it removes
+        the slot from availability exactly like a real booking. With no ``start_time`` the
+        **entire working day** is blocked; with ``start_time`` alone a single slot; with
+        both, every slot in ``[start_time, end_time)``. Refuses if a real client booking
+        already sits in the range (never silently bury a patient). Idempotent: an
+        already-blocked slot is skipped, not duplicated.
+
+        **Role-blind:** *who* may block (the parent's GUEST-can't / EMPLOYEE-own-only rule)
+        is the host's call — the host scopes ``host_id`` per identity and gates tool
+        visibility; the vertical only enforces the domain rules (future date, no conflict).
+        """
+        if self.store.get_host(host_id) is None:
+            raise SchedulerError(f"unknown host: {host_id}")
+        self._require_not_past(date)
+        targets = self._slots_in_range(start_time, end_time)
+        active = {a.time: a for a in self.store.list(host_id=host_id)
+                  if a.date == date and a.status in ACTIVE_STATUS}
+        conflicts = sorted(t for t in targets if t in active and not active[t].is_block)
+        if conflicts:
+            raise SchedulerError(
+                f"cannot block {date}: client appointments exist at {', '.join(conflicts)}")
+        note = description.strip() or "Bloqueado"
+        created: list[Appointment] = []
+        for t in targets:
+            if t in active:        # already blocked → idempotent skip
+                continue
+            appt = Appointment(
+                appointment_id=uuid.uuid4().hex[:8], host_id=host_id, date=date,
+                time=t, with_name="", status=CONFIRMED, notes=note)
+            self.store.add(appt)
+            created.append(appt)
+        return created
+
+    def _slots_in_range(self, start_time: str, end_time: str) -> list[str]:
+        if not start_time:
+            return list(self._slots)                       # whole working day
+        if not end_time:
+            if start_time not in self._slots:
+                raise SchedulerError(f"{start_time} is not a bookable slot")
+            return [start_time]                            # single slot
+        targets = [s for s in self._slots if start_time <= s < end_time]
+        if not targets:
+            raise SchedulerError(f"no bookable slots between {start_time} and {end_time}")
+        return targets
 
     # ── date resolution ────────────────────────────────────────────────
     def resolve_date(self, expression: str) -> str:
@@ -147,3 +303,66 @@ class SchedulerService:
         if d <= self._today():
             raise SchedulerError(
                 f"{iso_date} is today or in the past; scheduling starts from tomorrow")
+
+    def _enforce_policies(self, host_id: str, iso_date: str, time: str, with_name: str) -> None:
+        """Opt-in business guards (ported from the parent; all OFF by default so behaviour
+        is unchanged unless a tenant configures them):
+
+        - **booking window** (`booking_window_days`) — reject a date too far ahead
+          (the parent's DATE_TOO_FAR; guards against an LLM weekday miscalc / abuse).
+        - **single active** (`max_active_per_client`) — a client may not hold more active
+          appointments than allowed (the parent's ACTIVE_APPOINTMENT_EXISTS); this is what
+          stops the "same client booked at 9h AND 11h" inconsistency at the root.
+        - **cooldown** (`cooldown_days`) — wait N days after the last COMPLETED appointment
+          before booking again (the parent's COOLDOWN_ACTIVE).
+        """
+        cfg = self._config
+        client = with_name.strip()
+        # booking window — how far ahead a booking is allowed
+        if cfg.booking_window_days > 0:
+            d = date.fromisoformat(iso_date)
+            max_date = self._today() + timedelta(days=cfg.booking_window_days)
+            if d > max_date:
+                raise SchedulerError(
+                    f"{iso_date} is beyond the booking window of {cfg.booking_window_days} "
+                    f"days (latest bookable date: {max_date.isoformat()})")
+        if not client:                      # a block / nameless hold skips client policies
+            return
+        mine = [a for a in self.store.list(with_name=client) if a.status in ACTIVE_STATUS]
+        # single-active — re-booking the SAME slot is idempotent (handled later), not a 2nd
+        if cfg.max_active_per_client is not None:
+            already_here = any(a.host_id == host_id and a.date == iso_date and a.time == time
+                               for a in mine)
+            if not already_here and len(mine) >= cfg.max_active_per_client:
+                ex = mine[0]
+                raise SchedulerError(
+                    f"{client} already has an active appointment on {ex.date} at {ex.time} "
+                    f"(id {ex.appointment_id}); cancel or reschedule it before booking another")
+        # cooldown — N days after the last COMPLETED appointment
+        if cfg.cooldown_days > 0:
+            completed = [date.fromisoformat(a.date) for a in self.store.list(with_name=client)
+                         if a.status == COMPLETED]
+            if completed:
+                eligible = max(completed) + timedelta(days=cfg.cooldown_days)
+                remaining = (eligible - self._today()).days
+                if remaining > 0:
+                    raise SchedulerError(
+                        f"{client} must wait {remaining} more day(s) after the last "
+                        f"appointment before booking again")
+
+    def _require_working_day(self, iso_date: str) -> None:
+        """Reject a holiday or a non-working weekday (per the tenant's config + location).
+        Called after the date is already validated as a future ISO date."""
+        working, reason = self._engine.is_working_day(date.fromisoformat(iso_date))
+        if not working:
+            raise SchedulerError(f"{iso_date}: {reason}")
+
+    def _require_not_past(self, iso_date: str) -> None:
+        """Blocking is allowed from today on (a host can mark *today* as unavailable),
+        only a strictly past date is refused — mirrors the parent's ``block_schedule``."""
+        try:
+            d = date.fromisoformat(iso_date)
+        except ValueError as exc:
+            raise SchedulerError(f"invalid date: {iso_date} (use YYYY-MM-DD)") from exc
+        if d < self._today():
+            raise SchedulerError(f"{iso_date} is in the past; cannot block past dates")

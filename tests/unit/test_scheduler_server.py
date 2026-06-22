@@ -27,13 +27,21 @@ async def test_tools_and_annotations():
     tools = await _server().list_tools()
     ann = {t.name: t.annotations for t in tools}
     assert set(ann) == {"resolve_date", "list_schedulable_hosts", "check_availability",
-                        "book_appointment", "list_appointments",
-                        "update_appointment_status", "cancel_appointment"}
+                        "book_appointment", "block_schedule", "list_appointments",
+                        "reschedule_appointment", "update_appointment_status",
+                        "cancel_appointment", "get_schedule_settings",
+                        "set_schedule_settings", "set_auto_confirm"}
+    assert ann["get_schedule_settings"].readOnlyHint is True
+    assert ann["set_schedule_settings"].readOnlyHint is False
+    assert ann["set_auto_confirm"].readOnlyHint is False
     assert ann["resolve_date"].readOnlyHint is True
     assert ann["check_availability"].readOnlyHint is True
     assert ann["book_appointment"].readOnlyHint is False
+    assert ann["block_schedule"].readOnlyHint is False
     assert ann["update_appointment_status"].readOnlyHint is False
     assert ann["cancel_appointment"].destructiveHint is True
+    # reschedule is a confirmed (destructive) action → EGO gate B holds it
+    assert ann["reschedule_appointment"].destructiveHint is True
 
 
 async def test_list_hosts_tool():
@@ -46,7 +54,7 @@ async def test_book_then_list_then_cancel_flow():
     booked = _text(await mcp.call_tool(
         "book_appointment",
         {"host_id": "dr_silva", "date": "2026-07-01", "time": "09:00", "with_name": "Ana"}))
-    assert "Booked" in booked and "PENDING" in booked
+    assert "Booked" in booked and "CONFIRMED" in booked   # dr_silva auto_confirms
 
     listed = _text(await mcp.call_tool("list_appointments", {"with_name": "Ana"}))
     assert "Ana" in listed and "dr_silva" in listed
@@ -83,6 +91,65 @@ async def test_empty_state_messages():
     empty = build_server(SchedulerService(InMemoryAppointmentStore(), today=lambda: _TODAY))
     assert "No schedulable hosts" in _text(await empty.call_tool("list_schedulable_hosts", {}))
     assert "No appointments" in _text(await empty.call_tool("list_appointments", {}))
+
+
+async def test_schedule_settings_tools():
+    mcp = _server()
+    before = _text(await mcp.call_tool("get_schedule_settings", {}))
+    assert "work_start=09:00" in before
+    out = _text(await mcp.call_tool("set_schedule_settings", {"work_start": "08:00"}))
+    assert "work_start=08:00" in out
+    # the change took effect on availability
+    avail = _text(await mcp.call_tool(
+        "check_availability", {"host_id": "dr_silva", "date": "2026-07-01"}))
+    assert "08:00" in avail
+
+
+async def test_set_auto_confirm_tool():
+    mcp = _server()
+    out = _text(await mcp.call_tool(
+        "set_auto_confirm", {"host_id": "dr_silva", "auto_confirm": False}))
+    assert "dr_silva" in out and "False" in out
+    booked = _text(await mcp.call_tool(
+        "book_appointment",
+        {"host_id": "dr_silva", "date": "2026-07-01", "time": "09:00", "with_name": "Ana"}))
+    assert "PENDING" in booked      # now waits for the professional to accept
+
+
+async def test_reschedule_tool_moves_appointment():
+    mcp = _server()
+    booked = _text(await mcp.call_tool(
+        "book_appointment",
+        {"host_id": "dr_silva", "date": "2026-07-01", "time": "09:00", "with_name": "Ana"}))
+    appt_id = booked.split()[1].rstrip(":")
+    out = _text(await mcp.call_tool(
+        "reschedule_appointment",
+        {"appointment_id": appt_id, "new_date": "2026-07-01", "new_time": "11:00"}))
+    assert "Rescheduled" in out and "11:00" in out
+    # 09:00 is free again, 11:00 is now taken
+    avail = _text(await mcp.call_tool(
+        "check_availability", {"host_id": "dr_silva", "date": "2026-07-01"}))
+    assert "09:00" in avail and "11:00" not in avail
+
+
+async def test_block_schedule_tool():
+    mcp = _server()
+    out = _text(await mcp.call_tool(
+        "block_schedule", {"host_id": "dr_silva", "date": "2026-07-01",
+                           "description": "Férias"}))
+    assert "Blocked" in out and "Férias" in out
+    # the whole day is now gone from availability
+    avail = _text(await mcp.call_tool(
+        "check_availability", {"host_id": "dr_silva", "date": "2026-07-01"}))
+    assert "no free slots" in avail.lower()
+
+
+async def test_block_schedule_conflict_errors():
+    mcp = _server()
+    await mcp.call_tool("book_appointment", {
+        "host_id": "dr_silva", "date": "2026-07-01", "time": "09:00", "with_name": "Ana"})
+    with pytest.raises(Exception):   # a client booking in range → SchedulerError as tool error
+        await mcp.call_tool("block_schedule", {"host_id": "dr_silva", "date": "2026-07-01"})
 
 
 async def test_no_free_slots_message():

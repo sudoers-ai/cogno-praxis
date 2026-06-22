@@ -44,14 +44,15 @@ async def test_scheduler_loop_over_mcp():
         hosts = await disp.execute("list_schedulable_hosts", {})
         assert hosts.ok and "dr_silva" in hosts.output
 
-        # book → ToolResult(ok=True, side_effect=True), new appointment is PENDING
+        # book → ToolResult(ok=True, side_effect=True). dr_souza has auto_confirm=False,
+        # so the new appointment stays PENDING until the professional accepts it.
         booked = await disp.execute("book_appointment", {
-            "host_id": "dr_silva", "date": FUTURE, "time": "09:00", "with_name": "Ana"})
+            "host_id": "dr_souza", "date": FUTURE, "time": "09:00", "with_name": "Ana"})
         assert booked.ok and "Booked" in booked.output and "PENDING" in booked.output
         assert booked.side_effect is True
 
         # a double-book is a recoverable tool error
         clash = await disp.execute("book_appointment", {
-            "host_id": "dr_silva", "date": FUTURE, "time": "09:00", "with_name": "Bob"})
+            "host_id": "dr_souza", "date": FUTURE, "time": "09:00", "with_name": "Bob"})
         assert clash.ok is False
         assert "already booked" in (clash.error or "")

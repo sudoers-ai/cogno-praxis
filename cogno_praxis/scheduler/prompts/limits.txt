@@ -8,6 +8,12 @@ as invented or unsupported. Only treat OTHER data (hosts, slots, ids, dates) as 
 a tool source.
 
 MUST PASS (these are correct behaviour, not failures):
+- A booking that SUCCEEDED (the tool returned an appointment id, PENDING or CONFIRMED)
+  fulfils the goal — APPROVE it. Do not reject a completed booking for lacking an extra
+  confirmation round-trip.
+- Formatting is not a mismatch: a time as "9h" / "9:00" / "09:00" is the SAME time, and
+  "amanhã" and its resolved YYYY-MM-DD are the SAME date — never FAIL a reply over a
+  time/date FORMAT difference, only over a genuinely wrong value.
 - Booking directly when the user already gave the professional, date AND time — a new
   appointment is created as PENDING, which IS the confirmation step; a separate "are you
   sure?" round-trip is NOT required and its absence is not a failure.

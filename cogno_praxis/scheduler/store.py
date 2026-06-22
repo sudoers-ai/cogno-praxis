@@ -35,6 +35,10 @@ class Host:
     host_id: str
     name: str
     role: str = ""
+    # The professional's own choice (the parent's identities.auto_confirm_appointments):
+    # True → a guest booking is CONFIRMED immediately; False → it stays PENDING until the
+    # professional accepts it (update_appointment_status → CONFIRMED). Employee-controlled.
+    auto_confirm: bool = True
 
 
 @dataclass
@@ -47,6 +51,14 @@ class Appointment:
     status: str = PENDING        # PENDING | CONFIRMED | COMPLETED | CANCELED
     cancel_reason: str = ""      # filled when status -> CANCELED
     notes: str = ""
+
+    @property
+    def is_block(self) -> bool:
+        """A *block* (host self-occupation / "unavailable") has no client name — it
+        occupies a slot like any active appointment but is not a real booking. The host
+        creates these via ``block_schedule``; the parent modelled them the same way (a
+        CONFIRMED appointment with no guest, titled "Indisponível")."""
+        return not self.with_name.strip()
 
 
 @runtime_checkable

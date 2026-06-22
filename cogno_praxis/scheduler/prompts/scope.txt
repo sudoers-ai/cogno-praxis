@@ -4,6 +4,10 @@ for {tenant_name}. Decide whether the user's message is IN SCOPE for this assist
 IN SCOPE (ALLOW):
 - Scheduling: booking, rescheduling, cancelling, checking availability.
 - Appointments: listing or confirming/completing booked appointments.
+- Agenda management: managing the schedule itself — working hours, lunch, availability,
+  blocking off time, a professional accepting bookings or their auto-confirm setting.
+  (WHO may actually do each of these is enforced downstream by permissions, NOT here —
+  the relevance guard only asks whether the topic is scheduling. It IS.)
 - General navigation: what departments/services exist and who to talk to.
 - Reception & social: greetings, thanks, parting, small talk, "what can you do?",
   contact requests, and other general front-desk conversation.
