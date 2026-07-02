@@ -50,6 +50,15 @@ def _fold(s: str) -> str:
     return unicodedata.normalize("NFKD", s.lower()).encode("ascii", "ignore").decode("ascii")
 
 
+def _norm_host(s: str) -> str:
+    """Fold to a comparable key for fuzzy host matching: accent-free, no honorific, alnum only —
+    so 'dr_jose_luiz_manzoli', 'Dr. José Luiz Manzoli' and 'joseluizmanzoli' all collapse equal."""
+    folded = _fold(s)
+    for hon in ("dra", "dr", "sr", "sra"):
+        folded = folded.replace(hon, "")
+    return "".join(ch for ch in folded if ch.isalnum())
+
+
 class SchedulerError(RuntimeError):
     """A recoverable domain error (unknown host, slot taken, past date, unknown id)."""
 
@@ -109,11 +118,27 @@ class SchedulerService:
         host.auto_confirm = bool(value)
         return host
 
+    # ── host resolution ────────────────────────────────────────────────
+    def _resolve_host_id(self, host_id: str) -> str:
+        """Tolerate a model that invents a name-slug id ('dr_jose_luiz_manzoli') instead of the
+        catalog id: exact match first, then a normalized match against every host's id AND name
+        (accent/honorific/separator-insensitive). Returns the real id, or the input unchanged so
+        the caller's 'unknown host' error still fires when nothing matches."""
+        if self.store.get_host(host_id) is not None:
+            return host_id
+        target = _norm_host(host_id)
+        if target:
+            for h in self.store.list_hosts():
+                if _norm_host(h.host_id) == target or _norm_host(h.name) == target:
+                    return h.host_id
+        return host_id
+
     # ── reads ──────────────────────────────────────────────────────────
     def list_hosts(self) -> list[Host]:
         return self.store.list_hosts()
 
     def check_availability(self, host_id: str, date: str) -> list[str]:
+        host_id = self._resolve_host_id(host_id)
         if self.store.get_host(host_id) is None:
             raise SchedulerError(f"unknown host: {host_id}")
         self._require_future(date)
@@ -128,6 +153,7 @@ class SchedulerService:
     # ── writes ─────────────────────────────────────────────────────────
     def book(self, host_id: str, date: str, time: str, with_name: str,
              notes: str = "") -> Appointment:
+        host_id = self._resolve_host_id(host_id)
         host = self.store.get_host(host_id)
         if host is None:
             raise SchedulerError(f"unknown host: {host_id}")

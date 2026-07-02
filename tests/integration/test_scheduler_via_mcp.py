@@ -19,8 +19,20 @@ pytest.importorskip("cogno_mcp", reason="cogno-mcp not installed")
 from cogno_mcp import MCPDispatcher, stdio_session  # noqa: E402
 
 SERVER = str(Path(__file__).resolve().parents[2] / "cogno_praxis" / "scheduler" / "server.py")
-# Demo server uses the real clock; pick a date safely in the future ("from tomorrow on").
-FUTURE = (date.today() + timedelta(days=30)).isoformat()
+
+
+def _future_weekday(days: int = 30) -> str:
+    """A date safely in the future, rolled forward to a weekday — the demo server uses the real
+    clock and has no Saturday/Sunday hours, so a fixed +N days could land on a weekend and the
+    booking would (correctly) be refused, failing this test on those calendar days."""
+    d = date.today() + timedelta(days=days)
+    while d.weekday() >= 5:  # Sat=5, Sun=6 → advance to Monday
+        d += timedelta(days=1)
+    return d.isoformat()
+
+
+# Demo server uses the real clock; pick a weekday safely in the future ("from tomorrow on").
+FUTURE = _future_weekday()
 
 
 @pytest.mark.asyncio

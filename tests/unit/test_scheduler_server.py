@@ -174,3 +174,27 @@ async def test_book_today_errors():
     with pytest.raises(Exception):  # past/today date rejected by the domain rule
         await mcp.call_tool("book_appointment", {
             "host_id": "dr_silva", "date": _TODAY.isoformat(), "time": "09:00", "with_name": "Ana"})
+
+
+def test_catalog_hosts_from_env_replaces_demo(monkeypatch):
+    """COGNO_SCHEDULER_HOSTS injects the tenant's real catalog and replaces the demo doctors."""
+    import json
+
+    from cogno_praxis.scheduler.server import _catalog_hosts
+
+    # unset → the built-in demo (standalone/tests stay usable)
+    monkeypatch.delenv("COGNO_SCHEDULER_HOSTS", raising=False)
+    assert {h.host_id for h in _catalog_hosts()} == {"dr_silva", "dr_souza", "ana"}
+
+    # set → exactly the injected catalog, no demo leakage; auto_confirm defaults to False
+    monkeypatch.setenv("COGNO_SCHEDULER_HOSTS", json.dumps(
+        [{"host_id": "comercial", "name": "Equipe Comercial", "role": "Demo"},
+         {"host_id": "suporte", "name": "Suporte", "role": "Onboarding", "auto_confirm": True}]))
+    hosts = {h.host_id: h for h in _catalog_hosts()}
+    assert set(hosts) == {"comercial", "suporte"}          # demo gone
+    assert hosts["comercial"].auto_confirm is False        # safe default
+    assert hosts["suporte"].auto_confirm is True
+
+    # empty list → a real tenant with NO professionals shows none (not the demo)
+    monkeypatch.setenv("COGNO_SCHEDULER_HOSTS", "[]")
+    assert _catalog_hosts() == []

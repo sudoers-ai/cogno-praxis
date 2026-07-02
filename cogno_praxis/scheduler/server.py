@@ -159,30 +159,40 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
     return mcp
 
 
-def _seeded_service() -> SchedulerService:
-    """A small demo service so the standalone server is immediately usable.
-
-    Two bookable professionals (so a SUPERVISOR overseeing *all* agendas is meaningful)
-    plus the front desk."""
+def _catalog_hosts() -> list[Host]:
+    """The bookable professionals to seed. A host injects the TENANT's real catalog via
+    ``COGNO_SCHEDULER_HOSTS`` (JSON: ``[{host_id, name, role, auto_confirm?}]``) — when set
+    (even to ``[]``) it REPLACES the demo, so a real tenant never shows the demo doctors.
+    Unset → the built-in demo, so the standalone server / tests stay immediately usable."""
+    raw = os.environ.get("COGNO_SCHEDULER_HOSTS")
+    if raw is not None:
+        return [Host(h["host_id"], h.get("name", h["host_id"]), h.get("role", ""),
+                     auto_confirm=bool(h.get("auto_confirm", False)))   # host decides; default safe
+                for h in json.loads(raw)]
     # dr_souza requires manual acceptance (auto_confirm=False) → bookings stay PENDING until
     # the professional accepts; dr_silva auto-confirms. Demonstrates the per-professional flag.
-    demo_hosts = [
+    return [
         Host("dr_silva", "Dr. Silva", "General Practitioner"),
         Host("dr_souza", "Dr. Souza", "Cardiologist", auto_confirm=False),
         Host("ana", "Ana Reception", "Front Desk"),
     ]
+
+
+def _seeded_service() -> SchedulerService:
+    """A service seeded from the injected tenant catalog (or the built-in demo when none)."""
+    hosts = _catalog_hosts()
     # Persistence: a host can point the scheduler at Postgres (COGNO_SCHEDULER_DSN +
     # COGNO_SCHEDULER_SCOPE = the tenant); otherwise the in-memory demo store.
     dsn = os.environ.get("COGNO_SCHEDULER_DSN")
     if dsn:
         from cogno_praxis.scheduler.stores.postgres import PgAppointmentStore
         pg = PgAppointmentStore(dsn, os.environ.get("COGNO_SCHEDULER_SCOPE", "default"))
-        for h in demo_hosts:
+        for h in hosts:
             pg.add_host(h)
         store: AppointmentStore = pg
     else:
         mem = InMemoryAppointmentStore()
-        for h in demo_hosts:
+        for h in hosts:
             mem.hosts[h.host_id] = h
         store = mem
     # Optional fixed clock for deterministic harnesses — a host running this server over
