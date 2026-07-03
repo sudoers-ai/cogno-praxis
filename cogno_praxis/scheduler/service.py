@@ -122,15 +122,22 @@ class SchedulerService:
     def _resolve_host_id(self, host_id: str) -> str:
         """Tolerate a model that invents a name-slug id ('dr_jose_luiz_manzoli') instead of the
         catalog id: exact match first, then a normalized match against every host's id AND name
-        (accent/honorific/separator-insensitive). Returns the real id, or the input unchanged so
-        the caller's 'unknown host' error still fires when nothing matches."""
+        (accent/honorific/separator-insensitive), then a **single specialty** match ('o
+        cardiologista' → the one cardiologist). An ambiguous specialty (more than one host with
+        that role) stays unresolved, so the caller lists them and the user picks. Returns the real
+        id, or the input unchanged so the 'unknown host' error still fires when nothing matches."""
         if self.store.get_host(host_id) is not None:
             return host_id
         target = _norm_host(host_id)
-        if target:
-            for h in self.store.list_hosts():
-                if _norm_host(h.host_id) == target or _norm_host(h.name) == target:
-                    return h.host_id
+        if not target:
+            return host_id
+        for h in self.store.list_hosts():
+            if _norm_host(h.host_id) == target or _norm_host(h.name) == target:
+                return h.host_id
+        # specialty/role: booking "com o cardiologista" is valid when exactly one host has it.
+        by_role = [h for h in self.store.list_hosts() if h.role and _norm_host(h.role) == target]
+        if len(by_role) == 1:
+            return by_role[0].host_id
         return host_id
 
     # ── reads ──────────────────────────────────────────────────────────
