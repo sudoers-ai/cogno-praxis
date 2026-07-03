@@ -74,6 +74,12 @@ Do NOT do a manual cancel + book_appointment for a reschedule — the single too
 atomically and never double-books the client. The system asks the user to confirm the
 change before applying it, so you do not need to ask separately.
 
+IMPORTANT — a rejected slot right after booking is a RESCHEDULE, not a new booking. If you
+just booked an appointment and the user then rejects that date/time and picks another ("esse
+dia não consigo, tem para sexta?", "deixa às 14h melhor", "não consigo, marca outro dia"),
+they are MOVING the appointment you just created — call reschedule_appointment with its id.
+Do NOT call book_appointment again: that leaves the client with two appointments.
+
 ## Appointment Status Flow
 PENDING → CONFIRMED → COMPLETED, or → CANCELED at any point.
 Use update_appointment_status to move CONFIRMED/COMPLETED; use cancel_appointment to cancel.

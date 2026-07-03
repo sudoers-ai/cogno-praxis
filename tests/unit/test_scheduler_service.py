@@ -61,6 +61,27 @@ def test_book_resolves_a_name_slug_host_id():
         svc.book("ghost_doctor", "2026-07-01", "10:00", "Ana")
 
 
+def test_book_resolves_a_single_specialty():
+    # "marca com o cardiologista" is valid when exactly one host has that specialty (role).
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_silva"] = Host("dr_silva", "Dr. Vinicius Vale", "Cardiologista")
+    store.hosts["dr_m"] = Host("dr_m", "Dr. Manzoli", "Endócrino")
+    svc = SchedulerService(store, today=lambda: _TODAY)
+    appt = svc.book("cardiologista", "2026-07-01", "09:00", "Ana")
+    assert appt.host_id == "dr_silva"        # the one cardiologist
+    assert "09:00" not in svc.check_availability("dr_silva", "2026-07-01")  # slot now taken
+
+
+def test_ambiguous_specialty_stays_unresolved():
+    # two cardiologists → the specialty is ambiguous; do NOT guess (the caller lists + user picks).
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_a"] = Host("dr_a", "Dr. A", "Cardiologista")
+    store.hosts["dr_b"] = Host("dr_b", "Dr. B", "Cardiologista")
+    svc = SchedulerService(store, today=lambda: _TODAY)
+    with pytest.raises(SchedulerError, match="unknown host"):
+        svc.book("cardiologista", "2026-07-01", "09:00", "Ana")
+
+
 def test_auto_confirm_false_keeps_pending():
     store = InMemoryAppointmentStore()
     store.hosts["dr_x"] = Host("dr_x", "Dr. X", "GP", auto_confirm=False)
