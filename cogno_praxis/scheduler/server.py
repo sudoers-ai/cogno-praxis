@@ -62,10 +62,14 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     def book_appointment(host_id: str, date: str, time: str, with_name: str,
-                         notes: str = "") -> str:
-        """Book an appointment with a host at a date/time for a client (status PENDING)."""
-        appt = svc.book(host_id, date, time, with_name, notes)
-        return (f"Booked {appt.appointment_id}: {with_name} with {host_id} "
+                         notes: str = "", guest_id: str = "", host_name: str = "") -> str:
+        """Book an appointment with a host at a date/time for a client (status PENDING).
+
+        ``guest_id`` is the client's STABLE id (host-injected) so the professional sees the
+        booking in their own agenda; ``with_name``/``host_name`` are display names."""
+        appt = svc.book(host_id, date, time, with_name, notes,
+                        guest_id=guest_id, host_name=host_name)
+        return (f"Booked {appt.appointment_id}: {with_name} with {appt.host_name or host_id} "
                 f"on {date} at {time} [{appt.status}].")
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
@@ -85,12 +89,19 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
                 f"{', '.join(b.time for b in blocks)} [{blocks[0].notes}].")
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    def list_appointments(with_name: str = "", host_id: str = "") -> str:
-        """List appointments, optionally filtered by client name or host."""
-        appts = svc.list_appointments(host_id=host_id or None, with_name=with_name or None)
+    def list_appointments(with_name: str = "", host_id: str = "", identity_id: str = "",
+                          role: str = "", guest_id: str = "") -> str:
+        """List appointments with role-based visibility.
+
+        The host injects ``identity_id`` + ``role``: a GUEST sees only their own bookings, an
+        EMPLOYEE only their own agenda, a SUPERVISOR/ADMIN everything. ``host_id``/``guest_id``/
+        ``with_name`` are optional explicit filters used when no role is given."""
+        appts = svc.list_appointments(
+            identity_id=identity_id or None, role=role or None,
+            host_id=host_id or None, guest_id=guest_id or None, with_name=with_name or None)
         if not appts:
             return "No appointments found."
-        return "\n".join(f"{a.appointment_id}: {a.with_name} with {a.host_id} "
+        return "\n".join(f"{a.appointment_id}: {a.with_name} with {a.host_name or a.host_id} "
                          f"on {a.date} at {a.time} [{a.status}]" for a in appts)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))

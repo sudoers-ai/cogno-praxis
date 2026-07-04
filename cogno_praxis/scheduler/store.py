@@ -27,6 +27,13 @@ VALID_STATUS: tuple[str, ...] = (PENDING, CONFIRMED, COMPLETED, CANCELED)
 # appointment frees the slot for future booking.
 ACTIVE_STATUS: frozenset[str] = frozenset({PENDING, CONFIRMED})
 
+# Roles whose "my appointments" view is UNSCOPED (sees every agenda in the scope) — the
+# oversight roles. EMPLOYEE sees their own host agenda; GUEST sees their own bookings.
+# The vertical only maps role→visibility (mechanics); the host decides the role (authorises).
+GUEST_ROLE = "GUEST"
+EMPLOYEE_ROLE = "EMPLOYEE"
+OVERSIGHT_ROLES: frozenset[str] = frozenset({"SUPERVISOR", "ADMIN", "SECRETARY"})
+
 
 @dataclass
 class Host:
@@ -44,21 +51,28 @@ class Host:
 @dataclass
 class Appointment:
     appointment_id: str
-    host_id: str
+    host_id: str         # the professional's STABLE id (opaque; == the host identity id)
     date: str            # ISO date "YYYY-MM-DD"
     time: str            # "HH:MM"
-    with_name: str       # who the appointment is with (the client, display name)
+    with_name: str       # the client's DISPLAY name (denormalized; NOT a key — see guest_id)
     status: str = PENDING        # PENDING | CONFIRMED | COMPLETED | CANCELED
     cancel_reason: str = ""      # filled when status -> CANCELED
     notes: str = ""
+    # The two-sided identity model (parent parity): both parties are STABLE opaque ids, so the
+    # same row is found from either side — a guest by ``guest_id``, the professional by ``host_id``
+    # — instead of the brittle display-name match ``with_name`` used to do. ``host_name`` is the
+    # professional's display name, denormalized like ``with_name`` (the vertical does not own the
+    # identity directory, so it can't JOIN labels — it echoes what the host injected).
+    guest_id: str = ""           # the client's stable id (empty for a block / nameless hold)
+    host_name: str = ""          # the professional's display name (denormalized)
 
     @property
     def is_block(self) -> bool:
-        """A *block* (host self-occupation / "unavailable") has no client name — it
-        occupies a slot like any active appointment but is not a real booking. The host
-        creates these via ``block_schedule``; the parent modelled them the same way (a
-        CONFIRMED appointment with no guest, titled "Indisponível")."""
-        return not self.with_name.strip()
+        """A *block* (host self-occupation / "unavailable") has no client — it occupies a slot
+        like any active appointment but is not a real booking. The host creates these via
+        ``block_schedule``; the parent modelled them the same way (a CONFIRMED appointment with
+        no guest, titled "Indisponível")."""
+        return not self.guest_id.strip() and not self.with_name.strip()
 
 
 @runtime_checkable
@@ -70,7 +84,7 @@ class AppointmentStore(Protocol):
     def booked_times(self, host_id: str, date: str) -> set[str]: ...
     def add(self, appointment: Appointment) -> None: ...
     def get(self, appointment_id: str) -> Optional[Appointment]: ...
-    def list(self, *, host_id: Optional[str] = None,
+    def list(self, *, host_id: Optional[str] = None, guest_id: Optional[str] = None,
              with_name: Optional[str] = None) -> list[Appointment]: ...
     def update(self, appointment: Appointment) -> None: ...
 
@@ -98,11 +112,13 @@ class InMemoryAppointmentStore:
     def get(self, appointment_id: str) -> Optional[Appointment]:
         return self.appointments.get(appointment_id)
 
-    def list(self, *, host_id: Optional[str] = None,
+    def list(self, *, host_id: Optional[str] = None, guest_id: Optional[str] = None,
              with_name: Optional[str] = None) -> list[Appointment]:
         out = list(self.appointments.values())
         if host_id is not None:
             out = [a for a in out if a.host_id == host_id]
+        if guest_id is not None:
+            out = [a for a in out if a.guest_id == guest_id]
         if with_name is not None:
             out = [a for a in out if a.with_name.lower() == with_name.lower()]
         return out

@@ -25,6 +25,9 @@ from cogno_praxis.scheduler.store import (
     CANCELED,
     COMPLETED,
     CONFIRMED,
+    EMPLOYEE_ROLE,
+    GUEST_ROLE,
+    OVERSIGHT_ROLES,
     PENDING,
     VALID_STATUS,
     Appointment,
@@ -213,20 +216,41 @@ class SchedulerService:
         taken = self.store.booked_times(host_id, date)
         return [s for s in self._slots if s not in taken]
 
-    def list_appointments(self, *, host_id: Optional[str] = None,
+    def list_appointments(self, *, identity_id: Optional[str] = None,
+                          role: Optional[str] = None, host_id: Optional[str] = None,
+                          guest_id: Optional[str] = None,
                           with_name: Optional[str] = None) -> list[Appointment]:
-        return self.store.list(host_id=host_id, with_name=with_name)
+        """Role-based visibility (parent parity), resolved in the VERTICAL:
+
+        - GUEST → only their own bookings (``guest_id == identity_id``)
+        - EMPLOYEE → only their own host agenda (``host_id == identity_id``)
+        - SUPERVISOR / ADMIN / SECRETARY → everything in the scope (no id filter)
+
+        The host AUTHORISES (it assigns the ``identity_id`` + ``role``); the vertical just maps
+        role→column and the store filters. When ``role`` is omitted the explicit
+        ``host_id``/``guest_id``/``with_name`` filters pass through (internal / test use)."""
+        if role is not None:
+            r = role.upper()
+            if r == GUEST_ROLE:
+                return self.store.list(guest_id=identity_id or "")
+            if r == EMPLOYEE_ROLE:
+                return self.store.list(host_id=identity_id or "")
+            if r in OVERSIGHT_ROLES:
+                return self.store.list()          # unscoped oversight — all agendas in scope
+            # unknown role → fail-safe to the narrowest view (own bookings), never "see all"
+            return self.store.list(guest_id=identity_id or "")
+        return self.store.list(host_id=host_id, guest_id=guest_id, with_name=with_name)
 
     # ── writes ─────────────────────────────────────────────────────────
     def book(self, host_id: str, date: str, time: str, with_name: str,
-             notes: str = "") -> Appointment:
+             notes: str = "", *, guest_id: str = "", host_name: str = "") -> Appointment:
         host_id = self._resolve_host_id(host_id)
         host = self.store.get_host(host_id)
         if host is None:
             raise SchedulerError(f"unknown host: {host_id}")
         self._require_future(date)
         self._require_working_day(date)
-        self._enforce_policies(host_id, date, time, with_name)
+        self._enforce_policies(host_id, date, time, with_name, guest_id=guest_id)
         if time not in self._slots:
             raise SchedulerError(f"{time} is not a bookable slot")
         if time in self.store.booked_times(host_id, date):
@@ -237,8 +261,11 @@ class SchedulerService:
             existing = next(
                 (a for a in self.store.list(host_id=host_id)
                  if a.date == date and a.time == time and a.status in ACTIVE_STATUS), None)
-            if (existing and with_name.strip() and not existing.is_block
-                    and existing.with_name.strip().lower() == with_name.strip().lower()):
+            # "same client" = same stable guest_id when we have one, else the display name.
+            if existing is not None and not existing.is_block and (
+                    (guest_id.strip() and existing.guest_id.strip() == guest_id.strip())
+                    or (not guest_id.strip() and with_name.strip()
+                        and existing.with_name.strip().lower() == with_name.strip().lower())):
                 return existing
             # Carry the free alternatives IN the error (the parent's SLOT_UNAVAILABLE
             # pattern) so the model offers them in one shot instead of re-looping.
@@ -252,7 +279,8 @@ class SchedulerService:
         status = CONFIRMED if host.auto_confirm else PENDING
         appt = Appointment(
             appointment_id=uuid.uuid4().hex[:8], host_id=host_id, date=date,
-            time=time, with_name=with_name, status=status, notes=notes)
+            time=time, with_name=with_name, status=status, notes=notes,
+            guest_id=guest_id, host_name=host_name or host.name)
         self.store.add(appt)
         return appt
 
@@ -404,7 +432,16 @@ class SchedulerService:
             raise SchedulerError(
                 f"{iso_date} is today or in the past; scheduling starts from tomorrow")
 
-    def _enforce_policies(self, host_id: str, iso_date: str, time: str, with_name: str) -> None:
+    def _mine(self, *, guest_id: str, with_name: str) -> list[Appointment]:
+        """A client's own appointments, keyed by the STABLE ``guest_id`` when present (parent
+        parity — active/cooldown checks follow the identity, not a display name), else by name."""
+        if guest_id.strip():
+            return self.store.list(guest_id=guest_id.strip())
+        client = with_name.strip()
+        return self.store.list(with_name=client) if client else []
+
+    def _enforce_policies(self, host_id: str, iso_date: str, time: str, with_name: str,
+                          *, guest_id: str = "") -> None:
         """Opt-in business guards (ported from the parent; all OFF by default so behaviour
         is unchanged unless a tenant configures them):
 
@@ -426,9 +463,10 @@ class SchedulerService:
                 raise SchedulerError(
                     f"{iso_date} is beyond the booking window of {cfg.booking_window_days} "
                     f"days (latest bookable date: {max_date.isoformat()})")
-        if not client:                      # a block / nameless hold skips client policies
+        if not client and not guest_id.strip():   # a block / nameless hold skips client policies
             return
-        mine = [a for a in self.store.list(with_name=client) if a.status in ACTIVE_STATUS]
+        mine = [a for a in self._mine(guest_id=guest_id, with_name=with_name)
+                if a.status in ACTIVE_STATUS]
         # single-active — re-booking the SAME slot is idempotent (handled later), not a 2nd
         if cfg.max_active_per_client is not None:
             already_here = any(a.host_id == host_id and a.date == iso_date and a.time == time
@@ -440,7 +478,8 @@ class SchedulerService:
                     f"(id {ex.appointment_id}); cancel or reschedule it before booking another")
         # cooldown — N days after the last COMPLETED appointment
         if cfg.cooldown_days > 0:
-            completed = [date.fromisoformat(a.date) for a in self.store.list(with_name=client)
+            completed = [date.fromisoformat(a.date)
+                         for a in self._mine(guest_id=guest_id, with_name=with_name)
                          if a.status == COMPLETED]
             if completed:
                 eligible = max(completed) + timedelta(days=cfg.cooldown_days)
