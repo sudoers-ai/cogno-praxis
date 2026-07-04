@@ -452,10 +452,15 @@ class SchedulerService:
 
     def _require_working_day(self, iso_date: str) -> None:
         """Reject a holiday or a non-working weekday (per the tenant's config + location).
-        Called after the date is already validated as a future ISO date."""
-        working, reason = self._engine.is_working_day(date.fromisoformat(iso_date))
+        Called after the date is already validated as a future ISO date. The error names
+        the next working day so the caller can OFFER it instead of dead-ending (never
+        silently book a different day than the user asked)."""
+        d = date.fromisoformat(iso_date)
+        working, reason = self._engine.is_working_day(d)
         if not working:
-            raise SchedulerError(f"{iso_date}: {reason}")
+            nwd = self._engine.next_working_day(d)
+            hint = f" — o próximo dia útil é {nwd.isoformat()}" if nwd else ""
+            raise SchedulerError(f"{iso_date}: {reason}{hint}")
 
     def _require_not_past(self, iso_date: str) -> None:
         """Blocking is allowed from today on (a host can mark *today* as unavailable),
