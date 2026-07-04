@@ -206,6 +206,27 @@ def test_resolve_date_weekdays():
     assert svc.resolve_date("terça") == "2026-07-07"
 
 
+def test_resolve_date_explicit_calendar():
+    svc = _svc()  # today = 2026-06-30 (Tuesday)
+    # numeric DAY-FIRST (pt-BR): 09/07 is 9 July, not 7 September
+    assert svc.resolve_date("09/07") == "2026-07-09"
+    assert svc.resolve_date("dia 09/07") == "2026-07-09"           # tolerates a prefix
+    assert svc.resolve_date("9-7-2026") == "2026-07-09"            # other separators + year
+    assert svc.resolve_date("9.7.26") == "2026-07-09"              # 2-digit year → 20xx
+    # a bare day/month already past this year rolls to next year
+    assert svc.resolve_date("29/06") == "2027-06-29"
+    assert svc.resolve_date("30/06") == "2026-06-30"              # today itself is allowed
+    # named month (PT + EN) and ISO passthrough
+    assert svc.resolve_date("9 de julho") == "2026-07-09"
+    assert svc.resolve_date("9 july") == "2026-07-09"
+    assert svc.resolve_date("2026-07-09") == "2026-07-09"
+    # impossible / unparseable → raise (caller asks the user)
+    with pytest.raises(SchedulerError):
+        svc.resolve_date("31/02")
+    with pytest.raises(SchedulerError):
+        svc.resolve_date("bananas")
+
+
 def test_reschedule_moves_slot_keeps_id():
     svc = _svc()
     a = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
