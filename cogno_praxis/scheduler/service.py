@@ -13,6 +13,7 @@ are the host's job, not the scheduler's.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 import uuid
 from datetime import date, timedelta
@@ -46,8 +47,67 @@ _WEEKDAYS = {
 }
 
 
+_MONTHS = {
+    "janeiro": 1, "fevereiro": 2, "marco": 3, "abril": 4, "maio": 5, "junho": 6,
+    "julho": 7, "agosto": 8, "setembro": 9, "outubro": 10, "novembro": 11, "dezembro": 12,
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+}
+_ISO_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+# Numeric, DAY-FIRST (pt-BR locale): 09/07, 09-07-2026, 9.7.26 → day, month, [year].
+_NUMERIC_RE = re.compile(r"\b(\d{1,2})[/.\-](\d{1,2})(?:[/.\-](\d{2,4}))?\b")
+# Named: "9 de julho", "09 julho de 2026", "9 jul".
+_NAMED_RE = re.compile(r"\b(\d{1,2})\s*(?:de\s+)?([a-z]+)(?:\s+de\s+(\d{4}))?")
+
+
 def _fold(s: str) -> str:
     return unicodedata.normalize("NFKD", s.lower()).encode("ascii", "ignore").decode("ascii")
+
+
+def _year_for(day: int, month: int, today: date) -> Optional[date]:
+    """Pick the year that puts (day, month) today-or-later — this year, else next.
+    Returns None for an impossible day/month (e.g. 31/02)."""
+    for year in (today.year, today.year + 1):
+        try:
+            d = date(year, month, day)
+        except ValueError:
+            return None
+        if d >= today:
+            return d
+    return None
+
+
+def _parse_calendar_date(e: str, today: date) -> Optional[date]:
+    """Resolve an explicit calendar date from a folded phrase (ISO, numeric dd/mm,
+    or a named month). Returns None when the phrase carries no such date. Day-first
+    (pt-BR) — '09/07' is 9 July, not September 7."""
+    m = _ISO_RE.search(e)
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None
+    m = _NUMERIC_RE.search(e)
+    if m:
+        day, month = int(m.group(1)), int(m.group(2))
+        if m.group(3):                      # explicit year (2- or 4-digit)
+            y = int(m.group(3))
+            y += 2000 if y < 100 else 0
+            try:
+                return date(y, month, day)
+            except ValueError:
+                return None
+        return _year_for(day, month, today)
+    m = _NAMED_RE.search(e)
+    if m and m.group(2) in _MONTHS:
+        day, month = int(m.group(1)), _MONTHS[m.group(2)]
+        if m.group(3):
+            try:
+                return date(int(m.group(3)), month, day)
+            except ValueError:
+                return None
+        return _year_for(day, month, today)
+    return None
 
 
 def _norm_host(s: str) -> str:
@@ -305,12 +365,14 @@ class SchedulerService:
     def resolve_date(self, expression: str) -> str:
         """Deterministically resolve a relative/named date phrase to an ISO date.
 
-        Handles "hoje/today", "amanhã/tomorrow", "depois de amanhã", and weekday names
+        Handles "hoje/today", "amanhã/tomorrow", "depois de amanhã", weekday names
         (PT + EN, with or without "próxima"/"que vem") → the NEXT occurrence of that
-        weekday strictly after today (if today is that weekday, +7). This exists because
-        LLM weekday arithmetic is unreliable; the model calls this instead of guessing.
-        Raises ``SchedulerError`` when no date can be parsed (the caller then asks / uses
-        an explicit date).
+        weekday strictly after today (if today is that weekday, +7), AND explicit
+        calendar dates — ISO (2026-07-09), numeric DAY-FIRST pt-BR (09/07, 9-7-26),
+        or a named month ("9 de julho"). A bare day/month with no year rolls to the
+        year that puts it today-or-later. This exists because LLM date arithmetic is
+        unreliable; the model calls this instead of guessing. Raises ``SchedulerError``
+        when no date can be parsed (the caller then asks the user).
         """
         e = _fold(expression)
         today = self._today()
@@ -324,6 +386,11 @@ class SchedulerService:
             if word in e:
                 ahead = (wd - today.weekday()) % 7 or 7   # strictly the NEXT occurrence
                 return (today + timedelta(days=ahead)).isoformat()
+        # Explicit calendar date (ISO / numeric dd/mm / named month) — deterministic,
+        # so the model never has to interpret "09/07" itself (which made it flail).
+        cal = _parse_calendar_date(e, today)
+        if cal is not None:
+            return cal.isoformat()
         raise SchedulerError(f"could not resolve a date from: {expression!r}")
 
     # ── domain rules ───────────────────────────────────────────────────
