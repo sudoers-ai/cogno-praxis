@@ -57,7 +57,8 @@ async def test_book_then_list_then_cancel_flow():
     assert "Booked" in booked and "CONFIRMED" in booked   # dr_silva auto_confirms
 
     listed = _text(await mcp.call_tool("list_appointments", {"with_name": "Ana"}))
-    assert "Ana" in listed and "dr_silva" in listed
+    # the listing now shows the professional's DISPLAY name (host_name), not the raw host_id
+    assert "Ana" in listed and "Dr. Silva" in listed
 
     # availability no longer shows the taken slot
     avail = _text(await mcp.call_tool(

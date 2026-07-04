@@ -31,8 +31,12 @@ def _ensure_schema(conn: "psycopg.Connection", partitions: int) -> None:
                date text NOT NULL, time text NOT NULL, with_name text NOT NULL,
                status text NOT NULL, cancel_reason text NOT NULL DEFAULT '',
                notes text NOT NULL DEFAULT '',
+               guest_id text NOT NULL DEFAULT '', host_name text NOT NULL DEFAULT '',
                PRIMARY KEY (appointment_id, scope)
            ) PARTITION BY HASH (scope)""")
+    # Migration-safe: add the two-sided-identity columns to a pre-existing table.
+    conn.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS guest_id text NOT NULL DEFAULT ''")
+    conn.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS host_name text NOT NULL DEFAULT ''")
     for k in range(partitions):
         conn.execute(
             f"CREATE TABLE IF NOT EXISTS appointments_p{k} PARTITION OF appointments "
@@ -40,15 +44,25 @@ def _ensure_schema(conn: "psycopg.Connection", partitions: int) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS ix_appt_scope_host_date "
         "ON appointments (scope, host_id, date)")
+    # The guest-side visibility query (a GUEST's own bookings) is keyed by (scope, guest_id).
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS ix_appt_scope_guest "
+        "ON appointments (scope, guest_id)")
 
 
 def _host(row: tuple) -> Host:
     return Host(host_id=row[0], name=row[1], role=row[2], auto_confirm=row[3])
 
 
+# The canonical column order for an appointment SELECT (kept in sync with ``_appt``).
+_APPT_COLS = ("appointment_id, host_id, date, time, with_name, status, cancel_reason, "
+              "notes, guest_id, host_name")
+
+
 def _appt(row: tuple) -> Appointment:
     return Appointment(appointment_id=row[0], host_id=row[1], date=row[2], time=row[3],
-                       with_name=row[4], status=row[5], cancel_reason=row[6], notes=row[7])
+                       with_name=row[4], status=row[5], cancel_reason=row[6], notes=row[7],
+                       guest_id=row[8], host_name=row[9])
 
 
 class PgAppointmentStore:
@@ -98,26 +112,27 @@ class PgAppointmentStore:
         a = appointment
         self._conn.execute(
             """INSERT INTO appointments (appointment_id, scope, host_id, date, time,
-                   with_name, status, cancel_reason, notes)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                   with_name, status, cancel_reason, notes, guest_id, host_name)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (a.appointment_id, self._scope, a.host_id, a.date, a.time, a.with_name,
-             a.status, a.cancel_reason, a.notes))
+             a.status, a.cancel_reason, a.notes, a.guest_id, a.host_name))
 
     def get(self, appointment_id: str) -> Optional[Appointment]:
         row = self._conn.execute(
-            "SELECT appointment_id, host_id, date, time, with_name, status, cancel_reason, "
-            "notes FROM appointments WHERE scope = %s AND appointment_id = %s",
+            f"SELECT {_APPT_COLS} FROM appointments WHERE scope = %s AND appointment_id = %s",
             (self._scope, appointment_id)).fetchone()
         return _appt(row) if row else None
 
-    def list(self, *, host_id: Optional[str] = None,
+    def list(self, *, host_id: Optional[str] = None, guest_id: Optional[str] = None,
              with_name: Optional[str] = None) -> list[Appointment]:
-        sql = ("SELECT appointment_id, host_id, date, time, with_name, status, "
-               "cancel_reason, notes FROM appointments WHERE scope = %s")
+        sql = f"SELECT {_APPT_COLS} FROM appointments WHERE scope = %s"
         params: list = [self._scope]
         if host_id is not None:
             sql += " AND host_id = %s"
             params.append(host_id)
+        if guest_id is not None:
+            sql += " AND guest_id = %s"
+            params.append(guest_id)
         if with_name is not None:
             sql += " AND lower(with_name) = lower(%s)"
             params.append(with_name)
@@ -128,7 +143,7 @@ class PgAppointmentStore:
         a = appointment
         self._conn.execute(
             """UPDATE appointments SET host_id = %s, date = %s, time = %s, with_name = %s,
-                   status = %s, cancel_reason = %s, notes = %s
+                   status = %s, cancel_reason = %s, notes = %s, guest_id = %s, host_name = %s
                WHERE scope = %s AND appointment_id = %s""",
             (a.host_id, a.date, a.time, a.with_name, a.status, a.cancel_reason, a.notes,
-             self._scope, a.appointment_id))
+             a.guest_id, a.host_name, self._scope, a.appointment_id))

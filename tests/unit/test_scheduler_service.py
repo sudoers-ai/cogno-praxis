@@ -349,3 +349,51 @@ def test_resolve_date_unparseable_raises():
 def test_store_is_injectable_port():
     assert isinstance(InMemoryAppointmentStore(), __import__(
         "cogno_praxis.scheduler.store", fromlist=["AppointmentStore"]).AppointmentStore)
+
+
+# ── two-sided identity model: role-based visibility (the doctor-sees-guest-booking fix) ──
+def test_role_visibility_guest_doctor_supervisor():
+    # A guest books WITH a doctor. The SAME row must be visible to BOTH sides — the guest
+    # (guest_id) and the doctor (host_id) — which the old with_name-only model failed at.
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_vini"] = Host("dr_vini", "Dr. Vinicius Vale", "Cardio", auto_confirm=False)
+    svc = SchedulerService(store, today=lambda: _TODAY)
+
+    appt = svc.book("dr_vini", "2026-07-06", "09:00", "Ana",
+                    guest_id="ana_id", host_name="Dr. Vinicius Vale")
+    assert appt.status == PENDING and appt.guest_id == "ana_id"
+
+    # the DOCTOR (EMPLOYEE) sees the guest's PENDING booking in their own agenda
+    doc_view = svc.list_appointments(identity_id="dr_vini", role="EMPLOYEE")
+    assert [a.appointment_id for a in doc_view] == [appt.appointment_id]
+
+    # the GUEST sees their own booking
+    guest_view = svc.list_appointments(identity_id="ana_id", role="GUEST")
+    assert [a.appointment_id for a in guest_view] == [appt.appointment_id]
+
+    # a DIFFERENT guest sees nothing
+    assert svc.list_appointments(identity_id="bob_id", role="GUEST") == []
+
+    # a SUPERVISOR sees everything in scope
+    sup_view = svc.list_appointments(identity_id="whoever", role="SUPERVISOR")
+    assert [a.appointment_id for a in sup_view] == [appt.appointment_id]
+
+    # an unknown role fails safe to the NARROWEST view (own bookings), never "see all"
+    assert svc.list_appointments(identity_id="ana_id", role="WeirdRole") == guest_view
+
+
+def test_single_active_follows_guest_id_not_name():
+    # the single-active guard must key off the STABLE guest_id, so two people who happen to
+    # share a display name don't collide, and one person is correctly capped.
+    store = InMemoryAppointmentStore()
+    store.hosts["h"] = Host("h", "Host", "", auto_confirm=True)
+    svc = SchedulerService(store, today=lambda: _TODAY)
+    svc.set_settings(max_active_per_client=1)
+
+    svc.book("h", "2026-07-06", "09:00", "Ana", guest_id="ana_id")
+    # same guest_id, another slot → blocked (their 1 active slot is used)
+    with pytest.raises(SchedulerError, match="already has an active appointment"):
+        svc.book("h", "2026-07-07", "10:00", "Ana", guest_id="ana_id")
+    # a DIFFERENT guest_id with the SAME display name → allowed (not the same client)
+    other = svc.book("h", "2026-07-07", "11:00", "Ana", guest_id="ana2_id")
+    assert other.guest_id == "ana2_id"
