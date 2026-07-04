@@ -211,10 +211,10 @@ def _seeded_service() -> SchedulerService:
                             state=os.environ.get("COGNO_SCHEDULER_STATE"))
 
 
-# In-memory DEMO server for standalone stdio runs / tests (NOT for production —
-# a real host injects its own store: see examples/run_with_db.py).
-mcp = build_server(_seeded_service())
-
-
 if __name__ == "__main__":
-    mcp.run()
+    # Build the server ONLY when run as the stdio entrypoint. Building at module level ran on the
+    # mere `from cogno_praxis.scheduler.server import build_server` in the package __init__ AND
+    # again under `python -m` (the module executes twice: package import + __main__) — opening two
+    # Postgres connections and seeding the store twice per subprocess. A real host injects its own
+    # store via build_server; the seeded demo server is only for a standalone stdio run.
+    build_server(_seeded_service()).run()
