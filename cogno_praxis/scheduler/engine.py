@@ -151,6 +151,16 @@ class AvailabilityEngine:
             return False, "não há expediente aos domingos"
         return True, ""
 
+    def next_working_day(self, from_date: date, *, inclusive: bool = False) -> Optional[date]:
+        """The next working day at/after ``from_date`` (strictly after unless ``inclusive``).
+        Returns None if none is found within a year (a config with no working day at all)."""
+        d = from_date if inclusive else from_date + timedelta(days=1)
+        for _ in range(366):
+            if self.is_working_day(d)[0]:
+                return d
+            d += timedelta(days=1)
+        return None
+
     # ── slot generation ────────────────────────────────────────────────
     def generate_all_slots(self) -> list[Slot]:
         """All slots of a working day: work_start→work_end by slot_duration, minus lunch."""

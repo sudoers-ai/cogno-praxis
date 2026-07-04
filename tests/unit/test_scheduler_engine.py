@@ -66,6 +66,21 @@ def test_get_available_slots_filters_taken():
     assert "09:00" not in free and "10:00" in free
 
 
+def test_next_working_day_skips_weekends_and_holidays():
+    eng = AvailabilityEngine(SchedulerConfig())
+    # Fri 2026-07-03 → next working strictly after is Mon 2026-07-06 (skips Sat+Sun)
+    assert eng.next_working_day(date(2026, 7, 3)) == date(2026, 7, 6)
+    assert eng.next_working_day(date.fromisoformat(_SAT)) == date(2026, 7, 6)
+    assert eng.next_working_day(date.fromisoformat(_SUN)) == date(2026, 7, 6)
+    assert eng.next_working_day(date.fromisoformat(_WED)) == date(2026, 7, 2)  # Wed → Thu
+    # inclusive: a working day maps to itself; a weekend rolls forward
+    assert eng.next_working_day(date.fromisoformat(_WED), inclusive=True) == date.fromisoformat(_WED)
+    assert eng.next_working_day(date.fromisoformat(_SUN), inclusive=True) == date(2026, 7, 6)
+    # a holiday is skipped too
+    eng_h = AvailabilityEngine(SchedulerConfig(), holidays={date(2026, 7, 2)})
+    assert eng_h.next_working_day(date.fromisoformat(_WED)) == date(2026, 7, 3)  # Thu is holiday → Fri
+
+
 # ── service-level: the engine's working-day rules reach book/availability ──
 def _svc(**kw):
     store = InMemoryAppointmentStore()
@@ -84,6 +99,16 @@ def test_book_on_holiday_is_rejected():
     svc = _svc(holidays={date.fromisoformat(_WED)})
     with pytest.raises(SchedulerError, match="Feriado"):
         svc.book("dr_silva", _WED, "09:00", "Ana")
+
+
+def test_non_working_day_error_names_the_next_working_day():
+    # The error must be ACTIONABLE — it names the next working day so the model offers it
+    # instead of proposing an impossible slot / dead-ending.
+    svc = _svc()
+    with pytest.raises(SchedulerError, match="2026-07-06"):   # Sun 05/07 → Mon 06/07
+        svc.check_availability("dr_silva", _SUN)
+    with pytest.raises(SchedulerError, match="2026-07-06"):
+        svc.book("dr_silva", _SAT, "09:00", "Ana")
 
 
 def test_availability_reflects_tenant_config_slots():
