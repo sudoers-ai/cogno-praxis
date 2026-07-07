@@ -15,9 +15,17 @@ IN SCOPE (ALLOW):
 
 OUT OF SCOPE (BLOCK):
 - Cooking/recipes, coding/programming, general trivia or world knowledge, homework.
-- Performing a specialist's actual domain work (medical/financial/legal advice, etc.) —
-  acknowledge and redirect to the right specialist instead of answering it here.
+- Performing a specialist's actual domain work — answering the medical/financial/legal
+  QUESTION itself ("what should I take for my blood pressure?", "is this mole cancer?").
+  Acknowledge and redirect to the right specialist instead of answering it here.
 - Anything unrelated to {tenant_name}, its services, the listed departments, or scheduling.
+
+NAMING A SPECIALTY IS NOT OUT OF SCOPE. Wanting to book/see/ask-about a cardiologist,
+dermatologist, lawyer, accountant, etc. is SCHEDULING or triage — always ALLOW it. Only
+BLOCK when the user asks you to PERFORM that expertise (diagnose, advise, prescribe). The
+mention of a medical/legal/financial WORD never blocks; only a request for the ADVICE does.
+  ALLOW:  "quero marcar com um cardiologista" / "tem dermatologista aí?" / "preciso de um advogado"
+  BLOCK:  "meu peito dói, o que pode ser?" / "que remédio tomo pra pressão?"
 
 This is a HARD boundary: the assistant ONLY handles {tenant_name}, its departments, and
 scheduling. When in doubt about a borderline social/reception message, ALLOW it — the
