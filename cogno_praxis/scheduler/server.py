@@ -127,8 +127,9 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         """Cancel an existing appointment by id (optionally with a reason)."""
         appt = svc.cancel(appointment_id, reason)
         suffix = f" — {appt.cancel_reason}" if appt.cancel_reason else ""
-        return (f"Cancelled {appt.appointment_id} ({appt.with_name} on {appt.date} "
-                f"at {appt.time}){suffix}.")
+        # ``with {host_id}`` mirrors reschedule's shape so the host can parse who to notify.
+        return (f"Cancelled {appt.appointment_id} ({appt.with_name} with {appt.host_id} "
+                f"on {appt.date} at {appt.time}){suffix}.")
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_schedule_settings() -> str:
