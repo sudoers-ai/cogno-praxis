@@ -135,6 +135,33 @@ def test_list_appointments_filters():
     assert len(svc.list_appointments(with_name="ana")) == 1   # case-insensitive
 
 
+def test_list_appointments_hides_terminal_by_default():
+    # A stale CANCELED/COMPLETED row must not leak into the live agenda — that noise made the
+    # voicer narrate a fresh cancellation ("cancelado com sucesso") off an old row.
+    svc = _svc()
+    live = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
+    gone = svc.book("dr_silva", "2026-07-01", "10:00", "Bob")
+    done = svc.book("dr_silva", "2026-07-01", "11:00", "Cid")
+    svc.cancel(gone.appointment_id)
+    svc.update_status(done.appointment_id, COMPLETED)
+
+    active = svc.list_appointments()
+    assert [a.appointment_id for a in active] == [live.appointment_id]   # only PENDING/CONFIRMED
+    assert all(a.status in {PENDING, CONFIRMED} for a in active)
+
+    # the escape hatch brings history back when explicitly requested
+    everything = svc.list_appointments(include_history=True)
+    assert len(everything) == 3
+    assert {a.status for a in everything} == {CONFIRMED, CANCELED, COMPLETED}  # dr_silva auto-confirms
+
+    # the filter also applies to the role-scoped path (a guest never sees their canceled row)
+    svc.book("dr_silva", "2026-07-02", "09:00", "Ana", guest_id="g-ana")
+    canc = svc.book("dr_silva", "2026-07-02", "10:00", "Ana", guest_id="g-ana")
+    svc.cancel(canc.appointment_id)
+    guest_view = svc.list_appointments(identity_id="g-ana", role="GUEST")
+    assert all(a.status in {PENDING, CONFIRMED} for a in guest_view)
+
+
 def test_cancel_frees_the_slot():
     svc = _svc()
     appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")

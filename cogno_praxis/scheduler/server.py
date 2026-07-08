@@ -90,15 +90,19 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def list_appointments(with_name: str = "", host_id: str = "", identity_id: str = "",
-                          role: str = "", guest_id: str = "") -> str:
-        """List appointments with role-based visibility.
+                          role: str = "", guest_id: str = "", include_history: bool = False) -> str:
+        """List the LIVE appointments (PENDING/CONFIRMED) with role-based visibility.
 
         The host injects ``identity_id`` + ``role``: a GUEST sees only their own bookings, an
         EMPLOYEE only their own agenda, a SUPERVISOR/ADMIN everything. ``host_id``/``guest_id``/
-        ``with_name`` are optional explicit filters used when no role is given."""
+        ``with_name`` are optional explicit filters used when no role is given.
+
+        Canceled and completed appointments are hidden by default — set ``include_history=True``
+        ONLY when the user explicitly asks about past or canceled appointments."""
         appts = svc.list_appointments(
             identity_id=identity_id or None, role=role or None,
-            host_id=host_id or None, guest_id=guest_id or None, with_name=with_name or None)
+            host_id=host_id or None, guest_id=guest_id or None, with_name=with_name or None,
+            include_history=include_history)
         if not appts:
             return "No appointments found."
         return "\n".join(f"{a.appointment_id}: {a.with_name} with {a.host_name or a.host_id} "
