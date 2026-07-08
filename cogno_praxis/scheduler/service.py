@@ -219,7 +219,8 @@ class SchedulerService:
     def list_appointments(self, *, identity_id: Optional[str] = None,
                           role: Optional[str] = None, host_id: Optional[str] = None,
                           guest_id: Optional[str] = None,
-                          with_name: Optional[str] = None) -> list[Appointment]:
+                          with_name: Optional[str] = None,
+                          include_history: bool = False) -> list[Appointment]:
         """Role-based visibility (parent parity), resolved in the VERTICAL:
 
         - GUEST → only their own bookings (``guest_id == identity_id``)
@@ -228,18 +229,29 @@ class SchedulerService:
 
         The host AUTHORISES (it assigns the ``identity_id`` + ``role``); the vertical just maps
         role→column and the store filters. When ``role`` is omitted the explicit
-        ``host_id``/``guest_id``/``with_name`` filters pass through (internal / test use)."""
+        ``host_id``/``guest_id``/``with_name`` filters pass through (internal / test use).
+
+        By default only the LIVE agenda is returned — ``ACTIVE_STATUS`` (PENDING/CONFIRMED).
+        Terminal rows (CANCELED/COMPLETED) are hidden so a stale cancellation never leaks into
+        the reply (the parent's ``status != 'CANCELED'`` default; here also drops COMPLETED so
+        the professional sees only what is still on the calendar). ``include_history=True``
+        brings everything back when the user explicitly asks for past/canceled appointments."""
         if role is not None:
             r = role.upper()
             if r == GUEST_ROLE:
-                return self.store.list(guest_id=identity_id or "")
-            if r == EMPLOYEE_ROLE:
-                return self.store.list(host_id=identity_id or "")
-            if r in OVERSIGHT_ROLES:
-                return self.store.list()          # unscoped oversight — all agendas in scope
-            # unknown role → fail-safe to the narrowest view (own bookings), never "see all"
-            return self.store.list(guest_id=identity_id or "")
-        return self.store.list(host_id=host_id, guest_id=guest_id, with_name=with_name)
+                appts = self.store.list(guest_id=identity_id or "")
+            elif r == EMPLOYEE_ROLE:
+                appts = self.store.list(host_id=identity_id or "")
+            elif r in OVERSIGHT_ROLES:
+                appts = self.store.list()         # unscoped oversight — all agendas in scope
+            else:
+                # unknown role → fail-safe to the narrowest view (own bookings), never "see all"
+                appts = self.store.list(guest_id=identity_id or "")
+        else:
+            appts = self.store.list(host_id=host_id, guest_id=guest_id, with_name=with_name)
+        if not include_history:
+            appts = [a for a in appts if a.status in ACTIVE_STATUS]
+        return appts
 
     # ── writes ─────────────────────────────────────────────────────────
     def book(self, host_id: str, date: str, time: str, with_name: str,
