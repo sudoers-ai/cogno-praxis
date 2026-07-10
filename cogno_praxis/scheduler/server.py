@@ -90,21 +90,26 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def list_appointments(with_name: str = "", host_id: str = "", identity_id: str = "",
-                          role: str = "", guest_id: str = "", include_history: bool = False) -> str:
+                          role: str = "", guest_id: str = "", status: str = "",
+                          include_history: bool = False) -> str:
         """List the LIVE appointments (PENDING/CONFIRMED) with role-based visibility.
 
         The host injects ``identity_id`` + ``role``: a GUEST sees only their own bookings, an
         EMPLOYEE only their own agenda, a SUPERVISOR/ADMIN everything. ``host_id``/``guest_id``/
         ``with_name`` are optional explicit filters used when no role is given.
 
+        When the user asks for ONE status ("os pendentes", "as confirmadas"), pass ``status``
+        (PENDING/CONFIRMED/COMPLETED/CANCELED) — do NOT list everything and filter yourself.
+
         Canceled and completed appointments are hidden by default — set ``include_history=True``
         ONLY when the user explicitly asks about past or canceled appointments."""
         appts = svc.list_appointments(
             identity_id=identity_id or None, role=role or None,
             host_id=host_id or None, guest_id=guest_id or None, with_name=with_name or None,
-            include_history=include_history)
+            status=status or None, include_history=include_history)
         if not appts:
-            return "No appointments found."
+            return f"No {status.strip().upper()} appointments found." if status.strip() \
+                else "No appointments found."
         return "\n".join(f"{a.appointment_id}: {a.with_name} with {a.host_name or a.host_id} "
                          f"on {a.date} at {a.time} [{a.status}]" for a in appts)
 
@@ -122,8 +127,14 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     def update_appointment_status(appointment_id: str, new_status: str) -> str:
-        """Move an appointment along its lifecycle (CONFIRMED / COMPLETED / etc.)."""
-        appt = svc.update_status(appointment_id, new_status)
+        """Move an appointment along its lifecycle (CONFIRMED / COMPLETED / etc.).
+
+        The ids MUST come from a ``list_appointments`` call in THIS conversation turn —
+        never from memory of an earlier turn (the agenda may have changed since)."""
+        appt, changed = svc.update_status(appointment_id, new_status)
+        if not changed:
+            return (f"Appointment {appt.appointment_id} was ALREADY {appt.status} — no change "
+                    f"was made. If you meant a different appointment, list them again.")
         return f"Appointment {appt.appointment_id} is now {appt.status}."
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
