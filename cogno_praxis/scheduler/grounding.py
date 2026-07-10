@@ -175,7 +175,13 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
 
     # (2) availability fabrication — a slot menu with no availability read behind it.
     #     Repairable: the right answer is to actually CALL check_availability.
-    if _offers_slots(reply) and not _availability_read(tools):
+    #     Suppressed when a list_appointments read is IN HAND: a listing of the user's own
+    #     appointments carries dates + "qual deles…" phrasing and read as an offer, but it is
+    #     grounded in a real read — live false positive 2026-07-10: "traga só os pendentes"
+    #     had its legitimate listing rewritten to CHECK_AVAIL_MSG (and the repair re-ran the
+    #     whole pipeline). The rule targets a menu conjured from NOTHING.
+    if (_offers_slots(reply) and not _availability_read(tools)
+            and not ok_results(tools, "list_appointments")):
         return GroundingVerdict(rule="conjured_slots", message=CHECK_AVAIL_MSG,
                                 repairable=True, critique=_CONJURED_SLOTS_CRITIQUE)
 
