@@ -113,13 +113,17 @@ class PgBookkeeperStore:
         sql = f"SELECT {_TX_COLS} FROM bookkeeper_transactions WHERE scope = %s"  # nosec B608
         params: list = [self._scope]
         if kind is not None:
-            sql += " AND kind = %s"; params.append(kind)
+            sql += " AND kind = %s"
+            params.append(kind)
         if identity_id is not None:
-            sql += " AND identity_id = %s"; params.append(identity_id)
+            sql += " AND identity_id = %s"
+            params.append(identity_id)
         if date_from is not None:
-            sql += " AND tx_date >= %s"; params.append(date_from)
+            sql += " AND tx_date >= %s"
+            params.append(date_from)
         if date_to is not None:
-            sql += " AND tx_date <= %s"; params.append(date_to)
+            sql += " AND tx_date <= %s"
+            params.append(date_to)
         sql += " ORDER BY tx_date DESC, created_at DESC"
         rows = self._conn.execute(sql, tuple(params)).fetchall()
         return [_tx(r) for r in rows]

@@ -64,7 +64,7 @@ def test_remove_by_search_removes_own_most_recent_only():
     svc = _svc()
     svc.add_outcome("internet março", 100, "emp-1")
     svc.add_outcome("internet abril", 120, "emp-1")
-    other = svc.add_outcome("internet", 999, "emp-2")
+    svc.add_outcome("internet", 999, "emp-2")   # a different identity's record (isolation check)
 
     removed = svc.remove_by_search("internet", "emp-1")
     assert removed is not None and removed["amount"] == 120.0   # most recent of emp-1
