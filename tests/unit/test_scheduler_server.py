@@ -73,8 +73,32 @@ async def test_update_status_tool():
         {"host_id": "dr_silva", "date": "2026-07-01", "time": "09:00", "with_name": "Ana"}))
     appt_id = booked.split()[1].rstrip(":")
     out = _text(await mcp.call_tool(
+        "update_appointment_status", {"appointment_id": appt_id, "new_status": "COMPLETED"}))
+    assert f"Appointment {appt_id} is now COMPLETED" in out
+
+
+async def test_update_status_tool_noop_says_already():
+    """dr_silva auto_confirms → re-confirming is a NO-OP: the tool must SAY so (the model
+    otherwise celebrates a change that never happened — the bulk-confirm live bug)."""
+    mcp = _server()
+    booked = _text(await mcp.call_tool(
+        "book_appointment",
+        {"host_id": "dr_silva", "date": "2026-07-01", "time": "09:00", "with_name": "Ana"}))
+    appt_id = booked.split()[1].rstrip(":")   # already CONFIRMED (auto_confirm)
+    out = _text(await mcp.call_tool(
         "update_appointment_status", {"appointment_id": appt_id, "new_status": "CONFIRMED"}))
-    assert "CONFIRMED" in out
+    assert "ALREADY CONFIRMED" in out and "no change" in out
+
+
+async def test_list_appointments_status_filter_tool():
+    mcp = _server()
+    await mcp.call_tool("book_appointment", {"host_id": "dr_silva", "date": "2026-07-01",
+                                             "time": "09:00", "with_name": "Ana"})
+    # dr_silva auto_confirms → nothing PENDING; the filter must say so, not list everything
+    out = _text(await mcp.call_tool("list_appointments", {"status": "PENDING"}))
+    assert out == "No PENDING appointments found."
+    conf = _text(await mcp.call_tool("list_appointments", {"status": "confirmed"}))
+    assert "Ana" in conf and "[CONFIRMED]" in conf
 
 
 async def test_cancel_tool_with_reason():

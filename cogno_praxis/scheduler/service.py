@@ -220,6 +220,7 @@ class SchedulerService:
                           role: Optional[str] = None, host_id: Optional[str] = None,
                           guest_id: Optional[str] = None,
                           with_name: Optional[str] = None,
+                          status: Optional[str] = None,
                           include_history: bool = False) -> list[Appointment]:
         """Role-based visibility (parent parity), resolved in the VERTICAL:
 
@@ -235,7 +236,12 @@ class SchedulerService:
         Terminal rows (CANCELED/COMPLETED) are hidden so a stale cancellation never leaks into
         the reply (the parent's ``status != 'CANCELED'`` default; here also drops COMPLETED so
         the professional sees only what is still on the calendar). ``include_history=True``
-        brings everything back when the user explicitly asks for past/canceled appointments."""
+        brings everything back when the user explicitly asks for past/canceled appointments.
+
+        ``status`` is an exact-status filter ("traga só os pendentes" → ``PENDING``) applied
+        AFTER the role visibility. Deterministic here — leaving it to the model ("only pending"
+        as a prompt constraint over a mixed listing) is exactly what made the executor act on
+        the wrong subset. An explicit terminal status (CANCELED/COMPLETED) implies history."""
         if role is not None:
             r = role.upper()
             if r == GUEST_ROLE:
@@ -249,6 +255,12 @@ class SchedulerService:
                 appts = self.store.list(guest_id=identity_id or "")
         else:
             appts = self.store.list(host_id=host_id, guest_id=guest_id, with_name=with_name)
+        if status is not None and status.strip():
+            s = status.strip().upper()
+            if s not in VALID_STATUS:
+                raise SchedulerError(
+                    f"invalid status filter: {status} (use one of {', '.join(VALID_STATUS)})")
+            return [a for a in appts if a.status == s]
         if not include_history:
             appts = [a for a in appts if a.status in ACTIVE_STATUS]
         return appts
@@ -296,16 +308,36 @@ class SchedulerService:
         self.store.add(appt)
         return appt
 
-    def update_status(self, appointment_id: str, new_status: str) -> Appointment:
+    def update_status(self, appointment_id: str, new_status: str) -> tuple[Appointment, bool]:
+        """Move an appointment along its lifecycle. Returns ``(appt, changed)``.
+
+        Two guards (live finding — a bulk "confirme os pendentes" acting on stale ids):
+        - **no-op transition** is idempotent (``changed=False``), never an error — a judge-
+          rejected retry that re-issues the same call must succeed (same rationale as book's
+          idempotency), but the caller can now SAY "it was already CONFIRMED" so the model
+          notices it acted on the wrong id instead of celebrating a change that never happened;
+        - a **past appointment never goes (back) to PENDING/CONFIRMED** — confirming yesterday
+          is meaningless; closing out the past (COMPLETED/CANCELED) stays allowed."""
         appt = self.store.get(appointment_id)
         if appt is None:
             raise SchedulerError(f"unknown appointment: {appointment_id}")
         status = new_status.upper()
         if status not in VALID_STATUS:
             raise SchedulerError(f"invalid status: {new_status}")
+        if appt.status == status:
+            return appt, False
+        if status in ACTIVE_STATUS:
+            try:
+                appt_day = date.fromisoformat(appt.date)
+            except ValueError:
+                appt_day = None
+            if appt_day is not None and appt_day < self._today():
+                raise SchedulerError(
+                    f"{appt.appointment_id} was on {appt.date} (past); a past appointment "
+                    f"cannot go to {status} — mark it COMPLETED or CANCELED instead")
         appt.status = status
         self.store.update(appt)
-        return appt
+        return appt, True
 
     def cancel(self, appointment_id: str, reason: str = "") -> Appointment:
         appt = self.store.get(appointment_id)

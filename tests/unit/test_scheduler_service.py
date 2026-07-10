@@ -88,8 +88,8 @@ def test_auto_confirm_false_keeps_pending():
     svc = SchedulerService(store, today=lambda: _TODAY)
     appt = svc.book("dr_x", "2026-07-01", "09:00", "Ana")
     assert appt.status == PENDING            # waits for the professional to accept
-    accepted = svc.update_status(appt.appointment_id, "CONFIRMED")
-    assert accepted.status == CONFIRMED
+    accepted, changed = svc.update_status(appt.appointment_id, "CONFIRMED")
+    assert accepted.status == CONFIRMED and changed is True
 
 
 def test_book_unknown_host_raises():
@@ -179,10 +179,61 @@ def test_cancel_unknown_raises():
 def test_update_status_lifecycle():
     svc = _svc()
     appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
-    assert svc.update_status(appt.appointment_id, "confirmed").status == CONFIRMED
-    assert svc.update_status(appt.appointment_id, "COMPLETED").status == COMPLETED
+    assert svc.update_status(appt.appointment_id, "confirmed")[0].status == CONFIRMED
+    assert svc.update_status(appt.appointment_id, "COMPLETED")[0].status == COMPLETED
     # a COMPLETED appointment frees the slot again
     assert "09:00" in svc.check_availability("dr_silva", "2026-07-01")
+
+
+def test_update_status_noop_is_idempotent_and_flagged():
+    """Re-issuing the SAME status is retry-safe (never an error) but flagged ``changed=False``
+    so the tool text can say "was ALREADY CONFIRMED" — the model notices a stale/wrong id
+    instead of celebrating a change that never happened (the bulk-confirm live bug)."""
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_x"] = Host("dr_x", "Dr. X", "GP", auto_confirm=False)   # books PENDING
+    svc = SchedulerService(store, today=lambda: _TODAY)
+    appt = svc.book("dr_x", "2026-07-01", "09:00", "Ana")
+    first, changed = svc.update_status(appt.appointment_id, CONFIRMED)
+    assert changed is True and first.status == CONFIRMED
+    again, changed2 = svc.update_status(appt.appointment_id, CONFIRMED)
+    assert changed2 is False and again.status == CONFIRMED   # unchanged, no error
+
+
+def test_update_status_past_appointment_cannot_go_active():
+    """Yesterday's appointment can be closed out (COMPLETED/CANCELED) but never (re)confirmed —
+    confirming the past is meaningless and hides that the model picked a stale id."""
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_x"] = Host("dr_x", "Dr. X", "GP", auto_confirm=False)   # books PENDING
+    clock = {"d": _TODAY}
+    svc = SchedulerService(store, today=lambda: clock["d"])
+    appt = svc.book("dr_x", "2026-07-01", "09:00", "Ana")       # future at booking time
+    clock["d"] = date(2026, 7, 2)                                # ...now it is in the past
+    with pytest.raises(SchedulerError, match="past"):
+        svc.update_status(appt.appointment_id, CONFIRMED)
+    done, changed = svc.update_status(appt.appointment_id, COMPLETED)   # closing out stays OK
+    assert done.status == COMPLETED and changed is True
+
+
+def test_list_appointments_status_filter():
+    """"traga só os pendentes" is deterministic: the vertical filters, not the model."""
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_x"] = Host("dr_x", "Dr. X", "GP", auto_confirm=False)
+    svc = SchedulerService(store, today=lambda: _TODAY)
+    pend = svc.book("dr_x", "2026-07-01", "09:00", "Ana")                 # PENDING
+    conf, _ = svc.update_status(svc.book("dr_x", "2026-07-01", "10:00", "Bob").appointment_id,
+                                CONFIRMED)
+    gone = svc.book("dr_x", "2026-07-01", "11:00", "Cid")
+    svc.cancel(gone.appointment_id)                                       # CANCELED (terminal)
+
+    only_pending = svc.list_appointments(status="pending")                # case-insensitive
+    assert [a.appointment_id for a in only_pending] == [pend.appointment_id]
+    only_conf = svc.list_appointments(status=CONFIRMED)
+    assert [a.appointment_id for a in only_conf] == [conf.appointment_id]
+    # an explicit terminal status implies history (no include_history needed)
+    assert [a.appointment_id for a in svc.list_appointments(status="CANCELED")] \
+        == [gone.appointment_id]
+    with pytest.raises(SchedulerError, match="invalid status filter"):
+        svc.list_appointments(status="WHATEVER")
 
 
 def test_update_status_invalid_raises():
