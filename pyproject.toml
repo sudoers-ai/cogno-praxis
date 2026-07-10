@@ -1,7 +1,7 @@
 [project]
 name = "cogno-praxis"
 version = "0.1.0"
-description = "The Cogno business verticals as standalone MCP servers (the product layer). Each vertical is an independent FastMCP server the host orchestrates via cogno-mcp; verticals own their domain logic + data behind their own store ports. First vertical: scheduler (the agenda capability), shipping the SECRETARY reception persona."
+description = "The Cogno business verticals as standalone MCP servers (the product layer). Each vertical is an independent FastMCP server the host orchestrates via cogno-mcp; verticals own their domain logic + data behind their own store ports. Verticals: scheduler (agenda → SECRETARY persona) and bookkeeper (finance → BOOKKEEPER persona)."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
@@ -59,6 +59,7 @@ include = ["cogno_praxis*"]
 [tool.setuptools.package-data]
 cogno_praxis = ["py.typed"]
 "cogno_praxis.scheduler" = ["prompts/*.txt"]
+"cogno_praxis.bookkeeper" = ["prompts/*.txt"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
