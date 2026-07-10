@@ -7,7 +7,12 @@ out-of-the-box default; a company adds its own persona host-side, targeting this
 capability, without touching the scheduler).
 """
 
-from cogno_praxis.scheduler.engine import AvailabilityEngine, SchedulerConfig, Slot
+from cogno_praxis.scheduler.engine import (
+    AvailabilityEngine,
+    HolidaysUnavailableError,
+    SchedulerConfig,
+    Slot,
+)
 from cogno_praxis.scheduler.server import build_server
 from cogno_praxis.scheduler.service import DEFAULT_SLOTS, SchedulerError, SchedulerService
 from cogno_praxis.scheduler.store import (
@@ -24,6 +29,7 @@ __all__ = [
     "SchedulerError",
     "SchedulerConfig",
     "AvailabilityEngine",
+    "HolidaysUnavailableError",
     "Slot",
     "DEFAULT_SLOTS",
     "VALID_STATUS",
