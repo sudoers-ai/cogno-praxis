@@ -2,8 +2,8 @@
 
 **The Cogno business verticals, as standalone MCP servers.**
 
-πρᾶξις = *action / practice* — the **product layer** on top of the Cogno OSS
-substrate. Each vertical is an **independent FastMCP server** the host orchestrates
+πρᾶξις = *action / practice* — the **applied layer**: ready-made, open-source
+business verticals on top of the Cogno substrate. Each vertical is an **independent FastMCP server** the host orchestrates
 via [`cogno-mcp`](https://github.com/sudoers-ai/cogno-mcp). Verticals own their
 domain logic + data (behind their own store ports); the host stays the thin
 **assembler** — persona, pipeline, dispatcher composition, RBAC, orchestration rules.
@@ -70,6 +70,21 @@ so the EGO holds it for confirmation.
 - `prompts/` — the bundled **SECRETARY** persona slots (system / scope / limits / voice),
   loaded by the host via `cogno-persona`. The capability is persona-agnostic; SECRETARY
   is simply its default face.
+
+## The Cogno ecosystem
+
+`cogno-praxis` is one organ of **[Cogno](https://github.com/sudoers-ai)** — a family of
+small, composable, Apache-2.0 libraries that together form a complete
+conversational-agent platform. Each library owns a single concern and stays
+infra-agnostic; a **host** assembles them into a running agent:
+
+![The Cogno ecosystem](docs/assets/cogno-ecosystem.svg)
+
+The open-source libraries are the organs; the **host is the body** that joins
+them. Our reference host — `cogno-host`, with its `cogno-ui` dashboard — is the
+private product layer, but it holds no special powers: everything it does rides
+on the public seams documented in each library's `docs/HOST_INTEGRATION.md`, so
+you can assemble a body of your own.
 
 ## Development
 
