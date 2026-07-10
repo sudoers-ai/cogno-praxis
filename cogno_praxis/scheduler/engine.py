@@ -21,6 +21,14 @@ from typing import Iterable, Optional
 log = logging.getLogger(__name__)
 
 
+class HolidaysUnavailableError(RuntimeError):
+    """Raised when a tenant configured a ``country`` (opting into holiday-aware scheduling) but
+    the ``holidays`` package is not importable. We refuse to run with holiday filtering silently
+    OFF — that would let the scheduler offer/book slots on a national/regional holiday. Install
+    ``cogno-praxis[holidays]``. (No ``country`` set → no expectation → no error, filtering off.)
+    """
+
+
 class SchedulerConfig:
     """A tenant's scheduling rules (the parent's ``schedule_config`` JSONB).
 
@@ -96,17 +104,22 @@ class Slot:
 def _load_holiday_set(country: Optional[str], state: Optional[str]) -> dict[date, str]:
     """Load {date: name} for this/next year via the optional ``holidays`` lib.
 
-    Graceful-degrades to an empty map when the lib is absent or the locale unsupported —
-    exactly the parent's behaviour (scheduling keeps working, just without holiday gating).
+    No ``country`` → filtering is simply off (empty map). But once a tenant DID configure a
+    ``country`` they expect holiday-awareness, so a missing ``holidays`` package is a hard
+    misconfiguration (``HolidaysUnavailableError``) rather than a silent degrade to "books on
+    holidays" — that silent-off was the bug this guards against. An unsupported locale still
+    degrades to empty (the lib is present; it just has no calendar for that country/state).
     """
     if not country:
         return {}
     try:
         import holidays as hol_lib
-    except ImportError:
-        log.warning("holidays package not installed — no holiday filtering "
-                    "(pip install cogno-praxis[holidays])")
-        return {}
+    except ImportError as exc:
+        raise HolidaysUnavailableError(
+            f"holiday-aware scheduling was requested (country={country!r}) but the 'holidays' "
+            f"package is not installed. Install cogno-praxis[holidays]. Refusing to run with "
+            f"holiday filtering silently OFF (it would offer/book slots on holidays)."
+        ) from exc
     try:
         kwargs: dict = {"subdiv": state} if state else {}
         year = datetime.now().year

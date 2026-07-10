@@ -1,11 +1,13 @@
 """Unit tests for the AvailabilityEngine + SchedulerConfig (pure, no I/O)."""
 
+import sys
 from datetime import date
 
 import pytest
 
 from cogno_praxis.scheduler import (
     AvailabilityEngine,
+    HolidaysUnavailableError,
     Host,
     InMemoryAppointmentStore,
     SchedulerConfig,
@@ -58,6 +60,35 @@ def test_injected_holiday_blocks_the_day():
     working, reason = eng.is_working_day(date.fromisoformat(_WED))
     assert working is False and "Feriado" in reason
     assert eng.get_available_slots(date.fromisoformat(_WED)) == []
+
+
+# ── the REAL production path: country/state → the `holidays` lib (not an injected set) ──
+# This is the path the host actually uses (it passes the tenant's country/state, never a set),
+# so it must be exercised directly — the injected-set tests above bypass `import holidays`.
+def test_country_state_loads_real_holidays_from_the_lib():
+    pytest.importorskip("holidays")  # skip LOUDLY if the extra is absent (never a silent pass)
+    eng = AvailabilityEngine(SchedulerConfig(), country="BR", state="SP")
+    # 2026-09-07 is Brazil's Independence Day (a Monday — so weekends can't explain the block).
+    working, reason = eng.is_working_day(date(2026, 9, 7))
+    assert working is False and "Feriado" in reason
+    assert eng.get_available_slots(date(2026, 9, 7)) == []
+    assert eng.is_working_day(date(2026, 9, 8))[0] is True  # the Tuesday after is a working day
+
+
+def test_missing_holidays_lib_with_country_raises_not_degrades(monkeypatch):
+    # A tenant configured a country (opted into holiday-awareness) but the package is missing:
+    # this MUST fail loudly, not silently book on holidays. Force `import holidays` to fail.
+    monkeypatch.setitem(sys.modules, "holidays", None)
+    with pytest.raises(HolidaysUnavailableError, match="cogno-praxis\\[holidays\\]"):
+        AvailabilityEngine(SchedulerConfig(), country="BR", state="SP")
+
+
+def test_no_country_never_raises_even_without_the_lib(monkeypatch):
+    # No country → no holiday expectation → filtering is simply off, and weekends still apply.
+    monkeypatch.setitem(sys.modules, "holidays", None)
+    eng = AvailabilityEngine(SchedulerConfig())              # no country, no lib → fine
+    assert eng.is_working_day(date.fromisoformat(_WED))[0] is True
+    assert eng.is_working_day(date.fromisoformat(_SAT))[0] is False  # weekend rule needs no lib
 
 
 def test_get_available_slots_filters_taken():
