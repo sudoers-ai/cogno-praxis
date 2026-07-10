@@ -240,3 +240,22 @@ def test_server_result_markers_match_the_rules():
         listed = _text(await mcp.call_tool("list_appointments", {}))
         assert CONFIRMED_MARK_RE.search(listed)                 # "[CONFIRMED]"
     asyncio.run(run())
+
+
+def test_pending_listing_with_offer_phrasing_is_not_conjured_slots():
+    # LIVE FALSE POSITIVE (2026-07-10): "traga só os pendentes" → the voice lists the real
+    # pendings (dates + "Gostaria de confirmar algum deles?") — offer-shaped, but grounded
+    # in a real list_appointments read. Must NOT be rewritten to the availability deflection.
+    read = _list("9858fb82: Vinicius Aquino with Dr. Vinicius on 2026-07-13 at 10:00 [PENDING]\n"
+                 "d973ed23: Vinicius Sudoers with Dr. Vinicius on 2026-07-20 at 15:00 [PENDING]")
+    reply = ("Aqui estão os seus agendamentos pendentes:\n"
+             "- Vinicius Aquino: 13/07 às 10:00\n- Vinicius Sudoers: 20/07 às 15:00\n"
+             "Gostaria de confirmar algum deles? Qual prefere?")
+    assert ground_reply(reply, tools=[read]) is None
+
+
+def test_conjured_menu_with_no_read_at_all_is_still_caught():
+    # control: the original protection stands — an offer with NO read behind it is rewritten.
+    reply = "Tenho estes horários disponíveis: 13/07 às 10h, 14/07 às 11h. Qual prefere?"
+    v = ground_reply(reply)
+    assert v is not None and v.rule == "conjured_slots"
