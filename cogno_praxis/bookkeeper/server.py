@@ -13,7 +13,6 @@ Run the demo standalone (stdio):  ``python -m cogno_praxis.bookkeeper.server``
 
 from __future__ import annotations
 
-import json
 import os
 from datetime import date
 from typing import Optional

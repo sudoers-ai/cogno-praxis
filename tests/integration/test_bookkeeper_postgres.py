@@ -56,4 +56,5 @@ def test_scope_isolates_tenants():
     BookkeeperService(a, today=lambda: _TODAY).add_income("x", 100, "e1")
     # tenant-b sees nothing tenant-a recorded
     assert BookkeeperService(b, today=lambda: _TODAY).get_summary("e1", "ADMIN")["total_income"] == 0.0
-    a.close(); b.close()
+    a.close()
+    b.close()
