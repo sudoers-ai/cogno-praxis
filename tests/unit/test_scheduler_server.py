@@ -223,3 +223,28 @@ def test_catalog_hosts_from_env_replaces_demo(monkeypatch):
     # empty list → a real tenant with NO professionals shows none (not the demo)
     monkeypatch.setenv("COGNO_SCHEDULER_HOSTS", "[]")
     assert _catalog_hosts() == []
+
+
+def test_seed_appointments_from_env(monkeypatch):
+    """COGNO_SCHEDULER_SEED pre-loads appointments with EXPLICIT ids (harness channel)."""
+    import json
+
+    from cogno_praxis.scheduler.server import _seeded_service
+
+    monkeypatch.delenv("COGNO_SCHEDULER_HOSTS", raising=False)
+    monkeypatch.delenv("COGNO_SCHEDULER_DSN", raising=False)
+    monkeypatch.setenv("COGNO_SCHEDULER_SEED", json.dumps([
+        {"appointment_id": "e4d1a201", "host_id": "dr_souza", "date": "2099-01-04",
+         "time": "09:00", "with_name": "Maria", "status": "PENDING", "guest_id": "maria"},
+        {"appointment_id": "b7c3f902", "host_id": "dr_souza", "date": "2099-01-04",
+         "time": "14:00", "with_name": "Paula", "status": "CONFIRMED", "guest_id": "paula"},
+    ]))
+    svc = _seeded_service()
+    appts = {a.appointment_id: a for a in svc.list_appointments(host_id="dr_souza")}
+    assert set(appts) == {"e4d1a201", "b7c3f902"}          # exactly the seeded rows, ids kept
+    assert appts["e4d1a201"].status == "PENDING"
+    assert appts["b7c3f902"].with_name == "Paula"
+
+    # unset → no seeding (production path untouched)
+    monkeypatch.delenv("COGNO_SCHEDULER_SEED", raising=False)
+    assert _seeded_service().list_appointments(host_id="dr_souza") == []
