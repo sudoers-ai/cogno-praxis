@@ -34,6 +34,49 @@ zero config. A company that needs a richer receptionist adds its **own** persona
 host-side (via cogno-persona), targeting this same `scheduler` capability and composing
 extra tool sources with `CompositeDispatcher` — **without** touching the scheduler.
 
+## Quickstart — a complete agent in 15 minutes
+
+The fastest way to *feel* the whole stack: `examples/secretary_demo.py` runs the
+full cognitive pipeline (cogno-soma over the cogno-anima stages) against local
+Ollama, with this repo's scheduler vertical served as a real MCP subprocess and
+the bundled SECRETARY persona doing the talking:
+
+```bash
+# 1. local models (the download dominates the 15 minutes)
+ollama pull qwen3:8b && ollama pull nomic-embed-text
+
+# 2. the Cogno chain (PyPI soon — from git for now, one command)
+pip install "git+https://github.com/sudoers-ai/cogno-homeo" \
+            "git+https://github.com/sudoers-ai/cogno-synapse" \
+            "git+https://github.com/sudoers-ai/cogno-anima" \
+            "git+https://github.com/sudoers-ai/cogno-soma" \
+            "cogno-mcp[mcp] @ git+https://github.com/sudoers-ai/cogno-mcp"
+
+# 3. this repo + the demo
+git clone https://github.com/sudoers-ai/cogno-praxis && cd cogno-praxis
+pip install -e .
+python examples/secretary_demo.py --trace     # --trace shows the cognition live
+```
+
+Then just talk, in any language:
+
+```
+você> oi, queria marcar uma consulta com o dr silva amanhã às 9 da manhã
+  [NOUMENO]  "Hello, I would like to schedule an appointment with Dr. Silva tomorrow at 9…"  (pt → en)
+  [NER]      ACTION_REQUEST · NEUTRAL · domains=['HEALTH'] · pii_risk=NONE
+  [ID]       route=EGO · goal=NEW · turn=1
+  [EGO]      resolve_date(expression=tomorrow) ✓
+  [EGO]      check_availability(host_id=dr_silva, date=2026-07-11) ✗   ← Saturday: rejected
+  [EGO]      book_appointment(host_id=dr_silva, date=2026-07-13, time=09:00, …) ✓
+  [JUDGE]    approved=True
+SECRETARY> Oi, Ana! 😊 Amanhã, 11/07, não tem expediente aos sábados, então sua
+           consulta com o Dr. Silva foi marcada para o próximo dia útil, 13/07, às 9h. ✅
+```
+
+That weekend recovery is the pipeline working as designed: the vertical's
+working-day rule rejected the tool call, the EGO self-corrected, the judge
+approved, and the voice explained — all on a free 8B local model.
+
 ## Run a vertical
 
 ```bash
