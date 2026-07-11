@@ -119,33 +119,50 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
                          f"on {a.date} at {a.time} [{a.status}]" for a in appts)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
-    def reschedule_appointment(appointment_id: str, new_date: str, new_time: str) -> str:
+    def reschedule_appointment(appointment_id: str, new_date: str, new_time: str,
+                               identity_id: str = "", role: str = "") -> str:
         """Move an existing appointment to a new date/time in ONE step (keeps the same id).
 
         Use this for "remarcar" / "mudar o horário" / "trocar para outro dia" — NOT a
         separate cancel + book. Get the appointment_id first (list_appointments) and call
         resolve_date for a relative new date. The new slot must be free and in the future.
-        """
-        appt = svc.reschedule(appointment_id, new_date, new_time)
+
+        ``identity_id``/``role`` are host-injected (do not set them) — they authorise that
+        the caller owns the row (GUEST→own booking, EMPLOYEE→own agenda)."""
+        appt = svc.reschedule(appointment_id, new_date, new_time,
+                              identity_id=identity_id or None, role=role or None)
         return (f"Rescheduled {appt.appointment_id}: {appt.with_name} with {appt.host_id} "
                 f"is now on {appt.date} at {appt.time} [{appt.status}].")
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
-    def update_appointment_status(appointment_id: str, new_status: str) -> str:
+    def update_appointment_status(appointment_id: str, new_status: str,
+                                  identity_id: str = "", role: str = "") -> str:
         """Move an appointment along its lifecycle (CONFIRMED / COMPLETED / etc.).
 
         The ids MUST come from a ``list_appointments`` call in THIS conversation turn —
-        never from memory of an earlier turn (the agenda may have changed since)."""
-        appt, changed = svc.update_status(appointment_id, new_status)
+        never from memory of an earlier turn (the agenda may have changed since).
+
+        ``identity_id``/``role`` are host-injected (do not set them) — they authorise that
+        the caller owns the row (GUEST→own booking, EMPLOYEE→own agenda)."""
+        appt, changed = svc.update_status(appointment_id, new_status,
+                                          identity_id=identity_id or None, role=role or None)
         if not changed:
             return (f"Appointment {appt.appointment_id} was ALREADY {appt.status} — no change "
                     f"was made. If you meant a different appointment, list them again.")
         return f"Appointment {appt.appointment_id} is now {appt.status}."
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
-    def cancel_appointment(appointment_id: str, reason: str = "") -> str:
-        """Cancel an existing appointment by id (optionally with a reason)."""
-        appt = svc.cancel(appointment_id, reason)
+    def cancel_appointment(appointment_id: str, reason: str = "",
+                           identity_id: str = "", role: str = "") -> str:
+        """Cancel an existing appointment by id (optionally with a reason).
+
+        ``identity_id``/``role`` are host-injected (do not set them) — they authorise that
+        the caller owns the row (GUEST→own booking, EMPLOYEE→own agenda)."""
+        appt, changed = svc.cancel(appointment_id, reason,
+                                   identity_id=identity_id or None, role=role or None)
+        if not changed:
+            return (f"Appointment {appt.appointment_id} was ALREADY {appt.status} — no change "
+                    f"was made. If you meant a different appointment, list them again.")
         suffix = f" — {appt.cancel_reason}" if appt.cancel_reason else ""
         # ``with {host_id}`` mirrors reschedule's shape so the host can parse who to notify.
         return (f"Cancelled {appt.appointment_id} ({appt.with_name} with {appt.host_id} "

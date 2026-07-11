@@ -165,7 +165,8 @@ def test_list_appointments_hides_terminal_by_default():
 def test_cancel_frees_the_slot():
     svc = _svc()
     appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
-    cancelled = svc.cancel(appt.appointment_id, reason="patient request")
+    cancelled, changed = svc.cancel(appt.appointment_id, reason="patient request")
+    assert changed
     assert cancelled.status == CANCELED
     assert cancelled.cancel_reason == "patient request"
     assert "09:00" in svc.check_availability("dr_silva", "2026-07-01")
@@ -174,6 +175,89 @@ def test_cancel_frees_the_slot():
 def test_cancel_unknown_raises():
     with pytest.raises(SchedulerError, match="unknown appointment"):
         _svc().cancel("nope")
+
+
+# ── Gap 2: cancel now guards status like its siblings (reschedule / update_status) ──
+
+def test_cancel_completed_is_refused():
+    """A finished appointment must not be un-completed by a stray cancel (the integrity hole:
+    the parent blocked terminal rows; here reschedule/update_status guarded but cancel didn't)."""
+    svc = _svc()
+    appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
+    svc.update_status(appt.appointment_id, COMPLETED)
+    with pytest.raises(SchedulerError, match="COMPLETED and cannot be canceled"):
+        svc.cancel(appt.appointment_id)
+
+
+def test_cancel_already_canceled_is_idempotent_noop():
+    """Re-cancelling an already-CANCELED row is retry-safe (no error) but flagged
+    ``changed=False`` so the voicer can say "was already canceled" instead of narrating a
+    fresh cancellation off a stale id."""
+    svc = _svc()
+    appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
+    _, first = svc.cancel(appt.appointment_id)
+    assert first is True
+    again, changed = svc.cancel(appt.appointment_id)
+    assert changed is False and again.status == CANCELED
+
+
+# ── Gap 1 (option A): row-level ownership on the destructive mutations ──
+
+def _two_host_svc():
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_silva"] = Host("dr_silva", "Dr. Silva", "GP")
+    store.hosts["dr_souza"] = Host("dr_souza", "Dr. Souza", "GP")
+    return SchedulerService(store, today=lambda: _TODAY)
+
+
+def test_guest_cannot_cancel_another_guests_appointment():
+    svc = _two_host_svc()
+    ana = svc.book("dr_silva", "2026-07-01", "09:00", "Ana", guest_id="g-ana")
+    # Bob (a different guest) holding Ana's id may not cancel it — even with a valid id.
+    with pytest.raises(SchedulerError, match="not yours to modify"):
+        svc.cancel(ana.appointment_id, identity_id="g-bob", role="GUEST")
+    # Ana herself can.
+    _, changed = svc.cancel(ana.appointment_id, identity_id="g-ana", role="GUEST")
+    assert changed is True
+
+
+def test_employee_scoped_to_own_agenda():
+    svc = _two_host_svc()
+    appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana", guest_id="g-ana")
+    # dr_souza (another professional) cannot touch a row on dr_silva's agenda.
+    with pytest.raises(SchedulerError, match="not yours to modify"):
+        svc.update_status(appt.appointment_id, CONFIRMED,
+                          identity_id="dr_souza", role="EMPLOYEE")
+    with pytest.raises(SchedulerError, match="not yours to modify"):
+        svc.reschedule(appt.appointment_id, "2026-07-02", "10:00",
+                       identity_id="dr_souza", role="EMPLOYEE")
+    # dr_silva owns the agenda → allowed.
+    ok, _ = svc.update_status(appt.appointment_id, CONFIRMED,
+                              identity_id="dr_silva", role="EMPLOYEE")
+    assert ok.status == CONFIRMED
+
+
+def test_oversight_role_can_touch_any_row():
+    svc = _two_host_svc()
+    appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana", guest_id="g-ana")
+    _, changed = svc.cancel(appt.appointment_id, identity_id="sup-1", role="SUPERVISOR")
+    assert changed is True
+
+
+def test_role_omitted_skips_ownership_check():
+    """Internal/test callers (and the host's demo-guest edge) pass no role → no ownership gate,
+    exactly like ``list_appointments``. Visibility is what limits which ids they could have."""
+    svc = _two_host_svc()
+    appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana", guest_id="g-ana")
+    _, changed = svc.cancel(appt.appointment_id)     # no identity_id/role → allowed
+    assert changed is True
+
+
+def test_unknown_role_is_denied_failsafe():
+    svc = _two_host_svc()
+    appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana", guest_id="g-ana")
+    with pytest.raises(SchedulerError, match="not yours to modify"):
+        svc.cancel(appt.appointment_id, identity_id="whoever", role="MARKETING")
 
 
 def test_update_status_lifecycle():

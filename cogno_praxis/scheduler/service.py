@@ -308,8 +308,43 @@ class SchedulerService:
         self.store.add(appt)
         return appt
 
-    def update_status(self, appointment_id: str, new_status: str) -> tuple[Appointment, bool]:
+    def _authorize(self, appt: Appointment, identity_id: Optional[str],
+                   role: Optional[str]) -> None:
+        """Row-level ownership gate for the destructive mutations (cancel / update_status /
+        reschedule). The parent enforced this INSIDE the tool; here the host injects the
+        authenticated ``identity_id`` + ``role`` (exactly as it already does for
+        ``list_appointments``) and the vertical maps role→column:
+
+        - GUEST may only touch their OWN booking (``guest_id``)
+        - EMPLOYEE may only touch their OWN agenda (``host_id``)
+        - SUPERVISOR / ADMIN / SECRETARY → unscoped oversight
+
+        When ``role`` is omitted (internal / test callers, or the demo guest with no stable id
+        — the host does not inject then) the check is skipped: the host is what authorises,
+        the same contract as ``list_appointments``. Visibility already hides other people's
+        rows; this is the second layer — a stale/leaked id can no longer mutate a row the
+        caller does not own."""
+        if role is None:
+            return
+        r = role.upper()
+        if r in OVERSIGHT_ROLES:
+            return
+        if r == GUEST_ROLE:
+            owned = bool(identity_id) and appt.guest_id == identity_id
+        elif r == EMPLOYEE_ROLE:
+            owned = bool(identity_id) and appt.host_id == identity_id
+        else:
+            owned = False    # unknown role → deny (fail-safe, mirrors list's narrowest view)
+        if not owned:
+            raise SchedulerError(
+                f"appointment {appt.appointment_id} is not yours to modify")
+
+    def update_status(self, appointment_id: str, new_status: str, *,
+                      identity_id: Optional[str] = None, role: Optional[str] = None,
+                      ) -> tuple[Appointment, bool]:
         """Move an appointment along its lifecycle. Returns ``(appt, changed)``.
+
+        Ownership (parent parity; host-authorised) is enforced via ``_authorize``.
 
         Two guards (live finding — a bulk "confirme os pendentes" acting on stale ids):
         - **no-op transition** is idempotent (``changed=False``), never an error — a judge-
@@ -321,6 +356,7 @@ class SchedulerService:
         appt = self.store.get(appointment_id)
         if appt is None:
             raise SchedulerError(f"unknown appointment: {appointment_id}")
+        self._authorize(appt, identity_id, role)
         status = new_status.upper()
         if status not in VALID_STATUS:
             raise SchedulerError(f"invalid status: {new_status}")
@@ -339,17 +375,40 @@ class SchedulerService:
         self.store.update(appt)
         return appt, True
 
-    def cancel(self, appointment_id: str, reason: str = "") -> Appointment:
+    def cancel(self, appointment_id: str, reason: str = "", *,
+               identity_id: Optional[str] = None, role: Optional[str] = None,
+               ) -> tuple[Appointment, bool]:
+        """Cancel an active appointment. Returns ``(appt, changed)`` — mirrors ``update_status``.
+
+        Ownership (parent parity; host-authorised) is enforced via ``_authorize``.
+
+        Status guard — ``cancel`` was the one mutation missing it (its siblings ``reschedule``
+        and ``update_status`` already guard status):
+        - already CANCELED → idempotent no-op (``changed=False``), retry-safe like book /
+          update_status, but the caller can now SAY "it was already canceled" so the model
+          notices it acted on a stale id instead of narrating a fresh cancellation;
+        - COMPLETED → refused: a finished appointment cannot be un-completed by a cancel (the
+          integrity hole the parent closed by blocking terminal rows outright)."""
         appt = self.store.get(appointment_id)
         if appt is None:
             raise SchedulerError(f"unknown appointment: {appointment_id}")
+        self._authorize(appt, identity_id, role)
+        if appt.status == CANCELED:
+            return appt, False
+        if appt.status == COMPLETED:
+            raise SchedulerError(
+                f"{appointment_id} is COMPLETED and cannot be canceled")
         appt.status = CANCELED
         appt.cancel_reason = reason
         self.store.update(appt)
-        return appt
+        return appt, True
 
-    def reschedule(self, appointment_id: str, new_date: str, new_time: str) -> Appointment:
+    def reschedule(self, appointment_id: str, new_date: str, new_time: str, *,
+                   identity_id: Optional[str] = None, role: Optional[str] = None,
+                   ) -> Appointment:
         """Move an existing appointment to a new date/time in ONE atomic step (keeps the id).
+
+        Ownership (parent parity; host-authorised) is enforced via ``_authorize``.
 
         This is the dedicated "remarcar" path — far more reliable than asking a model to
         orchestrate cancel + rebook, and it never leaves the client double-booked. Domain
@@ -360,6 +419,7 @@ class SchedulerService:
         appt = self.store.get(appointment_id)
         if appt is None:
             raise SchedulerError(f"unknown appointment: {appointment_id}")
+        self._authorize(appt, identity_id, role)
         if appt.status not in ACTIVE_STATUS:
             raise SchedulerError(
                 f"appointment {appointment_id} is {appt.status}; only an active "
