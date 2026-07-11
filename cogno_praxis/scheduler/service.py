@@ -216,6 +216,32 @@ class SchedulerService:
         taken = self.store.booked_times(host_id, date)
         return [s for s in self._slots if s not in taken]
 
+    def next_available_day(self, host_id: str, after_date: str, *,
+                           horizon_days: int = 14) -> Optional[tuple[str, list[str]]]:
+        """The first WORKING day *after* ``after_date`` that still has a free slot for
+        ``host_id`` — the overflow answer when the requested day is full. Skips
+        holidays/weekends (the engine decides which days count). Returns
+        ``(iso_date, free_slots)`` or ``None`` if nothing opens within ``horizon_days``
+        working days scanned. Never books — a pure look-ahead the secretary can OFFER."""
+        host_id = self._resolve_host_id(host_id)
+        if self.store.get_host(host_id) is None:
+            raise SchedulerError(f"unknown host: {host_id}")
+        cursor = date.fromisoformat(after_date) + timedelta(days=1)
+        scanned = 0
+        # Hard calendar cap so a long holiday stretch can't loop indefinitely.
+        for _ in range(horizon_days * 3 + 7):
+            if scanned >= horizon_days:
+                break
+            working, _reason = self._engine.is_working_day(cursor)
+            if working:
+                scanned += 1
+                taken = self.store.booked_times(host_id, cursor.isoformat())
+                free = [s for s in self._slots if s not in taken]
+                if free:
+                    return cursor.isoformat(), free
+            cursor += timedelta(days=1)
+        return None
+
     def list_appointments(self, *, identity_id: Optional[str] = None,
                           role: Optional[str] = None, host_id: Optional[str] = None,
                           guest_id: Optional[str] = None,

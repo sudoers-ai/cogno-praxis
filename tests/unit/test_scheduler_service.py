@@ -46,6 +46,58 @@ def test_book_then_slot_disappears():
     assert "09:00" not in svc.check_availability("dr_silva", "2026-07-01")
 
 
+def _fill_day(svc, host_id, day):
+    """Book every free slot on ``day`` so the day is full."""
+    for slot in list(svc.check_availability(host_id, day)):
+        svc.book(host_id, day, slot, "filler")
+
+
+def test_next_available_day_returns_next_working_day_when_full():
+    # A full Wednesday → the overflow is the next working day (Thursday), fully open.
+    svc = _svc()
+    _fill_day(svc, "dr_silva", "2026-07-01")            # Wed, now full
+    assert svc.check_availability("dr_silva", "2026-07-01") == []
+    nxt = svc.next_available_day("dr_silva", "2026-07-01")
+    assert nxt is not None
+    ndate, nslots = nxt
+    assert ndate == "2026-07-02"                        # Thu
+    assert nslots == list(svc._slots)                   # untouched → all slots free
+
+
+def test_next_available_day_skips_the_weekend():
+    # A full Friday → overflow jumps the Sat/Sun and lands on Monday.
+    svc = _svc()
+    _fill_day(svc, "dr_silva", "2026-07-03")            # Fri, now full
+    nxt = svc.next_available_day("dr_silva", "2026-07-03")
+    assert nxt is not None and nxt[0] == "2026-07-06"   # Mon (07-04/07-05 are the weekend)
+
+
+def test_next_available_day_returns_partial_day_when_partially_booked():
+    # The next day is itself partly booked → only its remaining slots are offered.
+    svc = _svc()
+    _fill_day(svc, "dr_silva", "2026-07-01")
+    svc.book("dr_silva", "2026-07-02", "09:00", "early bird")
+    ndate, nslots = svc.next_available_day("dr_silva", "2026-07-01")
+    assert ndate == "2026-07-02" and "09:00" not in nslots and "10:00" in nslots
+
+
+def test_next_available_day_none_when_horizon_is_all_booked():
+    # Nothing opens within the horizon → None (the tool then says so honestly).
+    svc = _svc()
+    for offset in range(1, 40):                         # fill everything for the next ~6 weeks
+        d = (date(2026, 7, 1) + __import__("datetime").timedelta(days=offset)).isoformat()
+        try:
+            _fill_day(svc, "dr_silva", d)
+        except SchedulerError:
+            pass                                         # weekend/holiday → nothing to fill
+    assert svc.next_available_day("dr_silva", "2026-07-01", horizon_days=5) is None
+
+
+def test_next_available_day_unknown_host_raises():
+    with pytest.raises(SchedulerError, match="unknown host"):
+        _svc().next_available_day("ghost", "2026-07-01")
+
+
 def test_book_resolves_a_name_slug_host_id():
     # a small model invents 'dr_jose_luiz_manzoli' instead of the catalog id (a numeric user_id);
     # fuzzy resolution matches it by normalized name so the booking still lands on the real host

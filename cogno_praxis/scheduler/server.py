@@ -59,11 +59,21 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def check_availability(host_id: str, date: str) -> str:
-        """List free time slots for a host on a date (YYYY-MM-DD, from tomorrow on)."""
+        """List free time slots for a host on a date (YYYY-MM-DD, from tomorrow on).
+
+        When the requested day is FULL, this also names the next day that has openings so you
+        can OFFER it — do not dead-end the user; propose the overflow day (and its slots)."""
         free = svc.check_availability(host_id, date)
-        if not free:
-            return f"{host_id} has no free slots on {date}."
-        return f"Free slots for {host_id} on {date}: " + ", ".join(free)
+        if free:
+            return f"Free slots for {host_id} on {date}: " + ", ".join(free)
+        # Full day → look ahead so the secretary can offer the overflow instead of dead-ending.
+        nxt = svc.next_available_day(host_id, date)
+        if nxt is None:
+            return f"{host_id} has no free slots on {date} (and none in the next two weeks)."
+        ndate, nslots = nxt
+        return (f"{host_id} has no free slots on {date}. "
+                f"Next available day is {ndate}: " + ", ".join(nslots)
+                + " — offer this to the client.")
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     def book_appointment(host_id: str, date: str, time: str, with_name: str,
