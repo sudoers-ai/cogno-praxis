@@ -33,6 +33,22 @@ from cogno_praxis.scheduler.store import (
 )
 
 
+def _format_appt(a: Appointment) -> str:
+    """Render one appointment line for ``list_appointments``.
+
+    A self-block (``block_schedule``) has no guest name — its marker lives in
+    ``notes`` (e.g. "Bloqueado"). The old render dropped ``notes`` and left an
+    empty name, so a block came out as a nameless ``[CONFIRMED]`` row that the
+    EGO/voicer could not tell apart from a client booking (the doctor's 16/17
+    block was invisible). We surface the block explicitly instead.
+    """
+    if not a.with_name:  # self-occupation / block — no guest, marker in notes
+        label = a.notes.strip() or "Bloqueado"
+        return f"{a.appointment_id}: [BLOQUEIO: {label}] on {a.date} at {a.time} [{a.status}]"
+    return (f"{a.appointment_id}: {a.with_name} with {a.host_name or a.host_id} "
+            f"on {a.date} at {a.time} [{a.status}]")
+
+
 def build_server(service: Optional[SchedulerService] = None, *, name: str = "cogno-scheduler") -> FastMCP:
     """Build a FastMCP server bound to a service (inject a store-backed one in prod/tests)."""
     svc = service or SchedulerService()
@@ -115,8 +131,7 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         if not appts:
             return f"No {status.strip().upper()} appointments found." if status.strip() \
                 else "No appointments found."
-        return "\n".join(f"{a.appointment_id}: {a.with_name} with {a.host_name or a.host_id} "
-                         f"on {a.date} at {a.time} [{a.status}]" for a in appts)
+        return "\n".join(_format_appt(a) for a in appts)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
     def reschedule_appointment(appointment_id: str, new_date: str, new_time: str,

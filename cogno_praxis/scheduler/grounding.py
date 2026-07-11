@@ -53,6 +53,14 @@ _CONCLUSION_NOW_RE = re.compile(
     re.IGNORECASE)
 # "confirmada" as a done state — NOT "aguardando confirmação" (root "confirmaç") nor "confirmar".
 _CONFIRMED_DONE_RE = re.compile(r"confirmad", re.IGNORECASE)
+# An assertion about what OCCUPIES the agenda (a day is busy/blocked, or a named appointment
+# exists) — distinct from an availability/slot OFFER (rule 2). On a READ query, such a claim
+# MUST come from a real list_appointments read; answered from memory it is a fabrication.
+_OCCUPANCY_CLAIM_RE = re.compile(
+    r"ocupad|indispon[íi]ve|bloquead|bloqueio|"
+    r"compromiss|agendament|reservad|"
+    r"tem\s+(?:consulta|hor[áa]rio\s+marcad)|est[áa]\s+marcad",
+    re.IGNORECASE)
 
 # ── safe rewrites — honest, keep the conversation alive, no fabricated fact ──────────
 NO_BOOKING_MSG = (
@@ -74,6 +82,9 @@ NO_ACTION_TAKEN_MSG = (
 PENDING_NOT_CONFIRMED_MSG = (
     "Sua solicitação foi registrada e está aguardando a confirmação do profissional. 😊 "
     "Assim que ele confirmar, eu te aviso na mesma hora!")
+UNREAD_SCHEDULE_MSG = (
+    "Deixa eu consultar sua agenda pra te responder isso com certeza. 😊 Um instante que "
+    "eu confirmo o que está marcado nesses dias.")
 
 # Critiques feed the host's EGO correction channel on the repair re-step — same channel
 # the SUPEREGO judge uses, so the EGO renders them natively. English, like the judge.
@@ -89,6 +100,11 @@ _NO_ACTION_TAKEN_CRITIQUE = (
     "The previous reply claimed a scheduling action was completed, but NO tool ran this turn. "
     "Execute the requested action for real (check availability / book / update as asked) and "
     "report only what the tools returned.")
+_UNREAD_SCHEDULE_CRITIQUE = (
+    "The previous reply stated facts about the user's schedule (a day being occupied/blocked "
+    "or an appointment existing) without ever calling list_appointments this turn — it "
+    "answered from memory. Call list_appointments for the user's own agenda and report ONLY "
+    "what the tool returns.")
 
 
 # ── trace predicates ─────────────────────────────────────────────────────────────────
@@ -205,5 +221,17 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
     if not had_executor and not is_read_query and _concludes_action_now(reply):
         return GroundingVerdict(rule="no_action_taken", message=NO_ACTION_TAKEN_MSG,
                                 repairable=True, critique=_NO_ACTION_TAKEN_CRITIQUE)
+
+    # (6) unread schedule claim — a READ query whose reply asserts what is booked/blocked/
+    #     occupied, yet NO list_appointments read ran this turn (the executor answered from
+    #     conversation history instead of reading). This is the "qual dia eu bloquiei?" bug:
+    #     the model confabulated "já estão ocupados" without ever querying the agenda.
+    #     Repairable: the re-step forces a real listing. Suppressed when a listing OR an
+    #     availability read is in hand (that claim is grounded; availability is rule 2's turf).
+    if (is_read_query and affirmed(reply, _OCCUPANCY_CLAIM_RE)
+            and not ok_results(tools, "list_appointments")
+            and not _availability_read(tools)):
+        return GroundingVerdict(rule="unread_schedule_claim", message=UNREAD_SCHEDULE_MSG,
+                                repairable=True, critique=_UNREAD_SCHEDULE_CRITIQUE)
 
     return None

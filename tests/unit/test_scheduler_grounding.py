@@ -16,6 +16,7 @@ from cogno_praxis.scheduler.grounding import (
     NO_ACTION_TAKEN_MSG,
     NO_BOOKING_MSG,
     PENDING_NOT_CONFIRMED_MSG,
+    UNREAD_SCHEDULE_MSG,
     UNVERIFIED_STATUS_MSG,
     ground_reply,
 )
@@ -259,3 +260,53 @@ def test_conjured_menu_with_no_read_at_all_is_still_caught():
     reply = "Tenho estes horários disponíveis: 13/07 às 10h, 14/07 às 11h. Qual prefere?"
     v = ground_reply(reply)
     assert v is not None and v.rule == "conjured_slots"
+
+
+# ── (6) unread schedule claim — the "qual dia eu bloquiei?" bug ───────────────────────
+def test_read_query_claims_occupied_with_no_listing_is_repaired():
+    # The live turn-2 confabulation: EGO answered from history, called NO tool, yet stated
+    # the days "já estão ocupados com compromissos". No list_appointments behind it.
+    reply = ("Dr. Vinicius, não consegui bloquear os dias 16 e 17 de julho, pois já estão "
+             "ocupados com compromissos.")
+    v = ground_reply(reply, tools=(), had_executor=True, is_read_query=True)
+    assert v is not None and v.rule == "unread_schedule_claim"
+    assert v.repairable is True and v.critique          # feeds the EGO re-step
+    assert v.message == UNREAD_SCHEDULE_MSG
+
+
+def test_read_query_claims_appointment_exists_with_no_listing_is_repaired():
+    reply = "Sim, você tem uma consulta marcada nesse dia."
+    v = ground_reply("Você tem um compromisso agendado no dia 16.",
+                     tools=(), had_executor=True, is_read_query=True)
+    assert v is not None and v.rule == "unread_schedule_claim"
+    _ = reply
+
+
+def test_occupancy_claim_with_listing_in_hand_is_grounded():
+    # Suppressed: a real list_appointments read backs the claim (turn-3 shape).
+    listing = _list("abc: [BLOQUEIO: Bloqueado] on 2026-07-16 at 09:00 [CONFIRMED]")
+    reply = "Você tem os dias 16 e 17 bloqueados na sua agenda."
+    v = ground_reply(reply, tools=(listing,), had_executor=True, is_read_query=True)
+    assert v is None
+
+
+def test_occupancy_claim_with_availability_read_is_left_to_rule2():
+    # An availability answer is grounded by check_availability — not this rule's turf.
+    reply = "Esse horário está ocupado, mas tenho outros livres."
+    v = ground_reply(reply, tools=(_avail("Free slots for dr_jose on 2026-07-16: 14:00"),),
+                     had_executor=True, is_read_query=True)
+    assert v is None or v.rule != "unread_schedule_claim"
+
+
+def test_occupancy_claim_on_action_request_not_flagged_as_unread():
+    # is_read_query=False (ACTION_REQUEST): this rule stays out; other rules may still apply.
+    reply = "Pronto, o dia 16 está ocupado agora."
+    v = ground_reply(reply, tools=(), had_executor=True, is_read_query=False)
+    assert v is None or v.rule != "unread_schedule_claim"
+
+
+def test_read_query_clarification_without_claim_is_untouched():
+    # A read-query reply that asserts NOTHING about the agenda must never be flagged.
+    reply = "Claro! Sobre qual dia você gostaria de saber?"
+    v = ground_reply(reply, tools=(), had_executor=True, is_read_query=True)
+    assert v is None
