@@ -25,7 +25,12 @@ from mcp.types import ToolAnnotations
 
 from cogno_praxis.scheduler.engine import SchedulerConfig
 from cogno_praxis.scheduler.service import SchedulerService
-from cogno_praxis.scheduler.store import AppointmentStore, Host, InMemoryAppointmentStore
+from cogno_praxis.scheduler.store import (
+    Appointment,
+    AppointmentStore,
+    Host,
+    InMemoryAppointmentStore,
+)
 
 
 def build_server(service: Optional[SchedulerService] = None, *, name: str = "cogno-scheduler") -> FastMCP:
@@ -222,6 +227,15 @@ def _seeded_service() -> SchedulerService:
         for h in hosts:
             mem.hosts[h.host_id] = h
         store = mem
+    # Optional pre-existing appointments for deterministic harnesses (same stdio-env channel
+    # as the clock/config below): COGNO_SCHEDULER_SEED = JSON list of Appointment dicts. The
+    # ``appointment_id`` is EXPLICIT (normal bookings mint a uuid) so a bench can assert the
+    # exact row acted on (e.g. "the doctor confirmed THIS pending booking, not its neighbor").
+    # Production never sets it — real state comes from the store/DSN.
+    raw_seed = os.environ.get("COGNO_SCHEDULER_SEED")
+    if raw_seed:
+        for a in json.loads(raw_seed):
+            store.add(Appointment(**a))
     # Optional fixed clock for deterministic harnesses — a host running this server over
     # stdio can set COGNO_SCHEDULER_TODAY so the subprocess agrees with the host's [TODAY]
     # anchor (avoids an off-by-one where "amanhã" resolves against a different "today").
