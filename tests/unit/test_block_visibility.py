@@ -55,8 +55,8 @@ async def test_block_then_list_loses_block_semantics():
 
     # ...and now (fix A) it is rendered as an explicit block the EGO/voicer can
     # voice, carrying the 'Bloqueado' marker that used to be dropped.
-    block_line = next(l for l in listed.splitlines() if "2026-07-16" in l)
-    client_line = next(l for l in listed.splitlines() if "2026-07-15" in l)
+    block_line = next(ln for ln in listed.splitlines() if "2026-07-16" in ln)
+    client_line = next(ln for ln in listed.splitlines() if "2026-07-15" in ln)
     print("block line :", repr(block_line))
     print("client line:", repr(client_line))
     assert "BLOQUEIO" in block_line and "Bloqueado" in block_line
