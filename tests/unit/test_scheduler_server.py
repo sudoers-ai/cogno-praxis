@@ -94,9 +94,11 @@ async def test_list_appointments_status_filter_tool():
     mcp = _server()
     await mcp.call_tool("book_appointment", {"host_id": "dr_silva", "date": "2026-07-01",
                                              "time": "09:00", "with_name": "Ana"})
-    # dr_silva auto_confirms → nothing PENDING; the filter must say so, not list everything
+    # dr_silva auto_confirms → nothing PENDING; the filter says so AND points at the
+    # CONFIRMED row (a bare miss reads as "nothing to act on" — see the hint test below)
     out = _text(await mcp.call_tool("list_appointments", {"status": "PENDING"}))
-    assert out == "No PENDING appointments found."
+    assert out.startswith("No PENDING appointments found")
+    assert "another status" in out
     conf = _text(await mcp.call_tool("list_appointments", {"status": "confirmed"}))
     assert "Ana" in conf and "[CONFIRMED]" in conf
 
@@ -248,3 +250,22 @@ def test_seed_appointments_from_env(monkeypatch):
     # unset → no seeding (production path untouched)
     monkeypatch.delenv("COGNO_SCHEDULER_SEED", raising=False)
     assert _seeded_service().list_appointments(host_id="dr_souza") == []
+
+
+async def test_empty_status_filter_hints_other_statuses():
+    """A status-filtered miss must not be a dead end: point at rows with other statuses
+    (the 'cancela meu agendamento' → list PENDING → 'nothing to cancel' regression)."""
+    from datetime import timedelta
+
+    mcp = _server()
+    day = (_TODAY + timedelta(days=1)).isoformat()
+    await mcp.call_tool("book_appointment", {
+        "host_id": "dr_silva", "date": day, "time": "09:00", "with_name": "Ana"})
+    # dr_silva auto-confirms → the row is CONFIRMED, not PENDING
+    out = _text(await mcp.call_tool("list_appointments", {"status": "PENDING"}))
+    assert "No PENDING appointments found" in out
+    assert "another status" in out and "WITHOUT" in out
+    # a miss with NO other rows stays a plain miss (no misleading hint)
+    out2 = _text(await mcp.call_tool("list_appointments",
+                                     {"status": "COMPLETED", "with_name": "Bruno"}))
+    assert "another status" not in out2
