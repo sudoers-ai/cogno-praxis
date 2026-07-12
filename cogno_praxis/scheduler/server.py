@@ -139,8 +139,22 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
             host_id=host_id or None, guest_id=guest_id or None, with_name=with_name or None,
             status=status or None, include_history=include_history)
         if not appts:
-            return f"No {status.strip().upper()} appointments found." if status.strip() \
-                else "No appointments found."
+            if status.strip():
+                # Same scope, no status filter: an empty STATUS-filtered list is a dead end
+                # the model misreads as "nothing to act on" ("cancela meu agendamento" →
+                # lists PENDING → finds nothing → gives up while the row sits CONFIRMED).
+                # Say that rows with OTHER statuses exist so it recovers with a plain list.
+                others = svc.list_appointments(
+                    identity_id=identity_id or None, role=role or None,
+                    host_id=host_id or None, guest_id=guest_id or None,
+                    with_name=with_name or None, status=None,
+                    include_history=include_history)
+                if others:
+                    return (f"No {status.strip().upper()} appointments found, but there ARE "
+                            f"{len(others)} appointment(s) with another status — call "
+                            f"list_appointments again WITHOUT `status` to see them.")
+                return f"No {status.strip().upper()} appointments found."
+            return "No appointments found."
         return "\n".join(_format_appt(a) for a in appts)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
@@ -150,10 +164,7 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
 
         Use this for "remarcar" / "mudar o horário" / "trocar para outro dia" — NOT a
         separate cancel + book. Get the appointment_id first (list_appointments) and call
-        resolve_date for a relative new date. The new slot must be free and in the future.
-
-        ``identity_id``/``role`` are host-injected (do not set them) — they authorise that
-        the caller owns the row (GUEST→own booking, EMPLOYEE→own agenda)."""
+        resolve_date for a relative new date. The new slot must be free and in the future."""
         appt = svc.reschedule(appointment_id, new_date, new_time,
                               identity_id=identity_id or None, role=role or None)
         return (f"Rescheduled {appt.appointment_id}: {appt.with_name} with {appt.host_id} "
@@ -165,10 +176,7 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         """Move an appointment along its lifecycle (CONFIRMED / COMPLETED / etc.).
 
         The ids MUST come from a ``list_appointments`` call in THIS conversation turn —
-        never from memory of an earlier turn (the agenda may have changed since).
-
-        ``identity_id``/``role`` are host-injected (do not set them) — they authorise that
-        the caller owns the row (GUEST→own booking, EMPLOYEE→own agenda)."""
+        never from memory of an earlier turn (the agenda may have changed since)."""
         appt, changed = svc.update_status(appointment_id, new_status,
                                           identity_id=identity_id or None, role=role or None)
         if not changed:
@@ -179,10 +187,7 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
     def cancel_appointment(appointment_id: str, reason: str = "",
                            identity_id: str = "", role: str = "") -> str:
-        """Cancel an existing appointment by id (optionally with a reason).
-
-        ``identity_id``/``role`` are host-injected (do not set them) — they authorise that
-        the caller owns the row (GUEST→own booking, EMPLOYEE→own agenda)."""
+        """Cancel an existing appointment by id (optionally with a reason)."""
         appt, changed = svc.cancel(appointment_id, reason,
                                    identity_id=identity_id or None, role=role or None)
         if not changed:
