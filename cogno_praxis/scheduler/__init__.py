@@ -13,6 +13,7 @@ from cogno_praxis.scheduler.engine import (
     SchedulerConfig,
     Slot,
 )
+from cogno_praxis.scheduler.durability import is_perishable_edge
 from cogno_praxis.scheduler.server import build_server
 from cogno_praxis.scheduler.service import DEFAULT_SLOTS, SchedulerError, SchedulerService
 from cogno_praxis.scheduler.store import (
@@ -25,6 +26,7 @@ from cogno_praxis.scheduler.store import (
 
 __all__ = [
     "build_server",
+    "is_perishable_edge",
     "SchedulerService",
     "SchedulerError",
     "SchedulerConfig",
