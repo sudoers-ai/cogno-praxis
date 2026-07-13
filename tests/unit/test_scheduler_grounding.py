@@ -16,6 +16,7 @@ from cogno_praxis.scheduler.grounding import (
     NO_ACTION_TAKEN_MSG,
     NO_BOOKING_MSG,
     PENDING_NOT_CONFIRMED_MSG,
+    STALE_FILTERED_LISTING_MSG,
     UNREAD_SCHEDULE_MSG,
     UNVERIFIED_STATUS_MSG,
     ground_reply,
@@ -50,6 +51,37 @@ def test_status_filtered_empty_list_also_counts_as_empty():
     reply = "Sua consulta está agendada para o dia 08/07, às 11h!"
     fixed = ground_reply(reply, tools=[_list("No PENDING appointments found.")])
     assert fixed is not None and fixed.rule == "fabricated_booking"
+
+
+# ── (1b) stale filtered listing — the 2026-07-13 live fabrication ────────────────────
+_FILTERED_HINT = ("No PENDING appointments found, but there ARE 28 appointment(s) with "
+                  "another status — call list_appointments again WITHOUT `status` to see them.")
+
+
+def test_filtered_empty_with_hint_but_reply_lists_appointments_is_repaired():
+    # LIVE (turn 44): the only read was status-filtered and empty-with-hint, yet the voice
+    # re-issued a days-old listing ("aguardando confirmação") copied from history.
+    reply = ("Aqui estão os seus agendamentos:\n"
+             "- Vinicius Aquino em 13/07 às 11h (aguardando confirmação)\n"
+             "- Aval Teste2 em 21/07 às 09h (aguardando confirmação)")
+    fixed = ground_reply(reply, tools=[_list(_FILTERED_HINT)])
+    assert fixed is not None and fixed.message == STALE_FILTERED_LISTING_MSG
+    assert fixed.rule == "stale_filtered_listing" and fixed.repairable and fixed.critique
+
+
+def test_confirm_all_then_filtered_relist_is_kept():
+    # Legit shape: a confirm-all executed, then a PENDING re-list finds none — the mutation
+    # result grounds the dates in the reply; must NOT be rewritten.
+    upd = ToolCall(tool="update_appointment_status", ok=True, side_effect=True,
+                   result="Appointment abc (2026-07-13 at 11:00) is now CONFIRMED.")
+    reply = "Prontinho! Confirmei seu agendamento de 13/07 às 11h. ✅"
+    assert ground_reply(reply, tools=[upd, _list(_FILTERED_HINT)]) is None
+
+
+def test_filtered_hint_with_honest_none_pending_reply_is_kept():
+    # The honest voice over the same trace ("no pending right now") must pass untouched.
+    reply = "Não encontrei nenhum agendamento pendente no momento. Quer ver a agenda completa?"
+    assert ground_reply(reply, tools=[_list(_FILTERED_HINT)]) is None
 
 
 def test_failed_book_but_reply_claims_scheduled_is_rewritten():
@@ -211,7 +243,8 @@ def test_server_result_markers_match_the_rules():
 
     from cogno_praxis.scheduler import Host, InMemoryAppointmentStore, SchedulerService
     from cogno_praxis.scheduler.grounding import (
-        BOOKED_PREFIX, CONFIRMED_MARK_RE, FREE_SLOTS_PREFIX, LIST_EMPTY_RE, PENDING_MARK_RE)
+        BOOKED_PREFIX, CONFIRMED_MARK_RE, FREE_SLOTS_PREFIX, LIST_EMPTY_RE,
+        LIST_FILTERED_EMPTY_RE, PENDING_MARK_RE)
     from cogno_praxis.scheduler.server import build_server
     from datetime import date
 
@@ -240,6 +273,11 @@ def test_server_result_markers_match_the_rules():
         assert CONFIRMED_MARK_RE.search(upd)                    # "is now CONFIRMED"
         listed = _text(await mcp.call_tool("list_appointments", {}))
         assert CONFIRMED_MARK_RE.search(listed)                 # "[CONFIRMED]"
+        # status-filtered empty on a NON-empty agenda → the recovery-hint variant (the
+        # 2026-07-13 lockstep break: this suffix matched NO marker and blinded rule 1b).
+        hint = _text(await mcp.call_tool("list_appointments", {"status": "PENDING"}))
+        assert LIST_FILTERED_EMPTY_RE.match(hint)
+        assert not LIST_EMPTY_RE.match(hint)                    # the two variants stay disjoint
     asyncio.run(run())
 
 
