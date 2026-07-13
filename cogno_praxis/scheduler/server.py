@@ -32,6 +32,18 @@ from cogno_praxis.scheduler.store import (
     InMemoryAppointmentStore,
 )
 
+# ── RBAC role gates (host/vertical policy) ────────────────────────────────────────────────
+# Which roles may call a given tool; a tool ABSENT here is ungated (any role, incl. GUEST).
+# Changing the schedule settings or a professional's auto-confirm are STAFF operations — a GUEST
+# must never even SEE them. The host/bench feeds this into the dispatcher's role gate
+# (``cogno_mcp.role_gate_from_map(ROLE_GATES)``), which HIDES a gated tool from a caller whose role
+# is not allowed (and refuses it at execute, defence in depth). RBAC stays a host/vertical concern.
+STAFF_ROLES = frozenset({"EMPLOYEE", "SUPERVISOR", "ADMIN"})
+ROLE_GATES: "dict[str, frozenset[str]]" = {
+    "set_schedule_settings": STAFF_ROLES,
+    "set_auto_confirm": STAFF_ROLES,
+}
+
 
 def _format_appt(a: Appointment) -> str:
     """Render one appointment line for ``list_appointments``.
