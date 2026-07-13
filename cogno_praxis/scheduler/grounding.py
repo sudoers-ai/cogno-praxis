@@ -27,6 +27,10 @@ from cogno_praxis.grounding import (
 #    the behavioural tests call the real server and assert these still match) ─────────
 # list_appointments: "No appointments found." / "No PENDING appointments found."
 LIST_EMPTY_RE = re.compile(r"^No (?:[A-Z]+ )?appointments found\.$")
+# The status-filtered recovery variant ("No PENDING appointments found, but there ARE
+# 3 appointment(s) with another status — …"): rows DO exist, the filter just missed.
+# Live gap 2026-07-13: this suffix broke the lockstep and left rule 1b's case unguarded.
+LIST_FILTERED_EMPTY_RE = re.compile(r"^No [A-Z]+ appointments found, but there ARE ")
 BOOKED_PREFIX = "Booked "
 FREE_SLOTS_PREFIX = "Free slots"
 # status as the tools stamp it (list "[PENDING]", book "[PENDING].", update "is now PENDING")
@@ -85,6 +89,9 @@ PENDING_NOT_CONFIRMED_MSG = (
 UNREAD_SCHEDULE_MSG = (
     "Deixa eu consultar sua agenda pra te responder isso com certeza. 😊 Um instante que "
     "eu confirmo o que está marcado nesses dias.")
+STALE_FILTERED_LISTING_MSG = (
+    "Não tenho essa informação confirmada no sistema agora. 😊 Quer que eu traga sua "
+    "agenda completa pra conferirmos o que está registrado?")
 
 # Critiques feed the host's EGO correction channel on the repair re-step — same channel
 # the SUPEREGO judge uses, so the EGO renders them natively. English, like the judge.
@@ -105,6 +112,11 @@ _UNREAD_SCHEDULE_CRITIQUE = (
     "or an appointment existing) without ever calling list_appointments this turn — it "
     "answered from memory. Call list_appointments for the user's own agenda and report ONLY "
     "what the tool returns.")
+_STALE_FILTERED_LISTING_CRITIQUE = (
+    "The previous reply listed specific appointments, but the only list_appointments read "
+    "this turn was status-filtered and returned NONE (rows exist with other statuses) — the "
+    "listed items came from conversation history, not from a read. Call list_appointments "
+    "again WITHOUT the `status` filter and report ONLY the rows it returns.")
 
 
 # ── trace predicates ─────────────────────────────────────────────────────────────────
@@ -112,6 +124,13 @@ def _list_read_empty(tools: Sequence[ToolCall]) -> bool:
     """A ``list_appointments`` ran this turn and EVERY read came back empty."""
     reads = ok_results(tools, "list_appointments")
     return bool(reads) and all(LIST_EMPTY_RE.match(r.strip()) for r in reads)
+
+
+def _list_reads_all_filtered_empty(tools: Sequence[ToolCall]) -> bool:
+    """EVERY list read this turn was the status-filtered-empty recovery variant — rows
+    exist with other statuses, but NO row content is in hand this turn."""
+    reads = ok_results(tools, "list_appointments")
+    return bool(reads) and all(LIST_FILTERED_EMPTY_RE.match(r.strip()) for r in reads)
 
 
 def _book_attempted(tools: Sequence[ToolCall]) -> bool:
@@ -161,6 +180,14 @@ def _offers_slots(reply: str) -> bool:
     return bool(_OFFER_RE.search(reply) and DATE_RE.search(reply))
 
 
+def _lists_dated_appointment(reply: str) -> bool:
+    """The reply presents at least one concrete dated appointment — a booking noun in a
+    non-negated clause plus a date somewhere. Unlike :func:`_affirms_booking` (both in ONE
+    clause, for a single "sua consulta está agendada para 08/07" affirmation), this spans
+    the reply so a multi-line listing (header noun + dated item lines) is caught."""
+    return bool(affirmed(reply, _BOOKING_NOUN_RE) and DATE_RE.search(reply))
+
+
 def _concludes_action_now(reply: str) -> bool:
     """The reply claims the assistant JUST performed a scheduling action *this turn*
     (first-person "marquei/confirmei", "prontinho, ficou marcada") — distinct from a
@@ -188,6 +215,19 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
     #     executor DID run and the honest "no active booking" is final.
     if _affirms_booking(reply) and _contradicts_booking(tools):
         return GroundingVerdict(rule="fabricated_booking", message=NO_BOOKING_MSG)
+
+    # (1b) stale filtered listing — the reply lists concrete appointments, but the only
+    #     read in hand is a status-filtered EMPTY with the other-statuses hint, so the
+    #     listed items can only have come from conversation history (live fabrication
+    #     2026-07-13: a days-old "aguardando confirmação" listing re-voiced over
+    #     "No PENDING appointments found, but there ARE 28…"). NO_BOOKING_MSG would lie
+    #     here (rows DO exist), so this is its own rule. Repairable: re-list unfiltered.
+    #     Suppressed when a mutation succeeded (its result grounds the dates in the reply)
+    #     or an availability read is in hand (offer dates are rule 2's turf).
+    if (_lists_dated_appointment(reply) and _list_reads_all_filtered_empty(tools)
+            and not _status_changed(tools) and not _availability_read(tools)):
+        return GroundingVerdict(rule="stale_filtered_listing", message=STALE_FILTERED_LISTING_MSG,
+                                repairable=True, critique=_STALE_FILTERED_LISTING_CRITIQUE)
 
     # (2) availability fabrication — a slot menu with no availability read behind it.
     #     Repairable: the right answer is to actually CALL check_availability.
