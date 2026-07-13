@@ -14,7 +14,6 @@ from typing import Iterable
 # Transaction kinds.
 INCOME = "income"
 OUTCOME = "outcome"
-VALID_KINDS: tuple[str, ...] = (INCOME, OUTCOME)
 
 
 class BookkeeperError(ValueError):
