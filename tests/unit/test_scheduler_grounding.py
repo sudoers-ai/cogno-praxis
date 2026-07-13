@@ -18,6 +18,7 @@ from cogno_praxis.scheduler.grounding import (
     PENDING_NOT_CONFIRMED_MSG,
     STALE_FILTERED_LISTING_MSG,
     UNREAD_SCHEDULE_MSG,
+    UNREAD_SETTINGS_MSG,
     UNVERIFIED_STATUS_MSG,
     ground_reply,
 )
@@ -348,3 +349,54 @@ def test_read_query_clarification_without_claim_is_untouched():
     reply = "Claro! Sobre qual dia você gostaria de saber?"
     v = ground_reply(reply, tools=(), had_executor=True, is_read_query=True)
     assert v is None
+
+
+# ── (7) unread SETTINGS claim — the "que horário vocês atendem?" fabrication ──────────
+def _settings(result: str = "Schedule settings: work_start=08:00, work_end=18:00") -> ToolCall:
+    return ToolCall(tool="get_schedule_settings", ok=True, result=result)
+
+
+def test_states_working_hours_with_no_settings_read_is_repaired():
+    # THE LIVE BUG: "vocês atendem em que horário?" → the model states hours from its own priors
+    # ("das 08h às 18h" — not in the prompt), never calling get_schedule_settings. Would be WRONG
+    # for a tenant that changed hours.
+    reply = "Bom dia! 👋 Atendemos de segunda a sexta, das 08h às 18h. Quer agendar?"
+    v = ground_reply(reply, tools=(), is_read_query=True)
+    assert v is not None and v.rule == "unread_settings_claim"
+    assert v.repairable is True and v.critique and v.message == UNREAD_SETTINGS_MSG
+
+
+def test_working_hours_grounded_in_settings_read_is_kept():
+    reply = "Atendemos de segunda a sexta, das 08h às 18h. 😊"
+    assert ground_reply(reply, tools=[_settings()]) is None            # read in hand → grounded
+
+
+def test_working_hours_after_set_settings_is_kept():
+    upd = ToolCall(tool="set_schedule_settings", ok=True, side_effect=True,
+                   result="Updated schedule settings: work_saturdays=True, work_end=18:00")
+    reply = "Pronto! Agora atendemos aos sábados também, das 08h às 18h."
+    assert ground_reply(reply, tools=[upd]) is None
+
+
+def test_expediente_and_hour_range_variants_are_caught():
+    for reply in ("Nosso expediente é das 9h às 17h.",
+                  "Funcionamos de segunda a sábado.",
+                  "O horário de atendimento é das 08:00 às 12:00."):
+        v = ground_reply(reply, tools=(), is_read_query=True)
+        assert v is not None and v.rule == "unread_settings_claim", reply
+
+
+def test_slot_offer_is_not_a_working_hours_claim():
+    # rule-2 turf: a list of free TIMES ("09:00, 10:00") is an availability offer, not a
+    # working-hours statement — must NOT trip rule 7 (it has a check_availability read anyway).
+    reply = "Tenho estes horários: 09:00, 10:00. Qual prefere?"
+    v = ground_reply(reply, tools=[_avail("Free slots for dr_jose on 2026-07-09: 09:00, 10:00")])
+    assert v is None or v.rule != "unread_settings_claim"
+
+
+def test_professional_attends_phrasing_is_not_a_working_hours_claim():
+    # "a Dra atende amanhã" / "quem atende de coração" — bare "atende" must NOT trip rule 7.
+    for reply in ("A Dra. Silva atende amanhã de manhã.",
+                  "Quem atende de coração é o Dr. Vinicius."):
+        v = ground_reply(reply, tools=(), is_read_query=True)
+        assert v is None or v.rule != "unread_settings_claim", reply

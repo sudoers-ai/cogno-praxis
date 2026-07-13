@@ -65,6 +65,19 @@ _OCCUPANCY_CLAIM_RE = re.compile(
     r"compromiss|agendament|reservad|"
     r"tem\s+(?:consulta|hor[áa]rio\s+marcad)|est[áa]\s+marcad",
     re.IGNORECASE)
+# A statement of the clinic's WORKING HOURS / days / expediente — a business-config FACT
+# ("atendemos de segunda a sexta", "funcionamos das 08h às 18h", "o horário de atendimento
+# é…"). Distinct from a slot OFFER (rule 2, a list of free times): this is a claim about the
+# clinic's fixed schedule, which lives in get_schedule_settings and goes stale when a tenant
+# changes it. Anchored on STRONG signals only (a weekday RANGE, an hour RANGE, or an explicit
+# working/expediente noun) — a bare "atende" is deliberately excluded (it appears in benign
+# contexts like "a Dra atende amanhã" / "quem atende de coração").
+_WORKING_HOURS_CLAIM_RE = re.compile(
+    r"funcionamos|funcionam\b|expediente|hor[áa]rio\s+de\s+funcionamento|"
+    r"hor[áa]rio\s+de\s+atendimento|atendemos\s+(?:de|das|aos|todos)|"
+    r"de\s+(?:segunda|seg)\D{0,6}(?:a|à|até)\s+(?:sexta|s[áa]bado|sex|s[áa]b)|"
+    r"das?\s+\d{1,2}\s?h?(?::\d{2})?\s*(?:as|à|a|até)\s*\d{1,2}\s?h",
+    re.IGNORECASE)
 
 # ── safe rewrites — honest, keep the conversation alive, no fabricated fact ──────────
 NO_BOOKING_MSG = (
@@ -92,6 +105,9 @@ UNREAD_SCHEDULE_MSG = (
 STALE_FILTERED_LISTING_MSG = (
     "Não tenho essa informação confirmada no sistema agora. 😊 Quer que eu traga sua "
     "agenda completa pra conferirmos o que está registrado?")
+UNREAD_SETTINGS_MSG = (
+    "Deixa eu confirmar o horário de atendimento certinho no sistema. 😊 Um instante que "
+    "eu já te digo os dias e horários corretos.")
 
 # Critiques feed the host's EGO correction channel on the repair re-step — same channel
 # the SUPEREGO judge uses, so the EGO renders them natively. English, like the judge.
@@ -112,6 +128,11 @@ _UNREAD_SCHEDULE_CRITIQUE = (
     "or an appointment existing) without ever calling list_appointments this turn — it "
     "answered from memory. Call list_appointments for the user's own agenda and report ONLY "
     "what the tool returns.")
+_UNREAD_SETTINGS_CRITIQUE = (
+    "The previous reply stated the clinic's working hours / days / schedule policy without ever "
+    "calling get_schedule_settings this turn — it answered from the model's own assumptions, "
+    "which go stale the moment a tenant changes their hours. Call get_schedule_settings and "
+    "report ONLY the hours it returns.")
 _STALE_FILTERED_LISTING_CRITIQUE = (
     "The previous reply listed specific appointments, but the only list_appointments read "
     "this turn was status-filtered and returned NONE (rows exist with other statuses) — the "
@@ -143,6 +164,12 @@ def _booked_ok(tools: Sequence[ToolCall]) -> bool:
 
 def _availability_read(tools: Sequence[ToolCall]) -> bool:
     return bool(ok_results(tools, "check_availability"))
+
+
+def _settings_read(tools: Sequence[ToolCall]) -> bool:
+    """The clinic's schedule settings were read/written this turn (get/set both echo them)."""
+    return bool(ok_results(tools, "get_schedule_settings")
+                or ok_results(tools, "set_schedule_settings"))
 
 
 def _contradicts_booking(tools: Sequence[ToolCall]) -> bool:
@@ -273,5 +300,14 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
             and not _availability_read(tools)):
         return GroundingVerdict(rule="unread_schedule_claim", message=UNREAD_SCHEDULE_MSG,
                                 repairable=True, critique=_UNREAD_SCHEDULE_CRITIQUE)
+
+    # (7) unread SETTINGS claim — the reply states the clinic's working hours / days / expediente
+    #     (a business-config fact), yet get_schedule_settings was NEVER called this turn: the model
+    #     answered from its own priors (live finding — it fabricated "das 08h às 18h" that isn't in
+    #     the prompt, and would be WRONG for a tenant that changed hours via set_schedule_settings).
+    #     Repairable: the re-step forces the read. Suppressed when a settings read/write is in hand.
+    if (affirmed(reply, _WORKING_HOURS_CLAIM_RE) and not _settings_read(tools)):
+        return GroundingVerdict(rule="unread_settings_claim", message=UNREAD_SETTINGS_MSG,
+                                repairable=True, critique=_UNREAD_SETTINGS_CRITIQUE)
 
     return None
