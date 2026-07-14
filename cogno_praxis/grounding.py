@@ -12,10 +12,15 @@ rule fired, the honest replacement message, and — when re-running the executor
 produce the REAL answer — a ``critique`` for the correction loop. The REWRITE decision
 (and the repair/streak policy) stays at the host.
 
-Locale note: reply-side patterns and replacement messages are pt-BR (this product's
-voice language); a persona voicing another language silently bypasses the reply-side
-rules (fail-open). A second locale means a second pattern/message set per vertical —
-kept grouped for that day, not abstracted before it exists.
+Locale note: the reply-side rules run against the VOICER's reply, which is in the
+tenant's configured voice language (``tenant.settings["language"]`` → resolved
+``noumeno.language``). The language-specific lexicon (negation / date / money tokens)
+lives in :class:`Locale`; each vertical pairs one with its own reply patterns +
+rewrite messages per locale (``_BUNDLES``). The host derives the 2-letter family from
+the turn's language and passes ``locale=`` down. An UNSUPPORTED language fails open (no
+rules → no rewrite): a backstop never rewrites a reply in a language it can't read.
+Supported today: pt, en, es. Everything else here (clause splitting, the neutral types,
+trace helpers) is language-agnostic.
 """
 
 from __future__ import annotations
@@ -24,14 +29,69 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable, Optional, Sequence
 
-# A date token in the reply: dd/mm(/yyyy) or ISO. Times: "11:00", "11h", "às 14".
-DATE_RE = re.compile(r"\b\d{1,2}[/.\-]\d{1,2}(?:[/.\-]\d{2,4})?\b|\b\d{4}-\d{2}-\d{2}\b")
-# A money token: "R$ 500", "500,00", "1.234,56".
-MONEY_RE = re.compile(r"R\$\s?\d|\b\d{1,3}(?:\.\d{3})*,\d{2}\b")
-# A clause-level negation ("não", "nenhum", "nunca", "sem ").
-NEG_RE = re.compile(r"\bn[ãa]o\b|\bnenhum\b|\bnunca\b|\bsem\s", re.IGNORECASE)
+# The numeric date anchor is language-agnostic: dd/mm(/yyyy) or ISO. (Standalone clock
+# times are deliberately NOT matched — the pre-locale behaviour — so this stays shared.)
+_DATE_CORE = r"\b\d{1,2}[/.\-]\d{1,2}(?:[/.\-]\d{2,4})?\b|\b\d{4}-\d{2}-\d{2}\b"
 
 _CLAUSE_SPLIT_RE = re.compile(r"[.!?,;\n]+|\s[—–-]\s")
+
+
+@dataclass(frozen=True)
+class Locale:
+    """The language-specific lexical anchors a grounding backstop needs: a clause-level
+    negation, a date anchor, and a money anchor. Verticals pair one of these with their
+    own reply patterns + rewrite messages, one bundle per locale."""
+
+    lang: str
+    neg: re.Pattern[str]
+    date: re.Pattern[str]
+    money: re.Pattern[str]
+
+
+_PT = Locale(
+    lang="pt",
+    # "não", "nenhum", "nunca", "sem "
+    neg=re.compile(r"\bn[ãa]o\b|\bnenhum\b|\bnunca\b|\bsem\s", re.IGNORECASE),
+    date=re.compile(_DATE_CORE),
+    # "R$ 500", "500,00", "1.234,56"
+    money=re.compile(r"R\$\s?\d|\b\d{1,3}(?:\.\d{3})*,\d{2}\b"),
+)
+_EN = Locale(
+    lang="en",
+    # "not", "no", "never", "without", "n't", "none", "nothing"
+    neg=re.compile(r"\bnot\b|\bno\b|\bnever\b|\bwithout\b|n't\b|\bnone\b|\bnothing\b",
+                   re.IGNORECASE),
+    date=re.compile(_DATE_CORE),
+    # "$500", "500.00", "1,234.56"
+    money=re.compile(r"\$\s?\d|\b\d{1,3}(?:,\d{3})*\.\d{2}\b"),
+)
+_ES = Locale(
+    lang="es",
+    # "no", "nunca", "ningún/ninguna", "sin ", "nada"
+    neg=re.compile(r"\bno\b|\bnunca\b|\bning[úu]n[ao]?\b|\bsin\s|\bnada\b", re.IGNORECASE),
+    date=re.compile(_DATE_CORE),
+    # "€500", "$500", "500,00" (es-ES uses the comma decimal like pt)
+    money=re.compile(r"[€$]\s?\d|\b\d{1,3}(?:\.\d{3})*,\d{2}\b"),
+)
+
+#: Supported grounding locales, keyed by 2-letter family.
+LOCALES: dict[str, Locale] = {"pt": _PT, "en": _EN, "es": _ES}
+
+# Back-compat module-level pt regexes (host + pre-locale callers import these directly).
+NEG_RE = _PT.neg
+DATE_RE = _PT.date
+MONEY_RE = _PT.money
+
+
+def normalize_lang(lang: Optional[str]) -> str:
+    """A language tag/code onto its 2-letter family key ('pt-BR'→'pt', 'en_US'→'en')."""
+    return (lang or "").strip().lower().replace("_", "-").split("-")[0]
+
+
+def resolve_locale(lang: Optional[str]) -> Optional[Locale]:
+    """The :class:`Locale` for a tenant language, or ``None`` when unsupported — the
+    caller then fails open (a backstop never rewrites a reply it has no rules for)."""
+    return LOCALES.get(normalize_lang(lang))
 
 
 def clauses(text: str) -> Iterable[str]:
@@ -41,9 +101,10 @@ def clauses(text: str) -> Iterable[str]:
     return _CLAUSE_SPLIT_RE.split(text)
 
 
-def affirmed(text: str, pattern: re.Pattern[str]) -> bool:
-    """Some clause matches ``pattern`` and is not negated in that clause."""
-    return any(pattern.search(c) and not NEG_RE.search(c) for c in clauses(text))
+def affirmed(text: str, pattern: re.Pattern[str], *, neg: re.Pattern[str] = NEG_RE) -> bool:
+    """Some clause matches ``pattern`` and is not negated in that clause. ``neg`` is the
+    active locale's negation (defaults to pt for pre-locale callers)."""
+    return any(pattern.search(c) and not neg.search(c) for c in clauses(text))
 
 
 @dataclass(frozen=True)
