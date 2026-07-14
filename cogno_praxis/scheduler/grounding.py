@@ -50,9 +50,10 @@ CONFIRMED_MARK_RE = re.compile(r"\[CONFIRMED\]|is now CONFIRMED\b", re.IGNORECAS
 _BOOKING_NOUN_RE = re.compile(
     r"agendad|agendament|consulta|marcad|reservad|compromiss|confirmad", re.IGNORECASE)
 _OFFER_RE = re.compile(
-    r"hor[áa]rios?\s+(?:dispon[íi]ve|que\s+tenho|abaixo|s[ãa]o)|"
-    r"posso\s+oferecer|estes?\s+hor[áa]rios|"
+    r"hor[áa]rios?\s+(?:dispon[íi]ve|livre|vago|que\s+tenho|abaixo|s[ãa]o)|"
+    r"posso\s+oferecer|(?:estes?|dois|tr[êe]s)\s+hor[áa]rios|"
     r"(?:qual|algum)\s+(?:desses|desses\s+hor|deles|hor[áa]rio|op[çc][ãa]o|prefere|funciona)|"
+    r"qual\s+(?:\w+\s+){0,2}(?:prefere|deseja|funciona|quer)|\bprefere\b|"
     r"op[çc][õo]es\s+(?:de\s+hor[áa]rio|dispon[íi]ve|s[ãa]o|abaixo)",
     re.IGNORECASE)
 _STATUS_DONE_RE = re.compile(

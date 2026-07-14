@@ -400,3 +400,19 @@ def test_professional_attends_phrasing_is_not_a_working_hours_claim():
                   "Quem atende de coração é o Dr. Vinicius."):
         v = ground_reply(reply, tools=(), is_read_query=True)
         assert v is None or v.rule != "unread_settings_claim", reply
+
+
+# ── pt natural-language date/offer coverage (grounding-lang bench, qwen3:8b) ──────────
+def test_pt_fabricated_booking_natural_date_dia_e_hora():
+    # The live pt voicer writes "dia 8 às 11h", not "08/07" — the numeric-only anchor
+    # missed it (a real fabrication slipped through until the bench surfaced it).
+    reply = "Sua consulta está agendada para o dia 8 às 11h."
+    v = ground_reply(reply, tools=[_list("No appointments found.")])
+    assert v is not None and v.rule == "fabricated_booking"
+
+
+def test_pt_conjured_slots_livres_and_qual_voce_prefere():
+    # "horários livres … qual você prefere?" — the offer phrasing the bench caught.
+    reply = "Temos dois horários livres no dia 8, às 9h e às 10h, qual você prefere?"
+    v = ground_reply(reply, tools=())
+    assert v is not None and v.rule == "conjured_slots"
