@@ -145,6 +145,19 @@ def test_confirm_swap_exchanges_content_keeps_dates():
     assert row_dst[2:5] == ["Ana", "Redes", "101"]                     # dest now holds Ana's class
 
 
+def test_confirm_swap_accepts_yearless_dates():
+    # a user says "remaneja de 16/07 pra 18/07" (no year) — must still match 2026 rows
+    svc, store = _svc([
+        ["16/07/2026", "Ter", "Ana", "Redes", "101"],
+        ["18/07/2026", "Qui", "", "Livre", "205"],
+    ], today=date(2026, 7, 13))
+    src, dst = svc.confirm_swap(professor="Ana", original_date="16/07", new_date="18/07",
+                               role="SUPERVISOR", identity_label="Sofia")
+    assert src.date_str == "16/07/2026" and dst.date_str == "18/07/2026"
+    grid = store._sheets[(_SID, "Secretaria")]
+    assert grid[dst.row_idx + 3][2:5] == ["Ana", "Redes", "101"]       # class moved despite no year
+
+
 # ── fuzzy discipline match (pure) ─────────────────────────────────────────────────────
 def test_fuzzy_match_substring_and_accents():
     assert _fuzzy_match_discipline("data science", "Fundamentals of Data Science")
