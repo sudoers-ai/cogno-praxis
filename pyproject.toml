@@ -61,6 +61,7 @@ include = ["cogno_praxis*"]
 cogno_praxis = ["py.typed"]
 "cogno_praxis.scheduler" = ["prompts/*.txt"]
 "cogno_praxis.bookkeeper" = ["prompts/*.txt"]
+"cogno_praxis.coordinator" = ["prompts/*.txt"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
