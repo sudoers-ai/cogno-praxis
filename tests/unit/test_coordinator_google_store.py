@@ -11,7 +11,8 @@ import pytest
 
 openpyxl = pytest.importorskip("openpyxl")
 
-from cogno_praxis.coordinator.stores.google_sheets import GoogleSheetsStore, _col_letter
+from cogno_praxis.coordinator.stores.google_sheets import (  # noqa: E402
+    GoogleSheetsStore, _col_letter)
 
 
 def _xlsx(tab: str, rows: list[list[str]]) -> bytes:
@@ -76,7 +77,10 @@ def test_fetch_falls_back_to_media_on_403(monkeypatch):
     seen = {"paths": []}
 
     class _Resp:
-        def __init__(self, status): self.status_code = status; self.content = b"xlsxbytes"
+        def __init__(self, status):
+            self.status_code = status
+            self.content = b"xlsxbytes"
+
         def raise_for_status(self):
             if self.status_code >= 400 and self.status_code != 403:
                 raise RuntimeError(self.status_code)

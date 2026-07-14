@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import unicodedata
 from datetime import date, datetime, timedelta
-from typing import Optional
+from typing import Callable, Optional
 
 from cogno_praxis.coordinator.config import CoordinatorConfig
 from cogno_praxis.coordinator.store import SpreadsheetStore
@@ -52,10 +52,10 @@ def _parse_date(raw: str) -> Optional[date]:
 
 class CoordinatorService:
     def __init__(self, store: SpreadsheetStore, config: CoordinatorConfig,
-                 *, today: Optional[object] = None) -> None:
+                 *, today: Optional[Callable[[], date]] = None) -> None:
         self.store = store
         self.cfg = config
-        self._today = today or (lambda: datetime.now().date())
+        self._today: Callable[[], date] = today or (lambda: datetime.now().date())
 
     # ── layout + row helpers ─────────────────────────────────────────────────────────
     def _resolve_columns(self, header: list[str]) -> ColumnLayout:

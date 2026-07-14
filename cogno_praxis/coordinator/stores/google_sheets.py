@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import io
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 import httpx
 
@@ -33,11 +33,11 @@ class GoogleSheetsStore:
     scheduler's Pg adapter). ``now`` is injectable for deterministic cache-TTL tests."""
 
     def __init__(self, access_token: str, *, ttl_seconds: float = _DEFAULT_TTL,
-                 timeout: float = 30.0, now: Optional[object] = None) -> None:
+                 timeout: float = 30.0, now: Optional[Callable[[], float]] = None) -> None:
         self._token = access_token
         self._ttl = ttl_seconds
         self._timeout = timeout
-        self._now = now or time.monotonic
+        self._now: Callable[[], float] = now or time.monotonic
         # sheet_id → (fetched_at, {tab_lower: grid})
         self._cache: dict[str, tuple[float, dict[str, list[list[str]]]]] = {}
 
