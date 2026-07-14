@@ -29,9 +29,18 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable, Optional, Sequence
 
-# The numeric date anchor is language-agnostic: dd/mm(/yyyy) or ISO. (Standalone clock
-# times are deliberately NOT matched — the pre-locale behaviour — so this stays shared.)
+# The numeric date anchor is language-agnostic: dd/mm(/yyyy) or ISO. (pt keeps exactly this
+# — the pre-locale behaviour, byte-identical.) en/es extend it with the natural-language
+# forms a real voicer actually emits ("August 7th at 11:00", "el 8 de julio a las 11h"),
+# which the numeric-only anchor misses — surfaced by a live qwen3:8b run.
 _DATE_CORE = r"\b\d{1,2}[/.\-]\d{1,2}(?:[/.\-]\d{2,4})?\b|\b\d{4}-\d{2}-\d{2}\b"
+# A clock time in either notation (shared): "11:00", "8am", "6 pm".
+_CLOCK = r"|\b\d{1,2}:\d{2}\b|\b\d{1,2}\s?[ap]m\b"
+_EN_MONTHS = (r"|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
+              r"aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b"
+              r"|\b\d{1,2}(?:st|nd|rd|th)\b")   # + ordinal day ("7th")
+_ES_MONTHS = (r"|\b(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|"
+              r"octubre|noviembre|diciembre)\b|\ba\s?las\s?\d{1,2}\b|\b\d{1,2}\s?h\b")
 
 _CLAUSE_SPLIT_RE = re.compile(r"[.!?,;\n]+|\s[—–-]\s")
 
@@ -61,7 +70,7 @@ _EN = Locale(
     # "not", "no", "never", "without", "n't", "none", "nothing"
     neg=re.compile(r"\bnot\b|\bno\b|\bnever\b|\bwithout\b|n't\b|\bnone\b|\bnothing\b",
                    re.IGNORECASE),
-    date=re.compile(_DATE_CORE),
+    date=re.compile(_DATE_CORE + _CLOCK + _EN_MONTHS, re.IGNORECASE),
     # "$500", "500.00", "1,234.56"
     money=re.compile(r"\$\s?\d|\b\d{1,3}(?:,\d{3})*\.\d{2}\b"),
 )
@@ -69,7 +78,7 @@ _ES = Locale(
     lang="es",
     # "no", "nunca", "ningún/ninguna", "sin ", "nada"
     neg=re.compile(r"\bno\b|\bnunca\b|\bning[úu]n[ao]?\b|\bsin\s|\bnada\b", re.IGNORECASE),
-    date=re.compile(_DATE_CORE),
+    date=re.compile(_DATE_CORE + _CLOCK + _ES_MONTHS, re.IGNORECASE),
     # "€500", "$500", "500,00" (es-ES uses the comma decimal like pt)
     money=re.compile(r"[€$]\s?\d|\b\d{1,3}(?:\.\d{3})*,\d{2}\b"),
 )
