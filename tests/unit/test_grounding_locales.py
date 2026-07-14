@@ -32,6 +32,14 @@ def test_sched_en_fabricated_booking():
     assert v is not None and v.rule == "fabricated_booking" and v.message == SCHED_EN.no_booking
 
 
+def test_sched_en_fabricated_booking_natural_date():
+    # Live qwen3:8b voices the date in prose ("August 7th"), not "08/07" — the anchor must
+    # catch the natural-language form too, else a real fabrication slips through.
+    reply = "Your appointment is booked for August 7th at 11:00."
+    v = sched_ground(reply, tools=[_list("No appointments found.")], locale="en")
+    assert v is not None and v.rule == "fabricated_booking"
+
+
 def test_sched_en_conjured_slots():
     reply = "I can offer these times on 08/07: 9am or 10am. Which one works for you?"
     v = sched_ground(reply, tools=[], locale="en")
@@ -72,6 +80,12 @@ def test_sched_es_fabricated_booking():
     reply = "Tu cita está agendada para el 08/07 a las 11h. ¡Te espero!"
     v = sched_ground(reply, tools=[_list("No appointments found.")], locale="es")
     assert v is not None and v.rule == "fabricated_booking" and v.message == SCHED_ES.no_booking
+
+
+def test_sched_es_fabricated_booking_natural_date():
+    reply = "Tu cita está agendada para el 8 de julio a las 11h."
+    v = sched_ground(reply, tools=[_list("No appointments found.")], locale="es")
+    assert v is not None and v.rule == "fabricated_booking"
 
 
 def test_sched_es_conjured_slots():
