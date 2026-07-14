@@ -12,6 +12,7 @@ may query any professor or the whole master schedule.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from datetime import date, datetime, timedelta
 from difflib import SequenceMatcher
@@ -98,6 +99,25 @@ def _parse_date(raw: str) -> Optional[date]:
         except ValueError:
             continue
     return None
+
+
+def _date_matches(when: Optional[date], date_str: str, raw: str) -> bool:
+    """Does class-entry date (``when``/``date_str``) match a user-supplied ``raw`` date? Tolerant
+    of the year being omitted — a user says "remaneja de 16/07 pra 18/07", so ``'16/07'`` matches
+    ``16/07/2026`` on day+month; a full date still matches on the exact day. Falls back to a raw
+    string compare so a preserved verbatim ``date_str`` always works."""
+    s = (raw or "").strip()
+    if not s:
+        return False
+    if s == date_str.strip():
+        return True
+    parsed = _parse_date(s)
+    if parsed and when:
+        return parsed == when
+    m = re.match(r"^(\d{1,2})[/-](\d{1,2})$", s)      # "dd/mm" with no year → day+month only
+    if m and when:
+        return when.day == int(m.group(1)) and when.month == int(m.group(2))
+    return False
 
 
 class CoordinatorService:
@@ -312,13 +332,11 @@ class CoordinatorService:
                                  identity_label=identity_label)
         if err:
             raise CoordinatorError(err)
-        src = next((e for e in vis if e.date_str == original_date.strip()
-                    or (e.when and e.when.strftime("%d/%m/%Y") == original_date.strip())), None)
+        src = next((e for e in vis if _date_matches(e.when, e.date_str, original_date)), None)
         if src is None:
             raise CoordinatorError(f"No class found for that professor on {original_date}.")
         dst = next((e for e in entries if e.is_free_slot and e.sheet_id == src.sheet_id
-                    and (e.date_str == new_date.strip()
-                         or (e.when and e.when.strftime("%d/%m/%Y") == new_date.strip()))), None)
+                    and _date_matches(e.when, e.date_str, new_date)), None)
         if dst is None:
             raise CoordinatorError(f"No free slot found on {new_date} in the same schedule.")
         cols = self._resolve_columns(src.header)
