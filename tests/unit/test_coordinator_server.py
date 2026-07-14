@@ -77,6 +77,33 @@ def test_confirm_swap_tool_moves_class():
     asyncio.run(run())
 
 
+def test_schedule_tool_discipline_filter_typo_tolerant():
+    mcp, _ = _server([
+        ["20/07/2026", "Seg", "Ana", "Machine Learning", "101"],
+        ["21/07/2026", "Ter", "Ana", "Redes", "101"],
+    ])
+
+    async def run():
+        out = _text(await mcp.call_tool(
+            "get_professor_schedule",
+            {"role": "SUPERVISOR", "identity_label": "Sofia", "discipline": "machne learning"}))
+        assert "Machine Learning" in out and "Redes" not in out
+    asyncio.run(run())
+
+
+def test_get_professor_info_tool_reads_professors_tab():
+    mcp, store = _server([["20/07/2026", "Seg", "Ana", "Redes", "101"]])
+    store.put(_SID, "Informações Adicionais",
+              [["Disciplina", "CH", "Professor", "e-mail", "titulação"],
+               ["Redes", "40", "Ana", "ana@x.edu", "Msc"]])
+
+    async def run():
+        out = _text(await mcp.call_tool("get_professor_info",
+                                        {"role": "SUPERVISOR", "identity_label": "Sofia"}))
+        assert "Ana" in out and "ana@x.edu" in out
+    asyncio.run(run())
+
+
 def test_durability_flags_schedule_relations_only():
     assert is_perishable_edge("Ana", "16/07", "HAS_CLASS_ON")
     assert is_perishable_edge("Ana", "205", "SWAP")

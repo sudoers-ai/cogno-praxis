@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import unicodedata
 from datetime import date, datetime, timedelta
+from difflib import SequenceMatcher
 from typing import Callable, Optional
 
 from cogno_praxis.coordinator.config import CoordinatorConfig
@@ -24,12 +25,61 @@ _OVERSIGHT_ROLES = frozenset({"SUPERVISOR", "ADMIN", "OWNER"})
 GRADE_GRACE_DAYS = 14           # parent parity: grades/attendance due within 14d of the last class
 BRIEFING_HORIZON_DAYS = 7
 REPLACEMENT_HORIZON_DAYS = 21
+_DISCIPLINE_FUZZY_THRESHOLD = 0.75    # parent parity: per-token SequenceMatcher ratio floor
+
+# PT-BR month name → number (a professor asks for "março", not "2026-03"). Parent parity.
+_MONTH_NAMES: dict[str, int] = {
+    "janeiro": 1, "jan": 1, "fevereiro": 2, "fev": 2, "março": 3, "marco": 3, "mar": 3,
+    "abril": 4, "abr": 4, "maio": 5, "mai": 5, "junho": 6, "jun": 6,
+    "julho": 7, "jul": 7, "agosto": 8, "ago": 8, "setembro": 9, "set": 9,
+    "outubro": 10, "out": 10, "novembro": 11, "nov": 11, "dezembro": 12, "dez": 12,
+}
 
 
 def _norm(text: str) -> str:
     """Accent-stripped, lowercased — for label/name comparison ('Ciência'→'ciencia')."""
     nfkd = unicodedata.normalize("NFKD", text or "")
     return "".join(c for c in nfkd if not unicodedata.combining(c)).lower().strip()
+
+
+def _fuzzy_match_discipline(query: str, candidate: str,
+                            threshold: float = _DISCIPLINE_FUZZY_THRESHOLD) -> bool:
+    """Fuzzy match a discipline query against a class subject (parent parity). Strategy:
+      1. accent-normalized substring (fast path) — 'data science' → 'Fundamentals of Data Science'
+      2. per-token fuzzy: every query word must SequenceMatcher-match some candidate word above
+         ``threshold`` — 'machne learning' → 'Machine Learning' (0.93), 'fundamentos' →
+         'Fundamentals' (0.83). 'python' → 'Machine Learning' fails.
+    An empty query never matches (the caller skips filtering instead)."""
+    nq, nc = _norm(query), _norm(candidate)
+    if not nq:
+        return False
+    if nq in nc:
+        return True
+    c_words = nc.split()
+    for qw in nq.split():
+        best = max((SequenceMatcher(None, qw, cw).ratio() for cw in c_words), default=0.0)
+        if best < threshold:
+            return False
+    return True
+
+
+def _resolve_month(raw: str) -> Optional[tuple[int, int]]:
+    """Parse a user month filter into ``(month, year)`` where year may be 0 (any year).
+    Accepts ``'2026-03'``, ``'03'``, ``'3'``, or a PT-BR name/abbrev ``'março'``/``'mar'``.
+    Returns ``None`` when it can't be understood (the caller then skips month filtering)."""
+    s = (raw or "").strip()
+    if not s:
+        return None
+    if len(s) >= 7 and s[4] == "-":                       # "YYYY-MM"
+        try:
+            return int(s[5:7]), int(s[:4])
+        except ValueError:
+            return None
+    if s.isdigit():                                       # "3" / "03"
+        m = int(s)
+        return (m, 0) if 1 <= m <= 12 else None
+    named = _MONTH_NAMES.get(_norm(s))                    # "março" / "mar"
+    return (named, 0) if named else None
 
 
 def _parse_date(raw: str) -> Optional[date]:
@@ -128,13 +178,22 @@ class CoordinatorService:
 
     # ── read tools ───────────────────────────────────────────────────────────────────
     def get_professor_schedule(self, *, professor: str = "", role: str = "",
-                               identity_label: str = "", month: str = "") -> list[ClassEntry]:
+                               identity_label: str = "", month: str = "",
+                               discipline: str = "") -> list[ClassEntry]:
+        """A professor's (or, for oversight, anyone's) classes, optionally narrowed by ``month``
+        (``'2026-03'``, ``'03'``, or a PT-BR name like ``'março'``) and/or ``discipline`` (fuzzy,
+        typo-tolerant — 'machne learning' still matches 'Machine Learning')."""
         entries, err = self._visible(self.aggregate(), professor=professor, role=role,
                                      identity_label=identity_label)
         if err:
             raise CoordinatorError(err)
-        if month:
-            entries = [e for e in entries if e.when and e.when.strftime("%Y-%m") == month]
+        mspec = _resolve_month(month)
+        if mspec:
+            mm, yy = mspec
+            entries = [e for e in entries if e.when and e.when.month == mm
+                       and (yy == 0 or e.when.year == yy)]
+        if discipline.strip():
+            entries = [e for e in entries if _fuzzy_match_discipline(discipline, e.subject)]
         return entries
 
     def check_deadlines(self, *, professor: str = "", role: str = "",
@@ -201,6 +260,46 @@ class CoordinatorService:
                 last_of[k] = e.when
         return [e for e in entries if e.when == today and not e.is_free_slot
                 and last_of.get((e.sheet_id, _norm(e.professor), _norm(e.subject))) == today]
+
+    def get_professor_info(self, *, professor: str = "", role: str = "",
+                           identity_label: str = "") -> list[dict[str, str]]:
+        """Faculty details from the professors tab (``TAB_PROFESSORS``/``RANGE_PROFESSORS`` — e.g.
+        Disciplina, CH, Professor, e-mail, titulação), one dict per row keyed by lowercased header.
+        RBAC parity with the schedule: a non-oversight caller only sees THEIR OWN row (pinned to
+        their identity label); oversight sees everyone. Returns ``[]`` when no professors tab is
+        configured. The specific columns are tenant-defined; the vertical stays column-agnostic."""
+        if not self.cfg.tab_professors:
+            return []
+        oversight = role.upper() in _OVERSIGHT_ROLES
+        target = professor.strip()
+        if not oversight:
+            if target and _norm(target) != _norm(identity_label):
+                raise CoordinatorError("You can only view your own faculty details.")
+            target = identity_label
+        want = _norm(target)
+        out: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for sid in self.cfg.spreadsheets.values():
+            rows = self.store.read_range(sid, self.cfg.tab_professors, self.cfg.range_professors)
+            if not rows:
+                continue
+            header = [c.strip().lower() for c in rows[0]]
+            prof_key = next((h for h in header if "professor" in h), "")
+            for row in rows[1:]:
+                if row and row[0].strip().lower() == header[0]:      # skip repeated header rows
+                    continue
+                rec = {h: (row[i].strip() if i < len(row) else "") for i, h in enumerate(header)}
+                name = rec.get(prof_key, "")
+                if not name:
+                    continue
+                if want and want not in _norm(name):
+                    continue
+                dedup = _norm(name)
+                if dedup in seen:
+                    continue
+                seen.add(dedup)
+                out.append(rec)
+        return out
 
     # ── the one write ────────────────────────────────────────────────────────────────
     def confirm_swap(self, *, professor: str, original_date: str, new_date: str,

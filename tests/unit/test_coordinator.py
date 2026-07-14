@@ -12,6 +12,7 @@ from cogno_praxis.coordinator import (
     CoordinatorService,
     InMemorySpreadsheetStore,
 )
+from cogno_praxis.coordinator.service import _fuzzy_match_discipline, _resolve_month
 
 _RULES = """
 SPREADSHEETS:
@@ -142,3 +143,91 @@ def test_confirm_swap_exchanges_content_keeps_dates():
     assert row_src[0] == "16/07/2026" and row_dst[0] == "18/07/2026"  # dates fixed
     assert row_src[2:5] == ["", "Livre", "205"]                        # source now holds the free
     assert row_dst[2:5] == ["Ana", "Redes", "101"]                     # dest now holds Ana's class
+
+
+# ── fuzzy discipline match (pure) ─────────────────────────────────────────────────────
+def test_fuzzy_match_substring_and_accents():
+    assert _fuzzy_match_discipline("data science", "Fundamentals of Data Science")
+    assert _fuzzy_match_discipline("ciencia", "Ciência de Dados")          # accent-insensitive
+    assert _fuzzy_match_discipline("redes", "Redes de Computadores")
+
+
+def test_fuzzy_match_tolerates_typos():
+    assert _fuzzy_match_discipline("machne learning", "Machine Learning")  # 1-char drop
+    assert _fuzzy_match_discipline("fundamentos", "Fundamentals")          # PT↔EN near-match
+    assert _fuzzy_match_discipline("engenharya", "Engenharia")
+
+
+def test_fuzzy_match_rejects_unrelated_and_empty():
+    assert not _fuzzy_match_discipline("python", "Machine Learning")
+    assert not _fuzzy_match_discipline("", "Machine Learning")             # empty never matches
+
+
+# ── month resolution (pure) ───────────────────────────────────────────────────────────
+def test_resolve_month_forms():
+    assert _resolve_month("2026-03") == (3, 2026)
+    assert _resolve_month("03") == (3, 0) and _resolve_month("3") == (3, 0)
+    assert _resolve_month("março") == (3, 0) and _resolve_month("Marco") == (3, 0)
+    assert _resolve_month("dez") == (12, 0)
+    assert _resolve_month("") is None
+    assert _resolve_month("nonsense") is None and _resolve_month("13") is None
+
+
+def test_schedule_filters_by_discipline_fuzzy():
+    svc, _ = _svc([
+        ["20/07/2026", "Seg", "Ana", "Machine Learning", "101"],
+        ["21/07/2026", "Ter", "Ana", "Redes de Computadores", "101"],
+    ])
+    got = svc.get_professor_schedule(role="SUPERVISOR", identity_label="Sofia",
+                                     discipline="machne learning")        # typo still matches
+    assert [e.subject for e in got] == ["Machine Learning"]
+
+
+def test_schedule_filters_by_pt_month_name():
+    svc, _ = _svc([
+        ["20/07/2026", "Seg", "Ana", "Redes", "101"],
+        ["12/08/2026", "Qua", "Ana", "Redes", "101"],
+    ])
+    jul = svc.get_professor_schedule(role="SUPERVISOR", identity_label="Sofia", month="julho")
+    assert [e.date_str for e in jul] == ["20/07/2026"]
+
+
+# ── professor info (professors tab + RBAC) ────────────────────────────────────────────
+_PROF_HEADER = ["Disciplina", "CH", "Professor", "e-mail", "titulação"]
+
+
+def _svc_with_profs(sched_rows, prof_rows, *, today=date(2026, 7, 13)):
+    svc, store = _svc(sched_rows, today=today)
+    # professors tab defaults to "Informações Adicionais" range A1:Z50 → header at grid row 0
+    store.put(_SID, "Informações Adicionais", [_PROF_HEADER] + prof_rows)
+    return svc, store
+
+
+def test_professor_info_supervisor_lists_all():
+    svc, _ = _svc_with_profs(
+        [["20/07/2026", "Seg", "Ana", "Redes", "101"]],
+        [["Redes", "40", "Ana", "ana@x.edu", "Msc"],
+         ["Cálculo", "60", "Bruno", "bruno@x.edu", "Dr"]])
+    info = svc.get_professor_info(role="SUPERVISOR", identity_label="Sofia")
+    assert {r["professor"] for r in info} == {"Ana", "Bruno"}
+    assert next(r for r in info if r["professor"] == "Ana")["e-mail"] == "ana@x.edu"
+
+
+def test_professor_info_professor_sees_only_own():
+    svc, _ = _svc_with_profs(
+        [["20/07/2026", "Seg", "Ana", "Redes", "101"]],
+        [["Redes", "40", "Ana", "ana@x.edu", "Msc"],
+         ["Cálculo", "60", "Bruno", "bruno@x.edu", "Dr"]])
+    mine = svc.get_professor_info(role="EMPLOYEE", identity_label="Ana")
+    assert [r["professor"] for r in mine] == ["Ana"]
+    with pytest.raises(CoordinatorError):
+        svc.get_professor_info(professor="Bruno", role="EMPLOYEE", identity_label="Ana")
+
+
+def test_professor_info_empty_when_no_tab():
+    # a config without a professors tab → [] (never crashes)
+    cfg = CoordinatorConfig(_RULES + "\nTAB_PROFESSORS: \"\"\n")
+    store = InMemorySpreadsheetStore()
+    store.put(_SID, "Secretaria", [[""]] * 3 + [_HEADER])
+    svc = CoordinatorService(store, cfg)
+    assert svc.get_professor_info(role="SUPERVISOR", identity_label="Sofia") == []
