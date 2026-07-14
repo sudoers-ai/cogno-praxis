@@ -40,6 +40,12 @@ holidays = [
 postgres = [
     "psycopg[binary]>=3.1",
 ]
+# Google-download SpreadsheetStore adapter for the coordinator vertical (Drive API + openpyxl).
+# In-memory is the default; the host provides the tenant OAuth token.
+coordinator = [
+    "openpyxl>=3.1",
+    "httpx>=0.24",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23.0",
@@ -48,6 +54,8 @@ dev = [
     "mypy>=1.8",
     "holidays>=0.40",
     "psycopg[binary]>=3.1",
+    "openpyxl>=3.1",
+    "httpx>=0.24",
 ]
 
 [build-system]
@@ -73,7 +81,8 @@ pythonpath = ["."]
 # live server (CI's postgres service); the unit-coverage gate measures the
 # infra-free logic, so omit it here to keep the 90% floor meaningful instead of
 # counting an always-skipped-in-unit adapter as 0%.
-omit = ["*/scheduler/stores/postgres.py", "*/bookkeeper/stores/postgres.py"]
+omit = ["*/scheduler/stores/postgres.py", "*/bookkeeper/stores/postgres.py",
+        "*/coordinator/stores/google_sheets.py"]
 
 [tool.ruff]
 line-length = 110

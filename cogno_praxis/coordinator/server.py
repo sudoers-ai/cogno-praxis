@@ -111,10 +111,16 @@ def build_server(service: Optional[CoordinatorService] = None, *,
 
 
 def _demo_service() -> CoordinatorService:
-    """Standalone/demo: config from COGNO_COORDINATOR_RULES + a tiny in-memory sheet."""
+    """Standalone/subprocess: config from COGNO_COORDINATOR_RULES; the store is the Google
+    adapter when the host passes an OAuth token (COGNO_COORDINATOR_GOOGLE_TOKEN), else an empty
+    in-memory fake (dev/demo). The host mints/refreshes the token and injects it per turn."""
     cfg = CoordinatorConfig(os.environ.get("COGNO_COORDINATOR_RULES", ""))
+    token = os.environ.get("COGNO_COORDINATOR_GOOGLE_TOKEN", "")
+    if token:
+        from cogno_praxis.coordinator.stores.google_sheets import GoogleSheetsStore
+        return CoordinatorService(GoogleSheetsStore(token), cfg)
     store = InMemorySpreadsheetStore()
-    for key, sid in cfg.spreadsheets.items():
+    for _, sid in cfg.spreadsheets.items():
         store.put(sid, cfg.tab_schedule, [["Data", "Dia", "Professor", "Disciplina", "Sala"]])
     return CoordinatorService(store, cfg)
 
