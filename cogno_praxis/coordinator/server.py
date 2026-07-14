@@ -40,6 +40,14 @@ def _fmt_list(entries: list[ClassEntry], *, empty: str) -> str:
     return "\n".join(f"- {_fmt_entry(e)}" for e in entries)
 
 
+def _fmt_professors(rows: list[dict[str, str]]) -> str:
+    """Faculty records as compact verbatim lines (every non-empty field:value)."""
+    if not rows:
+        return "No faculty records found."
+    return "\n".join("- " + " | ".join(f"{k}: {v}" for k, v in r.items() if v.strip())
+                     for r in rows)
+
+
 def build_server(service: Optional[CoordinatorService] = None, *,
                  name: str = "cogno-coordinator") -> FastMCP:
     """Build a FastMCP server bound to a service (inject a Sheets-backed one in prod/tests)."""
@@ -53,15 +61,25 @@ def build_server(service: Optional[CoordinatorService] = None, *,
             return f"ERROR: {exc}"
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    def get_professor_schedule(professor: str = "", month: str = "",
+    def get_professor_schedule(professor: str = "", month: str = "", discipline: str = "",
                                identity_label: str = "", role: str = "") -> str:
         """List a professor's class schedule (aggregated across all course spreadsheets, sorted
-        by date). ``month`` filters by YYYY-MM. A professor sees only their own classes; a
-        supervisor may name any professor or omit it for the whole master schedule."""
+        by date). ``month`` filters by YYYY-MM, a bare number, or a PT-BR month name ("março").
+        ``discipline`` filters by subject and is typo-tolerant ("machne learning" still matches).
+        A professor sees only their own classes; a supervisor may name any professor or omit it
+        for the whole master schedule."""
         return _guard(lambda: _fmt_list(
-            svc.get_professor_schedule(professor=professor, month=month,
+            svc.get_professor_schedule(professor=professor, month=month, discipline=discipline,
                                        identity_label=identity_label, role=role),
             empty="No classes found."))
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    def get_professor_info(professor: str = "", identity_label: str = "", role: str = "") -> str:
+        """Faculty contact/detail lookup from the professors tab (e.g. discipline, workload,
+        e-mail, degree). A professor sees only their own record; a supervisor may name anyone or
+        omit ``professor`` to list the whole faculty."""
+        return _guard(lambda: _fmt_professors(
+            svc.get_professor_info(professor=professor, identity_label=identity_label, role=role)))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def check_deadlines(professor: str = "", identity_label: str = "", role: str = "") -> str:
