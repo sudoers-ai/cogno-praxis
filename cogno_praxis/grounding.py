@@ -29,10 +29,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable, Optional, Sequence
 
-# The numeric date anchor is language-agnostic: dd/mm(/yyyy) or ISO. (pt keeps exactly this
-# — the pre-locale behaviour, byte-identical.) en/es extend it with the natural-language
-# forms a real voicer actually emits ("August 7th at 11:00", "el 8 de julio a las 11h"),
-# which the numeric-only anchor misses — surfaced by a live qwen3:8b run.
+# The numeric date anchor: dd/mm(/yyyy) or ISO — shared. Each locale extends it with the
+# natural-language date/time forms a real voicer actually emits ("August 7th at 11:00",
+# "el 8 de julio a las 11h", "dia 8 às 11h"), which the numeric-only anchor misses — all
+# three surfaced by the per-language qwen3:8b grounding bench.
 _DATE_CORE = r"\b\d{1,2}[/.\-]\d{1,2}(?:[/.\-]\d{2,4})?\b|\b\d{4}-\d{2}-\d{2}\b"
 # A clock time in either notation (shared): "11:00", "8am", "6 pm".
 _CLOCK = r"|\b\d{1,2}:\d{2}\b|\b\d{1,2}\s?[ap]m\b"
@@ -41,6 +41,9 @@ _EN_MONTHS = (r"|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?
               r"|\b\d{1,2}(?:st|nd|rd|th)\b")   # + ordinal day ("7th")
 _ES_MONTHS = (r"|\b(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|"
               r"octubre|noviembre|diciembre)\b|\ba\s?las\s?\d{1,2}\b|\b\d{1,2}\s?h\b")
+# pt: "às 11", "11h", month names (the voicer writes "dia 8 às 11h", not "08/07").
+_PT_MONTHS = (r"|\b(?:janeiro|fevereiro|mar[çc]o|abril|maio|junho|julho|agosto|setembro|"
+              r"outubro|novembro|dezembro)\b|\b[àa]s\s?\d{1,2}\b|\b\d{1,2}\s?h\b")
 
 _CLAUSE_SPLIT_RE = re.compile(r"[.!?,;\n]+|\s[—–-]\s")
 
@@ -61,7 +64,7 @@ _PT = Locale(
     lang="pt",
     # "não", "nenhum", "nunca", "sem "
     neg=re.compile(r"\bn[ãa]o\b|\bnenhum\b|\bnunca\b|\bsem\s", re.IGNORECASE),
-    date=re.compile(_DATE_CORE),
+    date=re.compile(_DATE_CORE + _CLOCK + _PT_MONTHS, re.IGNORECASE),
     # "R$ 500", "500,00", "1.234,56"
     money=re.compile(r"R\$\s?\d|\b\d{1,3}(?:\.\d{3})*,\d{2}\b"),
 )
