@@ -88,6 +88,23 @@ class PgAppointmentStore:
                    auto_confirm = EXCLUDED.auto_confirm""",
             (self._scope, host.host_id, host.name, host.role, host.auto_confirm))
 
+    def sync_hosts(self, hosts: "list[Host]") -> None:
+        """Make the scope's catalog EXACTLY ``hosts``: upsert each and delete the rest.
+
+        Used when the injected tenant catalog (``COGNO_SCHEDULER_HOSTS``) is authoritative —
+        a professional removed on the dashboard must stop being offered/bookable, not linger
+        from an old seed (upsert-only left ghost doctors in the catalog). Appointments keep
+        their ``host_id`` (history is preserved); only the bookable catalog shrinks."""
+        for h in hosts:
+            self.add_host(h)
+        keep = [h.host_id for h in hosts]
+        if keep:
+            self._conn.execute(
+                "DELETE FROM schedule_hosts WHERE scope = %s AND NOT (host_id = ANY(%s))",
+                (self._scope, keep))
+        else:
+            self._conn.execute("DELETE FROM schedule_hosts WHERE scope = %s", (self._scope,))
+
     def list_hosts(self) -> list[Host]:
         rows = self._conn.execute(
             "SELECT host_id, name, role, auto_confirm FROM schedule_hosts "

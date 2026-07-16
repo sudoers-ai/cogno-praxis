@@ -66,6 +66,23 @@ def test_partitioned_by_hash_scope_and_isolated():
     s2.close()
 
 
+def test_sync_hosts_reconciles_catalog():
+    # A professional removed from the tenant catalog must leave the persisted catalog too —
+    # upsert-only seeding left ghost doctors bookable forever. Appointments keep their rows.
+    store = _drop_and_store("clinic")
+    store.add_host(Host("ghost", "Dr. Ghost", "Cardio"))
+    store.add_host(Host("dr_real", "Dr. Real", "GP"))
+
+    store.sync_hosts([Host("dr_real", "Dr. Real", "Endócrino"), Host("dr_new", "Dr. New", "GP")])
+    hosts = {h.host_id: h for h in store.list_hosts()}
+    assert set(hosts) == {"dr_real", "dr_new"}              # ghost gone, new added
+    assert hosts["dr_real"].role == "Endócrino"             # kept host still upserted
+
+    store.sync_hosts([])                                    # empty catalog → none bookable
+    assert store.list_hosts() == []
+    store.close()
+
+
 def test_two_sided_visibility_survives_postgres():
     # The doctor-sees-the-guest's-booking fix, end-to-end vs real Postgres: a guest books with a
     # professional (auto_confirm off → PENDING); the SAME row must be found by BOTH the doctor
