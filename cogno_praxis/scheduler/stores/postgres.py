@@ -88,6 +88,27 @@ class PgAppointmentStore:
                    auto_confirm = EXCLUDED.auto_confirm""",
             (self._scope, host.host_id, host.name, host.role, host.auto_confirm))
 
+    def purge_identity(self, identity_id: str) -> int:
+        """Remove every scheduler row tied to a deleted identity (host side, guest side and
+        the bookable-catalog entry). Returns the number of appointments removed.
+
+        The parent enforced this with FKs + an explicit ``DELETE FROM schedule.appointments
+        WHERE host_identity_id = X OR guest_identity_id = X`` inside ``delete_identity``; here
+        the identities table belongs to the HOST's schema (possibly another database), so no
+        cross-schema FK can exist — the host calls this on identity deletion instead. Without
+        it, a deleted professional's appointments linger and resurface the moment the same
+        channel id is ever re-registered (live: a re-onboarded contact promoted to EMPLOYEE
+        inherited a week of old test bookings)."""
+        if not identity_id:
+            return 0
+        cur = self._conn.execute(
+            "DELETE FROM appointments WHERE scope = %s AND (host_id = %s OR guest_id = %s)",
+            (self._scope, identity_id, identity_id))
+        self._conn.execute(
+            "DELETE FROM schedule_hosts WHERE scope = %s AND host_id = %s",
+            (self._scope, identity_id))
+        return cur.rowcount or 0
+
     def sync_hosts(self, hosts: "list[Host]") -> None:
         """Make the scope's catalog EXACTLY ``hosts``: upsert each and delete the rest.
 

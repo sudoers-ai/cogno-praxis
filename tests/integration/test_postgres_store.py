@@ -83,6 +83,27 @@ def test_sync_hosts_reconciles_catalog():
     store.close()
 
 
+def test_purge_identity_removes_host_and_guest_rows():
+    # Parent parity (delete_identity → DELETE schedule.appointments WHERE host OR guest):
+    # deleting an identity must take its appointments (both sides) and its catalog entry —
+    # orphans otherwise resurface when the same channel id is ever re-registered.
+    store = _drop_and_store("clinic")
+    store.add_host(Host("dr_gone", "Dr. Gone", "GP"))
+    store.add_host(Host("dr_stays", "Dr. Stays", "GP"))
+    svc = SchedulerService(store, today=lambda: _TODAY)
+    svc.book("dr_gone", "2026-07-01", "09:00", "Ana", guest_id="ana_id")
+    svc.book("dr_stays", "2026-07-01", "09:00", "Gone Person", guest_id="dr_gone")
+    svc.book("dr_stays", "2026-07-01", "10:00", "Bia", guest_id="bia_id")
+
+    removed = store.purge_identity("dr_gone")
+    assert removed == 2                                     # host-side + guest-side rows
+    assert {h.host_id for h in store.list_hosts()} == {"dr_stays"}
+    left = svc.list_appointments(host_id="dr_stays")
+    assert [a.guest_id for a in left] == ["bia_id"]         # unrelated booking untouched
+    assert store.purge_identity("") == 0
+    store.close()
+
+
 def test_two_sided_visibility_survives_postgres():
     # The doctor-sees-the-guest's-booking fix, end-to-end vs real Postgres: a guest books with a
     # professional (auto_confirm off → PENDING); the SAME row must be found by BOTH the doctor
