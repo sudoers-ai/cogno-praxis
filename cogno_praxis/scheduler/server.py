@@ -260,14 +260,22 @@ def _catalog_hosts() -> list[Host]:
 def _seeded_service() -> SchedulerService:
     """A service seeded from the injected tenant catalog (or the built-in demo when none)."""
     hosts = _catalog_hosts()
+    # When the tenant catalog env is SET it is authoritative (dashboard-managed): the persisted
+    # catalog is reconciled to exactly it, so a professional removed on the dashboard stops
+    # being offered (upsert-only seeding left ghost doctors bookable forever). Unset (demo /
+    # standalone) keeps upsert-only — never wipe a real store just because the env is missing.
+    authoritative = os.environ.get("COGNO_SCHEDULER_HOSTS") is not None
     # Persistence: a host can point the scheduler at Postgres (COGNO_SCHEDULER_DSN +
     # COGNO_SCHEDULER_SCOPE = the tenant); otherwise the in-memory demo store.
     dsn = os.environ.get("COGNO_SCHEDULER_DSN")
     if dsn:
         from cogno_praxis.scheduler.stores.postgres import PgAppointmentStore
         pg = PgAppointmentStore(dsn, os.environ.get("COGNO_SCHEDULER_SCOPE", "default"))
-        for h in hosts:
-            pg.add_host(h)
+        if authoritative:
+            pg.sync_hosts(hosts)
+        else:
+            for h in hosts:
+                pg.add_host(h)
         store: AppointmentStore = pg
     else:
         mem = InMemoryAppointmentStore()

@@ -227,6 +227,44 @@ def test_catalog_hosts_from_env_replaces_demo(monkeypatch):
     assert _catalog_hosts() == []
 
 
+def test_pg_seed_reconciles_when_catalog_env_set(monkeypatch):
+    """With COGNO_SCHEDULER_HOSTS set the injected catalog is AUTHORITATIVE over the Pg store:
+    the seed must sync (upsert + delete the rest), not upsert-only — a professional removed on
+    the dashboard once lingered as a bookable ghost doctor forever."""
+    import json
+
+    from cogno_praxis.scheduler import server as srv
+
+    calls: dict = {}
+
+    class _FakePg:
+        def __init__(self, dsn, scope):
+            calls["init"] = (dsn, scope)
+
+        def sync_hosts(self, hosts):
+            calls["sync"] = [h.host_id for h in hosts]
+
+        def add_host(self, host):
+            calls.setdefault("add", []).append(host.host_id)
+
+    import cogno_praxis.scheduler.stores.postgres as pgmod
+    monkeypatch.setattr(pgmod, "PgAppointmentStore", _FakePg)
+    monkeypatch.setenv("COGNO_SCHEDULER_DSN", "postgresql://x")
+    monkeypatch.delenv("COGNO_SCHEDULER_SEED", raising=False)
+
+    # catalog env SET → reconcile (sync), never plain upserts
+    monkeypatch.setenv("COGNO_SCHEDULER_HOSTS", json.dumps(
+        [{"host_id": "dr_real", "name": "Dr. Real", "role": "GP"}]))
+    srv._seeded_service()
+    assert calls.get("sync") == ["dr_real"] and "add" not in calls
+
+    # catalog env UNSET (standalone demo over Pg) → upsert-only, never wipe a real store
+    calls.clear()
+    monkeypatch.delenv("COGNO_SCHEDULER_HOSTS", raising=False)
+    srv._seeded_service()
+    assert "sync" not in calls and set(calls.get("add", [])) == {"dr_silva", "dr_souza", "ana"}
+
+
 def test_seed_appointments_from_env(monkeypatch):
     """COGNO_SCHEDULER_SEED pre-loads appointments with EXPLICIT ids (harness channel)."""
     import json
