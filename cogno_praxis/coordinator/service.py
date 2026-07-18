@@ -120,6 +120,22 @@ def _date_matches(when: Optional[date], date_str: str, raw: str) -> bool:
     return False
 
 
+def _year_omitted(raw: str) -> bool:
+    """True when ``raw`` is a bare ``dd/mm`` (no year) — matched on day+month only, so it can
+    span multiple academic years in a multi-year sheet."""
+    return bool(re.match(r"^\s*\d{1,2}[/-]\d{1,2}\s*$", raw or ""))
+
+
+def _ambiguous_year(matches: "list[ClassEntry]", raw: str) -> bool:
+    """A year-less date is ambiguous when it matched entries in MORE THAN ONE year — mutating the
+    first (sheet-order) is the coordinator wrong-year bug. A full date, or matches all in the same
+    year, is unambiguous."""
+    if not _year_omitted(raw):
+        return False
+    years = {e.when.year for e in matches if e.when}
+    return len(years) > 1
+
+
 class CoordinatorService:
     def __init__(self, store: SpreadsheetStore, config: CoordinatorConfig,
                  *, today: Optional[Callable[[], date]] = None) -> None:
@@ -332,13 +348,22 @@ class CoordinatorService:
                                  identity_label=identity_label)
         if err:
             raise CoordinatorError(err)
-        src = next((e for e in vis if _date_matches(e.when, e.date_str, original_date)), None)
-        if src is None:
+        src_matches = [e for e in vis if _date_matches(e.when, e.date_str, original_date)]
+        if not src_matches:
             raise CoordinatorError(f"No class found for that professor on {original_date}.")
-        dst = next((e for e in entries if e.is_free_slot and e.sheet_id == src.sheet_id
-                    and _date_matches(e.when, e.date_str, new_date)), None)
-        if dst is None:
+        if _ambiguous_year(src_matches, original_date):
+            raise CoordinatorError(
+                f"'{original_date}' matches classes in more than one year — please include the "
+                f"year (e.g. {original_date}/{src_matches[0].when.year if src_matches[0].when else ''}).")
+        src = src_matches[0]
+        dst_matches = [e for e in entries if e.is_free_slot and e.sheet_id == src.sheet_id
+                       and _date_matches(e.when, e.date_str, new_date)]
+        if not dst_matches:
             raise CoordinatorError(f"No free slot found on {new_date} in the same schedule.")
+        if _ambiguous_year(dst_matches, new_date):
+            raise CoordinatorError(
+                f"'{new_date}' matches free slots in more than one year — please include the year.")
+        dst = dst_matches[0]
         cols = self._resolve_columns(src.header)
         self.store.swap_rows(src.sheet_id, self.cfg.tab_schedule, self.cfg.range_schedule,
                              src.row_idx, dst.row_idx, content_cols=cols.content_indices)
