@@ -158,6 +158,27 @@ def test_confirm_swap_accepts_yearless_dates():
     assert grid[dst.row_idx + 3][2:5] == ["Ana", "Redes", "101"]       # class moved despite no year
 
 
+def test_confirm_swap_yearless_across_two_years_is_ambiguous():
+    # C8: a sheet spanning two academic years — a year-less "16/07" matches BOTH 2026 and 2027;
+    # confirm_swap must refuse (ask for the year) instead of silently mutating whichever row comes
+    # first, which could move the WRONG year's class after the Gate-B confirmation.
+    import pytest
+
+    from cogno_praxis.coordinator.service import CoordinatorError
+    svc, _ = _svc([
+        ["16/07/2026", "Ter", "Ana", "Redes", "101"],
+        ["16/07/2027", "Sex", "Ana", "Redes", "101"],     # same day/month, next year
+        ["18/07/2026", "Qui", "", "Livre", "205"],
+    ], today=date(2026, 7, 13))
+    with pytest.raises(CoordinatorError, match="more than one year"):
+        svc.confirm_swap(professor="Ana", original_date="16/07", new_date="18/07",
+                         role="SUPERVISOR", identity_label="Sofia")
+    # a FULL date disambiguates → the swap proceeds
+    src, dst = svc.confirm_swap(professor="Ana", original_date="16/07/2026", new_date="18/07",
+                                role="SUPERVISOR", identity_label="Sofia")
+    assert src.date_str == "16/07/2026"
+
+
 # ── fuzzy discipline match (pure) ─────────────────────────────────────────────────────
 def test_fuzzy_match_substring_and_accents():
     assert _fuzzy_match_discipline("data science", "Fundamentals of Data Science")
