@@ -214,6 +214,57 @@ def test_list_appointments_hides_terminal_by_default():
     assert all(a.status in {PENDING, CONFIRMED} for a in guest_view)
 
 
+def test_list_appointments_expires_past_rows_by_financial_class():
+    """Past-dated LIVE rows terminalize on read, split by billable class (bookkeeper reads
+    COMPLETED): CONFIRMED booking → COMPLETED (revenue), PENDING → CANCELED/expired (never
+    happened), a CONFIRMED block → CANCELED/expired (not a consultation). Future/today stay live."""
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_x"] = Host("dr_x", "Dr. X", "GP", auto_confirm=False)   # books PENDING
+    clock = {"d": date(2026, 6, 30)}
+    svc = SchedulerService(store, today=lambda: clock["d"])
+
+    confirmed = svc.book("dr_x", "2026-07-01", "09:00", "Ana")
+    svc.update_status(confirmed.appointment_id, CONFIRMED)                  # accepted booking
+    pending = svc.book("dr_x", "2026-07-01", "10:00", "Bob")               # stays PENDING
+    block = svc.book("dr_x", "2026-07-01", "11:00", "")                    # nameless block
+    future = svc.book("dr_x", "2026-07-10", "09:00", "Cid")
+    svc.update_status(future.appointment_id, CONFIRMED)
+
+    clock["d"] = date(2026, 7, 5)     # 07-01 rows are now past; 07-10 is still upcoming
+    live = svc.list_appointments()    # the read triggers the sweep
+    assert [a.appointment_id for a in live] == [future.appointment_id]
+
+    everything = {a.appointment_id: a for a in svc.list_appointments(include_history=True)}
+    assert everything[confirmed.appointment_id].status == COMPLETED        # billable
+    assert everything[pending.appointment_id].status == CANCELED           # never accepted
+    assert everything[pending.appointment_id].cancel_reason == "expired"
+    assert everything[block.appointment_id].status == CANCELED             # a block is not revenue
+    assert everything[block.appointment_id].cancel_reason == "expired"
+    assert everything[future.appointment_id].status == CONFIRMED           # untouched
+
+    # the bookkeeper's revenue query sees exactly the one real completed consultation
+    completed = svc.list_appointments(status="COMPLETED")
+    assert [a.appointment_id for a in completed] == [confirmed.appointment_id]
+
+
+def test_sweep_is_idempotent_and_leaves_bad_dates_alone():
+    """A second sweep re-writes the same terminal value (multi-worker safe); an unparseable
+    date is never silently terminalized."""
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_x"] = Host("dr_x", "Dr. X", "GP")
+    clock = {"d": date(2026, 6, 30)}
+    svc = SchedulerService(store, today=lambda: clock["d"])
+    good = svc.book("dr_x", "2026-07-01", "09:00", "Ana")                  # CONFIRMED
+    bad = svc.book("dr_x", "2026-07-01", "10:00", "Bob")
+    store.get(bad.appointment_id).date = "not-a-date"                      # corrupt the row
+
+    clock["d"] = date(2026, 7, 5)
+    svc.list_appointments()
+    svc.list_appointments()                                                # sweep twice
+    assert store.get(good.appointment_id).status == COMPLETED             # stable, not re-flipped
+    assert store.get(bad.appointment_id).status == CONFIRMED              # bad date left as-is
+
+
 def test_cancel_frees_the_slot():
     svc = _svc()
     appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")

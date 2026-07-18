@@ -242,6 +242,42 @@ class SchedulerService:
             cursor += timedelta(days=1)
         return None
 
+    def _sweep_expired(self) -> None:
+        """Terminalize past-dated LIVE rows so the agenda never carries stale bookings and
+        the financial ledger (the bookkeeper reads COMPLETED) reflects what actually happened.
+
+        Without this a CONFIRMED row for last week keeps ``status=CONFIRMED`` forever — it is
+        in ``ACTIVE_STATUS``, so it reappears in every "traga meus agendamentos" as if it were
+        still upcoming, and ``COMPLETED`` is never actually recorded. Run lazily here (not via a
+        cron): deterministic + idempotent on ``self._today()``, so it is safe to run on every
+        read and in a multi-worker host — a second sweep re-writes the same terminal value — and
+        the canonical read (this method, incl. the ``status='COMPLETED'`` the bookkeeper queries)
+        always sees a swept agenda without new infra or a failure mode.
+
+        Three financially-distinct outcomes — the split matters because COMPLETED is billable:
+        - CONFIRMED real booking → COMPLETED: accepted and the date passed, so it happened →
+          counts as revenue for the bookkeeper;
+        - PENDING (never accepted) → CANCELED(reason='expired'): the professional never confirmed
+          it, so it did NOT happen → excluded from the financials;
+        - a past CONFIRMED *block* (host self-occupation, no client) → CANCELED(reason='expired'):
+          a block is not a consultation, so it must never enter the COMPLETED/revenue set."""
+        today = self._today()
+        for appt in self.store.list():
+            if appt.status not in ACTIVE_STATUS:
+                continue
+            try:
+                appt_day = date.fromisoformat(appt.date)
+            except ValueError:
+                continue    # unparseable date → leave it; never silently terminalize a bad row
+            if appt_day >= today:
+                continue    # today or future is still live (matches the future-only booking rule)
+            if appt.status == CONFIRMED and not appt.is_block:
+                appt.status = COMPLETED
+            else:           # PENDING, or a past CONFIRMED block → expired, NOT billable
+                appt.status = CANCELED
+                appt.cancel_reason = appt.cancel_reason or "expired"
+            self.store.update(appt)
+
     def list_appointments(self, *, identity_id: Optional[str] = None,
                           role: Optional[str] = None, host_id: Optional[str] = None,
                           guest_id: Optional[str] = None,
@@ -268,6 +304,7 @@ class SchedulerService:
         AFTER the role visibility. Deterministic here — leaving it to the model ("only pending"
         as a prompt constraint over a mixed listing) is exactly what made the executor act on
         the wrong subset. An explicit terminal status (CANCELED/COMPLETED) implies history."""
+        self._sweep_expired()      # past-dated LIVE rows terminalize before ANY view resolves
         if role is not None:
             r = role.upper()
             if r == GUEST_ROLE:
