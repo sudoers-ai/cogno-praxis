@@ -448,7 +448,14 @@ class SchedulerService:
                     f"{appt.appointment_id} was on {appt.date} (past); a past appointment "
                     f"cannot go to {status} — mark it COMPLETED or CANCELED instead")
         appt.status = status
-        self.store.update(appt)
+        try:
+            self.store.update(appt)
+        except SlotTakenError:
+            # Reviving a terminal appointment (CANCELED/COMPLETED → active) whose slot was
+            # taken in the meantime. Refuse in domain terms; the slot is genuinely gone.
+            raise SchedulerError(
+                f"{appt.appointment_id} cannot go to {status}: {appt.time} on {appt.date} "
+                f"is now booked by someone else — rebook at a free slot instead") from None
         return appt, True
 
     def cancel(self, appointment_id: str, reason: str = "", *,
@@ -516,7 +523,16 @@ class SchedulerService:
                 f"{new_time} on {new_date} is already booked. Free slots on {new_date}: {free_txt}")
         appt.date = new_date
         appt.time = new_time
-        self.store.update(appt)
+        try:
+            self.store.update(appt)
+        except SlotTakenError:
+            # Lost the race with a concurrent booking of the target slot — same answer the
+            # pre-check above gives, so the model can offer alternatives instead of retrying.
+            free = [s for s in self._slots if s not in taken and s != new_time]
+            free_txt = ", ".join(free) if free else "none that day"
+            raise SchedulerError(
+                f"{new_time} on {new_date} is already booked. "
+                f"Free slots on {new_date}: {free_txt}") from None
         return appt
 
     def block_schedule(self, host_id: str, date: str, *, start_time: str = "",
@@ -553,7 +569,15 @@ class SchedulerService:
             appt = Appointment(
                 appointment_id=uuid.uuid4().hex[:8], host_id=host_id, date=date,
                 time=t, with_name="", status=CONFIRMED, notes=note)
-            self.store.add(appt)
+            try:
+                self.store.add(appt)
+            except SlotTakenError:
+                # A client booked this slot between the conflict scan above and now. Blocking
+                # is best-effort per slot: keep the ones already made, report the contested
+                # one — the same shape as the pre-scan's refusal.
+                raise SchedulerError(
+                    f"cannot block {date}: {t} was just booked by a client "
+                    f"({len(created)} earlier slot(s) blocked)") from None
             created.append(appt)
         return created
 

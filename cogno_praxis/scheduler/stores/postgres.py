@@ -20,6 +20,14 @@ from cogno_praxis.scheduler.store import ACTIVE_STATUS, Appointment, Host, SlotT
 logger = logging.getLogger(__name__)
 
 _ACTIVE = tuple(ACTIVE_STATUS)
+# Rendered into the partial index predicate. Built explicitly (sorted, quoted) rather than by
+# interpolating the tuple: ``repr`` of a 1-element tuple emits a trailing comma — ``IN ('X',)``
+# — which Postgres rejects, and frozenset order is not stable across processes.
+_ACTIVE_SQL_LIST = ", ".join(f"'{s}'" for s in sorted(ACTIVE_STATUS))
+# Bumped whenever the predicate changes: ``CREATE INDEX IF NOT EXISTS`` matches on NAME only,
+# so reusing the name after editing ACTIVE_STATUS would silently keep enforcing the OLD
+# predicate. A new name forces the new index to be built.
+_SLOT_INDEX = "ux_appt_active_slot_v1"
 
 
 def _ensure_schema(conn: "psycopg.Connection", partitions: int) -> None:
@@ -76,21 +84,44 @@ def _ensure_slot_uniqueness(conn: "psycopg.Connection") -> None:
     ``scope`` leads the column list because Postgres requires a unique index on a partitioned
     table to contain the partition key.
 
-    Creation FAILS if the table already holds conflicting active rows. That must not take the
-    whole scheduler down at import time, so we log the conflict and carry on with the
-    service-level pre-check as the only guard (the pre-existing behaviour) — the operator gets
-    an actionable warning naming the query that finds the offenders."""
+    Creation can fail for reasons outside our control — pre-existing duplicate rows, another
+    process building the same index concurrently (this takes ACCESS EXCLUSIVE on the parent
+    and every partition, and ``IF NOT EXISTS`` re-checks nothing after it unblocks), a lock
+    timeout, or missing privileges. None of those may take the whole scheduler down at
+    construction, so each is logged and the service-level pre-check remains the guard."""
     try:
         conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS ux_appt_active_slot "
+            f"CREATE UNIQUE INDEX IF NOT EXISTS {_SLOT_INDEX} "                    # nosec B608
             "ON appointments (scope, host_id, date, time) "
-            f"WHERE status IN {_ACTIVE}")
+            f"WHERE status IN ({_ACTIVE_SQL_LIST})")
     except psycopg.errors.UniqueViolation:
         logger.warning(
             "stage=scheduler event=slot_uniqueness_unavailable reason=duplicate_active_rows "
             "action=%s",
             "SELECT scope,host_id,date,time,count(*) FROM appointments "
-            f"WHERE status IN {_ACTIVE} GROUP BY 1,2,3,4 HAVING count(*)>1")
+            f"WHERE status IN ({_ACTIVE_SQL_LIST}) GROUP BY 1,2,3,4 HAVING count(*)>1")
+    except psycopg.errors.DuplicateTable:
+        # A sibling process won the race and built it; the index exists, which is all we wanted.
+        logger.debug("stage=scheduler event=slot_uniqueness_built_concurrently")
+    except psycopg.Error as exc:
+        logger.warning("stage=scheduler event=slot_uniqueness_unavailable reason=%s error=%s",
+                       getattr(exc, "sqlstate", "unknown"), exc)
+
+
+def _slot_taken(exc: "psycopg.errors.UniqueViolation", a: Appointment) -> Exception:
+    """Map a unique violation to the domain error — but ONLY the slot one.
+
+    The table has a second unique constraint (the ``(appointment_id, scope)`` primary key), and
+    reporting an id collision as "slot taken" would send the caller down the wrong path — it
+    would hunt for a conflicting appointment, find none, and then offer the contested slot as
+    free. So the primary key is re-raised untouched.
+
+    Postgres reports the violated index of the *partition*, not the parent
+    (``appointments_p3_scope_host_id_date_time_idx``, ``appointments_p3_pkey``), so the parent
+    index name never appears here — match the ``_pkey`` suffix instead."""
+    if str(getattr(exc.diag, "constraint_name", "") or "").endswith("_pkey"):
+        return exc
+    return SlotTakenError(f"{a.time} on {a.date} is already booked for {a.host_id}")
 
 
 def _appt(row: tuple) -> Appointment:
@@ -190,10 +221,7 @@ class PgAppointmentStore:
                 (a.appointment_id, self._scope, a.host_id, a.date, a.time, a.with_name,
                  a.status, a.cancel_reason, a.notes, a.guest_id, a.host_name))
         except psycopg.errors.UniqueViolation as exc:
-            # ux_appt_active_slot rejected it: a concurrent turn took this slot after the
-            # caller's availability check. Surface the domain error, not the driver's.
-            raise SlotTakenError(
-                f"{a.time} on {a.date} is already booked for {a.host_id}") from exc
+            raise _slot_taken(exc, a) from exc
 
     def get(self, appointment_id: str) -> Optional[Appointment]:
         row = self._conn.execute(
@@ -219,9 +247,15 @@ class PgAppointmentStore:
 
     def update(self, appointment: Appointment) -> None:
         a = appointment
-        self._conn.execute(
-            """UPDATE appointments SET host_id = %s, date = %s, time = %s, with_name = %s,
-                   status = %s, cancel_reason = %s, notes = %s, guest_id = %s, host_name = %s
-               WHERE scope = %s AND appointment_id = %s""",
-            (a.host_id, a.date, a.time, a.with_name, a.status, a.cancel_reason, a.notes,
-             a.guest_id, a.host_name, self._scope, a.appointment_id))
+        # The slot index guards UPDATEs too — moving an appointment onto an occupied slot
+        # (reschedule) or reviving a CANCELED one into a since-taken slot (update_status) both
+        # violate it. Same domain translation as ``add``.
+        try:
+            self._conn.execute(
+                """UPDATE appointments SET host_id = %s, date = %s, time = %s, with_name = %s,
+                       status = %s, cancel_reason = %s, notes = %s, guest_id = %s, host_name = %s
+                   WHERE scope = %s AND appointment_id = %s""",
+                (a.host_id, a.date, a.time, a.with_name, a.status, a.cancel_reason, a.notes,
+                 a.guest_id, a.host_name, self._scope, a.appointment_id))
+        except psycopg.errors.UniqueViolation as exc:
+            raise _slot_taken(exc, a) from exc
