@@ -10,11 +10,14 @@ scope-free. ``pip install cogno-praxis[postgres]``.
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 import psycopg
 
-from cogno_praxis.scheduler.store import ACTIVE_STATUS, Appointment, Host
+from cogno_praxis.scheduler.store import ACTIVE_STATUS, Appointment, Host, SlotTakenError
+
+logger = logging.getLogger(__name__)
 
 _ACTIVE = tuple(ACTIVE_STATUS)
 
@@ -44,6 +47,7 @@ def _ensure_schema(conn: "psycopg.Connection", partitions: int) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS ix_appt_scope_host_date "
         "ON appointments (scope, host_id, date)")
+    _ensure_slot_uniqueness(conn)
     # The guest-side visibility query (a GUEST's own bookings) is keyed by (scope, guest_id).
     conn.execute(
         "CREATE INDEX IF NOT EXISTS ix_appt_scope_guest "
@@ -57,6 +61,36 @@ def _host(row: tuple) -> Host:
 # The canonical column order for an appointment SELECT (kept in sync with ``_appt``).
 _APPT_COLS = ("appointment_id, host_id, date, time, with_name, status, cancel_reason, "
               "notes, guest_id, host_name")
+
+
+def _ensure_slot_uniqueness(conn: "psycopg.Connection") -> None:
+    """The atomic guard against double-booking.
+
+    ``book()`` is check-then-insert: it reads ``booked_times`` and then inserts. Two turns for
+    the same tenant run concurrently (host locks are per-SESSION, and the scheduler's sync MCP
+    tools are dispatched from a threadpool), so both can pass the check and insert the same
+    slot. Only a constraint closes that window.
+
+    PARTIAL by design — it must cover only the statuses that still occupy a slot, so
+    cancel→rebook and the pile of CANCELED/COMPLETED history rows on a slot stay legal.
+    ``scope`` leads the column list because Postgres requires a unique index on a partitioned
+    table to contain the partition key.
+
+    Creation FAILS if the table already holds conflicting active rows. That must not take the
+    whole scheduler down at import time, so we log the conflict and carry on with the
+    service-level pre-check as the only guard (the pre-existing behaviour) — the operator gets
+    an actionable warning naming the query that finds the offenders."""
+    try:
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_appt_active_slot "
+            "ON appointments (scope, host_id, date, time) "
+            f"WHERE status IN {_ACTIVE}")
+    except psycopg.errors.UniqueViolation:
+        logger.warning(
+            "stage=scheduler event=slot_uniqueness_unavailable reason=duplicate_active_rows "
+            "action=%s",
+            "SELECT scope,host_id,date,time,count(*) FROM appointments "
+            f"WHERE status IN {_ACTIVE} GROUP BY 1,2,3,4 HAVING count(*)>1")
 
 
 def _appt(row: tuple) -> Appointment:
@@ -148,12 +182,18 @@ class PgAppointmentStore:
 
     def add(self, appointment: Appointment) -> None:
         a = appointment
-        self._conn.execute(
-            """INSERT INTO appointments (appointment_id, scope, host_id, date, time,
-                   with_name, status, cancel_reason, notes, guest_id, host_name)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (a.appointment_id, self._scope, a.host_id, a.date, a.time, a.with_name,
-             a.status, a.cancel_reason, a.notes, a.guest_id, a.host_name))
+        try:
+            self._conn.execute(
+                """INSERT INTO appointments (appointment_id, scope, host_id, date, time,
+                       with_name, status, cancel_reason, notes, guest_id, host_name)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (a.appointment_id, self._scope, a.host_id, a.date, a.time, a.with_name,
+                 a.status, a.cancel_reason, a.notes, a.guest_id, a.host_name))
+        except psycopg.errors.UniqueViolation as exc:
+            # ux_appt_active_slot rejected it: a concurrent turn took this slot after the
+            # caller's availability check. Surface the domain error, not the driver's.
+            raise SlotTakenError(
+                f"{a.time} on {a.date} is already booked for {a.host_id}") from exc
 
     def get(self, appointment_id: str) -> Optional[Appointment]:
         row = self._conn.execute(
