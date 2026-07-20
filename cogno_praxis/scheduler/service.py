@@ -34,6 +34,7 @@ from cogno_praxis.scheduler.store import (
     AppointmentStore,
     Host,
     InMemoryAppointmentStore,
+    SlotTakenError,
 )
 
 # The default working day (SchedulerConfig defaults: 09:00–17:00, 60-min, lunch 12:00–14:00)
@@ -341,25 +342,7 @@ class SchedulerService:
         if time not in self._slots:
             raise SchedulerError(f"{time} is not a bookable slot")
         if time in self.store.booked_times(host_id, date):
-            # Idempotent: re-booking the IDENTICAL appointment (same host/date/time/client)
-            # returns the existing one instead of erroring. This makes the host's EGO↔judge
-            # correction loop safe — a retry that re-issues the same booking succeeds rather
-            # than colliding with its own first attempt. A *different* client still conflicts.
-            existing = next(
-                (a for a in self.store.list(host_id=host_id)
-                 if a.date == date and a.time == time and a.status in ACTIVE_STATUS), None)
-            # "same client" = same stable guest_id when we have one, else the display name.
-            if existing is not None and not existing.is_block and (
-                    (guest_id.strip() and existing.guest_id.strip() == guest_id.strip())
-                    or (not guest_id.strip() and with_name.strip()
-                        and existing.with_name.strip().lower() == with_name.strip().lower())):
-                return existing
-            # Carry the free alternatives IN the error (the parent's SLOT_UNAVAILABLE
-            # pattern) so the model offers them in one shot instead of re-looping.
-            free = [s for s in self._slots if s not in self.store.booked_times(host_id, date)]
-            free_txt = ", ".join(free) if free else "none that day"
-            raise SchedulerError(
-                f"{time} on {date} is already booked. Free slots on {date}: {free_txt}")
+            return self._resolve_slot_conflict(host_id, date, time, with_name, guest_id)
         # The professional's auto_confirm decides: instant CONFIRMED, or PENDING until they
         # accept (update_appointment_status). The booker's *role* never enters here — RBAC is
         # the host's job; the vertical only reads the professional's own setting.
@@ -368,8 +351,38 @@ class SchedulerService:
             appointment_id=uuid.uuid4().hex[:8], host_id=host_id, date=date,
             time=time, with_name=with_name, status=status, notes=notes,
             guest_id=guest_id, host_name=host_name or host.name)
-        self.store.add(appt)
+        try:
+            self.store.add(appt)
+        except SlotTakenError:
+            # A concurrent turn took the slot between the check above and this insert; the
+            # store's unique index caught what check-then-insert cannot. Answer exactly as the
+            # pre-check would have — idempotent re-book, or free alternatives.
+            return self._resolve_slot_conflict(host_id, date, time, with_name, guest_id)
         return appt
+
+    def _resolve_slot_conflict(self, host_id: str, date: str, time: str,
+                               with_name: str, guest_id: str) -> Appointment:
+        """A slot is already taken: return the caller's OWN appointment, or raise with the
+        free alternatives. Reached from the availability pre-check and from a lost race."""
+        # Idempotent: re-booking the IDENTICAL appointment (same host/date/time/client)
+        # returns the existing one instead of erroring. This makes the host's EGO↔judge
+        # correction loop safe — a retry that re-issues the same booking succeeds rather
+        # than colliding with its own first attempt. A *different* client still conflicts.
+        existing = next(
+            (a for a in self.store.list(host_id=host_id)
+             if a.date == date and a.time == time and a.status in ACTIVE_STATUS), None)
+        # "same client" = same stable guest_id when we have one, else the display name.
+        if existing is not None and not existing.is_block and (
+                (guest_id.strip() and existing.guest_id.strip() == guest_id.strip())
+                or (not guest_id.strip() and with_name.strip()
+                    and existing.with_name.strip().lower() == with_name.strip().lower())):
+            return existing
+        # Carry the free alternatives IN the error (the parent's SLOT_UNAVAILABLE
+        # pattern) so the model offers them in one shot instead of re-looping.
+        free = [s for s in self._slots if s not in self.store.booked_times(host_id, date)]
+        free_txt = ", ".join(free) if free else "none that day"
+        raise SchedulerError(
+            f"{time} on {date} is already booked. Free slots on {date}: {free_txt}")
 
     def _authorize(self, appt: Appointment, identity_id: Optional[str],
                    role: Optional[str]) -> None:
@@ -435,7 +448,14 @@ class SchedulerService:
                     f"{appt.appointment_id} was on {appt.date} (past); a past appointment "
                     f"cannot go to {status} — mark it COMPLETED or CANCELED instead")
         appt.status = status
-        self.store.update(appt)
+        try:
+            self.store.update(appt)
+        except SlotTakenError:
+            # Reviving a terminal appointment (CANCELED/COMPLETED → active) whose slot was
+            # taken in the meantime. Refuse in domain terms; the slot is genuinely gone.
+            raise SchedulerError(
+                f"{appt.appointment_id} cannot go to {status}: {appt.time} on {appt.date} "
+                f"is now booked by someone else — rebook at a free slot instead") from None
         return appt, True
 
     def cancel(self, appointment_id: str, reason: str = "", *,
@@ -503,7 +523,16 @@ class SchedulerService:
                 f"{new_time} on {new_date} is already booked. Free slots on {new_date}: {free_txt}")
         appt.date = new_date
         appt.time = new_time
-        self.store.update(appt)
+        try:
+            self.store.update(appt)
+        except SlotTakenError:
+            # Lost the race with a concurrent booking of the target slot — same answer the
+            # pre-check above gives, so the model can offer alternatives instead of retrying.
+            free = [s for s in self._slots if s not in taken and s != new_time]
+            free_txt = ", ".join(free) if free else "none that day"
+            raise SchedulerError(
+                f"{new_time} on {new_date} is already booked. "
+                f"Free slots on {new_date}: {free_txt}") from None
         return appt
 
     def block_schedule(self, host_id: str, date: str, *, start_time: str = "",
@@ -540,7 +569,15 @@ class SchedulerService:
             appt = Appointment(
                 appointment_id=uuid.uuid4().hex[:8], host_id=host_id, date=date,
                 time=t, with_name="", status=CONFIRMED, notes=note)
-            self.store.add(appt)
+            try:
+                self.store.add(appt)
+            except SlotTakenError:
+                # A client booked this slot between the conflict scan above and now. Blocking
+                # is best-effort per slot: keep the ones already made, report the contested
+                # one — the same shape as the pre-scan's refusal.
+                raise SchedulerError(
+                    f"cannot block {date}: {t} was just booked by a client "
+                    f"({len(created)} earlier slot(s) blocked)") from None
             created.append(appt)
         return created
 

@@ -7,7 +7,9 @@ the ``appointments`` table is HASH(scope)-partitioned, and scope isolates tenant
 
 from __future__ import annotations
 
+import logging
 import os
+import threading
 from datetime import date
 
 import pytest
@@ -18,6 +20,8 @@ DSN = os.environ.get("COGNO_TEST_PG_DSN")
 pytestmark = pytest.mark.skipif(not DSN, reason="set COGNO_TEST_PG_DSN to run")
 
 from cogno_praxis.scheduler import Host, SchedulerService            # noqa: E402
+from cogno_praxis.scheduler.service import SchedulerError            # noqa: E402
+from cogno_praxis.scheduler.store import Appointment                 # noqa: E402
 from cogno_praxis.scheduler.stores.postgres import PgAppointmentStore  # noqa: E402
 
 _TODAY = date(2026, 6, 30)   # Tuesday → 2026-07-01 is a working Wednesday
@@ -133,4 +137,150 @@ def test_two_sided_visibility_survives_postgres():
                         "WHERE scope='clinic' AND appointment_id=%s",
                         (appt.appointment_id,)).fetchone()
     assert row == ("ana_id", "Dr. Vinicius Vale")
+    store.close()
+
+
+def test_concurrent_booking_of_one_slot_yields_exactly_one_appointment():
+    """The check-then-insert race, closed by ``ux_appt_active_slot``.
+
+    ``book()`` reads availability and then inserts; two turns of the SAME tenant run
+    concurrently (host locks are per-session, and the MCP tools are threadpool-dispatched),
+    so both can clear the check. Only the partial unique index makes the loser lose — and it
+    must lose as a domain SchedulerError carrying alternatives, not a psycopg traceback."""
+    store = _drop_and_store("clinic")
+    store.add_host(Host("h1", "Dr. House", auto_confirm=True))
+
+    booked, refused = [], []
+    barrier = threading.Barrier(2)
+
+    def _book(name: str, guest: str) -> None:
+        s = PgAppointmentStore(DSN, "clinic")          # an independent connection per "turn"
+        svc = SchedulerService(s, today=lambda: _TODAY)
+        barrier.wait()                                  # maximise the overlap
+        try:
+            booked.append(svc.book("h1", "2026-07-01", "10:00", name, guest_id=guest))
+        except SchedulerError as exc:
+            refused.append(str(exc))
+        finally:
+            s.close()
+
+    threads = [threading.Thread(target=_book, args=a)
+               for a in (("Ana", "g_ana"), ("Bob", "g_bob"))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(booked) == 1 and len(refused) == 1
+    assert "already booked" in refused[0] and "Free slots" in refused[0]
+    with psycopg.connect(DSN) as c:
+        active = c.execute(
+            "SELECT count(*) FROM appointments WHERE scope='clinic' AND status IN "
+            "('PENDING','CONFIRMED') AND date='2026-07-01' AND time='10:00'").fetchone()[0]
+    assert active == 1, "double booking survived the constraint"
+    store.close()
+
+
+def test_slot_constraint_still_allows_rebook_and_history():
+    """The index is PARTIAL for a reason: only ACTIVE rows hold a slot. Re-booking the same
+    slot after a cancel, and stacking CANCELED history on it, must both stay legal."""
+    store = _drop_and_store("clinic")
+    store.add_host(Host("h1", "Dr. House", auto_confirm=True))
+    svc = SchedulerService(store, today=lambda: _TODAY)
+
+    first = svc.book("h1", "2026-07-01", "10:00", "Ana", guest_id="g_ana")
+    # same client re-issuing the identical booking is idempotent (EGO↔judge retry safety)
+    assert svc.book("h1", "2026-07-01", "10:00", "Ana",
+                    guest_id="g_ana").appointment_id == first.appointment_id
+
+    svc.cancel(first.appointment_id, reason="freed")
+    second = svc.book("h1", "2026-07-01", "10:00", "Bob", guest_id="g_bob")
+    assert second.appointment_id != first.appointment_id
+
+    svc.cancel(second.appointment_id, reason="freed again")
+    third = svc.book("h1", "2026-07-01", "10:00", "Carol", guest_id="g_carol")
+    with psycopg.connect(DSN) as c:
+        rows = c.execute(
+            "SELECT count(*) FROM appointments WHERE scope='clinic' AND date='2026-07-01' "
+            "AND time='10:00'").fetchone()[0]
+    assert rows == 3 and third.status == "CONFIRMED"   # two CANCELED + one live
+    store.close()
+
+
+def test_preexisting_duplicates_degrade_instead_of_killing_the_store(caplog):
+    """Creating the unique index FAILS on a table that already holds conflicting active rows.
+    That must not take the scheduler down at construction: it logs and falls back to the
+    service-level pre-check (the pre-existing guard)."""
+    store = _drop_and_store("clinic")
+    with psycopg.connect(DSN, autocommit=True) as c:
+        c.execute("DROP INDEX IF EXISTS ux_appt_active_slot_v1")
+        for aid in ("dup1", "dup2"):
+            c.execute("INSERT INTO appointments (appointment_id, scope, host_id, date, time, "
+                      "with_name, status) VALUES (%s,'clinic','h1','2026-07-01','10:00','X',"
+                      "'CONFIRMED')", (aid,))
+    with caplog.at_level(logging.WARNING, logger="cogno_praxis.scheduler.stores.postgres"):
+        again = PgAppointmentStore(DSN, "clinic")       # must NOT raise
+    assert "event=slot_uniqueness_unavailable" in " ".join(r.getMessage()
+                                                           for r in caplog.records)
+    again.close()
+    store.close()
+
+
+def _hidden_from_scan(store, appointment_id: str):
+    """Make a row invisible to the service's pre-checks while it IS in the table — i.e. it
+    appeared between the check and the write. That is the race, deterministically."""
+    real = store.list
+    store.list = lambda **kw: [a for a in real(**kw) if a.appointment_id != appointment_id]
+
+
+def test_every_write_path_reports_a_slot_race_in_domain_terms():
+    """The unique index guards INSERT *and* UPDATE, so ``book`` is not the only path that can
+    lose a race. reschedule / update_status / block_schedule must each answer with a
+    SchedulerError the model can act on — never a raw psycopg UniqueViolation."""
+    store = _drop_and_store("clinic")
+    store.add_host(Host("h1", "Dr. House", auto_confirm=True))
+    svc = SchedulerService(store, today=lambda: _TODAY)
+
+    # reschedule onto a slot occupied after its own pre-check
+    mine = svc.book("h1", "2026-07-01", "09:00", "Ana", guest_id="g_ana")
+    store.add(Appointment(appointment_id="rival1", host_id="h1", date="2026-07-01",
+                          time="10:00", with_name="Bob", status="CONFIRMED"))
+    _hidden_from_scan(store, "rival1")
+    with pytest.raises(SchedulerError, match="already booked"):
+        svc.reschedule(mine.appointment_id, "2026-07-01", "10:00")
+
+    # update_status reviving a CANCELED appointment whose slot was retaken
+    store = _drop_and_store("clinic")
+    store.add_host(Host("h1", "Dr. House", auto_confirm=True))
+    svc = SchedulerService(store, today=lambda: _TODAY)
+    old = svc.book("h1", "2026-07-02", "09:00", "Ana", guest_id="g_ana")
+    svc.cancel(old.appointment_id, reason="freed")
+    store.add(Appointment(appointment_id="rival2", host_id="h1", date="2026-07-02",
+                          time="09:00", with_name="Carol", status="CONFIRMED"))
+    with pytest.raises(SchedulerError, match="now booked by someone else"):
+        svc.update_status(old.appointment_id, "CONFIRMED")
+
+    # block_schedule racing a client booking
+    store = _drop_and_store("clinic")
+    store.add_host(Host("h1", "Dr. House", auto_confirm=True))
+    svc = SchedulerService(store, today=lambda: _TODAY)
+    store.add(Appointment(appointment_id="rival3", host_id="h1", date="2026-07-03",
+                          time="14:00", with_name="Cliente", status="CONFIRMED"))
+    _hidden_from_scan(store, "rival3")
+    with pytest.raises(SchedulerError, match="just booked by a client"):
+        svc.block_schedule("h1", "2026-07-03", start_time="14:00")
+    store.close()
+
+
+def test_primary_key_collision_is_not_reported_as_a_taken_slot():
+    """Only the slot index means "slot taken". An appointment_id collision (the other unique
+    constraint) must surface as itself — mislabelling it would make the caller hunt for a
+    conflicting appointment, find none, and offer the contested slot as free."""
+    store = _drop_and_store("clinic")
+    store.add_host(Host("h1", "Dr. House", auto_confirm=True))
+    store.add(Appointment(appointment_id="dup", host_id="h1", date="2026-07-01", time="09:00",
+                          with_name="Ana", status="CONFIRMED"))
+    with pytest.raises(psycopg.errors.UniqueViolation):        # NOT SlotTakenError
+        store.add(Appointment(appointment_id="dup", host_id="h1", date="2026-07-01",
+                              time="11:00", with_name="Bob", status="CONFIRMED"))
     store.close()

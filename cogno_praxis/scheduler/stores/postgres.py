@@ -10,13 +10,24 @@ scope-free. ``pip install cogno-praxis[postgres]``.
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 import psycopg
 
-from cogno_praxis.scheduler.store import ACTIVE_STATUS, Appointment, Host
+from cogno_praxis.scheduler.store import ACTIVE_STATUS, Appointment, Host, SlotTakenError
+
+logger = logging.getLogger(__name__)
 
 _ACTIVE = tuple(ACTIVE_STATUS)
+# Rendered into the partial index predicate. Built explicitly (sorted, quoted) rather than by
+# interpolating the tuple: ``repr`` of a 1-element tuple emits a trailing comma — ``IN ('X',)``
+# — which Postgres rejects, and frozenset order is not stable across processes.
+_ACTIVE_SQL_LIST = ", ".join(f"'{s}'" for s in sorted(ACTIVE_STATUS))
+# Bumped whenever the predicate changes: ``CREATE INDEX IF NOT EXISTS`` matches on NAME only,
+# so reusing the name after editing ACTIVE_STATUS would silently keep enforcing the OLD
+# predicate. A new name forces the new index to be built.
+_SLOT_INDEX = "ux_appt_active_slot_v1"
 
 
 def _ensure_schema(conn: "psycopg.Connection", partitions: int) -> None:
@@ -44,6 +55,7 @@ def _ensure_schema(conn: "psycopg.Connection", partitions: int) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS ix_appt_scope_host_date "
         "ON appointments (scope, host_id, date)")
+    _ensure_slot_uniqueness(conn)
     # The guest-side visibility query (a GUEST's own bookings) is keyed by (scope, guest_id).
     conn.execute(
         "CREATE INDEX IF NOT EXISTS ix_appt_scope_guest "
@@ -57,6 +69,59 @@ def _host(row: tuple) -> Host:
 # The canonical column order for an appointment SELECT (kept in sync with ``_appt``).
 _APPT_COLS = ("appointment_id, host_id, date, time, with_name, status, cancel_reason, "
               "notes, guest_id, host_name")
+
+
+def _ensure_slot_uniqueness(conn: "psycopg.Connection") -> None:
+    """The atomic guard against double-booking.
+
+    ``book()`` is check-then-insert: it reads ``booked_times`` and then inserts. Two turns for
+    the same tenant run concurrently (host locks are per-SESSION, and the scheduler's sync MCP
+    tools are dispatched from a threadpool), so both can pass the check and insert the same
+    slot. Only a constraint closes that window.
+
+    PARTIAL by design — it must cover only the statuses that still occupy a slot, so
+    cancel→rebook and the pile of CANCELED/COMPLETED history rows on a slot stay legal.
+    ``scope`` leads the column list because Postgres requires a unique index on a partitioned
+    table to contain the partition key.
+
+    Creation can fail for reasons outside our control — pre-existing duplicate rows, another
+    process building the same index concurrently (this takes ACCESS EXCLUSIVE on the parent
+    and every partition, and ``IF NOT EXISTS`` re-checks nothing after it unblocks), a lock
+    timeout, or missing privileges. None of those may take the whole scheduler down at
+    construction, so each is logged and the service-level pre-check remains the guard."""
+    try:
+        conn.execute(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS {_SLOT_INDEX} "                    # nosec B608
+            "ON appointments (scope, host_id, date, time) "
+            f"WHERE status IN ({_ACTIVE_SQL_LIST})")
+    except psycopg.errors.UniqueViolation:
+        logger.warning(
+            "stage=scheduler event=slot_uniqueness_unavailable reason=duplicate_active_rows "
+            "action=%s",
+            "SELECT scope,host_id,date,time,count(*) FROM appointments "
+            f"WHERE status IN ({_ACTIVE_SQL_LIST}) GROUP BY 1,2,3,4 HAVING count(*)>1")
+    except psycopg.errors.DuplicateTable:
+        # A sibling process won the race and built it; the index exists, which is all we wanted.
+        logger.debug("stage=scheduler event=slot_uniqueness_built_concurrently")
+    except psycopg.Error as exc:
+        logger.warning("stage=scheduler event=slot_uniqueness_unavailable reason=%s error=%s",
+                       getattr(exc, "sqlstate", "unknown"), exc)
+
+
+def _slot_taken(exc: "psycopg.errors.UniqueViolation", a: Appointment) -> Exception:
+    """Map a unique violation to the domain error — but ONLY the slot one.
+
+    The table has a second unique constraint (the ``(appointment_id, scope)`` primary key), and
+    reporting an id collision as "slot taken" would send the caller down the wrong path — it
+    would hunt for a conflicting appointment, find none, and then offer the contested slot as
+    free. So the primary key is re-raised untouched.
+
+    Postgres reports the violated index of the *partition*, not the parent
+    (``appointments_p3_scope_host_id_date_time_idx``, ``appointments_p3_pkey``), so the parent
+    index name never appears here — match the ``_pkey`` suffix instead."""
+    if str(getattr(exc.diag, "constraint_name", "") or "").endswith("_pkey"):
+        return exc
+    return SlotTakenError(f"{a.time} on {a.date} is already booked for {a.host_id}")
 
 
 def _appt(row: tuple) -> Appointment:
@@ -148,12 +213,15 @@ class PgAppointmentStore:
 
     def add(self, appointment: Appointment) -> None:
         a = appointment
-        self._conn.execute(
-            """INSERT INTO appointments (appointment_id, scope, host_id, date, time,
-                   with_name, status, cancel_reason, notes, guest_id, host_name)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (a.appointment_id, self._scope, a.host_id, a.date, a.time, a.with_name,
-             a.status, a.cancel_reason, a.notes, a.guest_id, a.host_name))
+        try:
+            self._conn.execute(
+                """INSERT INTO appointments (appointment_id, scope, host_id, date, time,
+                       with_name, status, cancel_reason, notes, guest_id, host_name)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (a.appointment_id, self._scope, a.host_id, a.date, a.time, a.with_name,
+                 a.status, a.cancel_reason, a.notes, a.guest_id, a.host_name))
+        except psycopg.errors.UniqueViolation as exc:
+            raise _slot_taken(exc, a) from exc
 
     def get(self, appointment_id: str) -> Optional[Appointment]:
         row = self._conn.execute(
@@ -179,9 +247,15 @@ class PgAppointmentStore:
 
     def update(self, appointment: Appointment) -> None:
         a = appointment
-        self._conn.execute(
-            """UPDATE appointments SET host_id = %s, date = %s, time = %s, with_name = %s,
-                   status = %s, cancel_reason = %s, notes = %s, guest_id = %s, host_name = %s
-               WHERE scope = %s AND appointment_id = %s""",
-            (a.host_id, a.date, a.time, a.with_name, a.status, a.cancel_reason, a.notes,
-             a.guest_id, a.host_name, self._scope, a.appointment_id))
+        # The slot index guards UPDATEs too — moving an appointment onto an occupied slot
+        # (reschedule) or reviving a CANCELED one into a since-taken slot (update_status) both
+        # violate it. Same domain translation as ``add``.
+        try:
+            self._conn.execute(
+                """UPDATE appointments SET host_id = %s, date = %s, time = %s, with_name = %s,
+                       status = %s, cancel_reason = %s, notes = %s, guest_id = %s, host_name = %s
+                   WHERE scope = %s AND appointment_id = %s""",
+                (a.host_id, a.date, a.time, a.with_name, a.status, a.cancel_reason, a.notes,
+                 a.guest_id, a.host_name, self._scope, a.appointment_id))
+        except psycopg.errors.UniqueViolation as exc:
+            raise _slot_taken(exc, a) from exc

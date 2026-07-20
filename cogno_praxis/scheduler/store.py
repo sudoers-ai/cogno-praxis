@@ -35,6 +35,17 @@ EMPLOYEE_ROLE = "EMPLOYEE"
 OVERSIGHT_ROLES: frozenset[str] = frozenset({"SUPERVISOR", "ADMIN", "SECRETARY"})
 
 
+class SlotTakenError(RuntimeError):
+    """An ``add()`` lost the race for a slot — the backing store refused it because an ACTIVE
+    appointment already occupies (host_id, date, time).
+
+    A store that can enforce slot uniqueness atomically (the Postgres adapter, via a partial
+    unique index) raises this; the service catches it and answers exactly as its own
+    check-then-insert pre-check would have (idempotent re-book, or free alternatives). The
+    in-memory default cannot enforce it, so the pre-check is its only guard — fine for the
+    single-process dev/demo path it serves."""
+
+
 @dataclass
 class Host:
     """Someone who can be booked (a professional, a room, a resource)."""
