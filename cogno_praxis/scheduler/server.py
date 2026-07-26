@@ -200,7 +200,20 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_schedule_settings() -> str:
-        """Show the tenant's current scheduling rules (hours, lunch, weekends, slot, policy)."""
+        """BUSINESS HOURS and scheduling rules of the clinic/office itself — when it is OPEN.
+
+        Call this for "what are your opening/business hours?", "when are you open?", "do you
+        open on Saturdays?", "what time do you close?", "how long is an appointment?", "do you
+        break for lunch?" — anything about the ESTABLISHMENT's schedule.
+
+        NOT to be confused with:
+          * ``list_schedulable_hosts`` — WHICH PROFESSIONALS work here (people, specialties);
+          * ``check_availability`` — FREE SLOTS on a given date for a given professional.
+        A question about the venue's hours is answered here, never guessed from the
+        professional list (a reply that states hours without this read is a fabrication).
+
+        Returns hours, lunch window, weekend policy, slot duration and booking policy.
+        """
         s = svc.get_settings()
         return "Schedule settings: " + ", ".join(f"{k}={v}" for k, v in s.items())
 
