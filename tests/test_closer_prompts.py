@@ -59,3 +59,33 @@ def test_the_voice_slot_carries_the_arc_because_short_answers_never_reach_the_ex
     # the specific turn that failed live
     assert "claro" in voice.lower()
     assert "nunca como pergunta nova" in voice
+
+
+def test_the_persona_knows_where_its_product_facts_come_from():
+    """The host injects a [PRODUTO] block (curated catalog + sales sheet). Without the prompt
+    naming it, the model has a source it does not know it has — and the first live turn came
+    out generic because it had nothing to say about the product."""
+    system = (PROMPTS / "system.txt").read_text()
+    voice = (PROMPTS / "voice.txt").read_text()
+    for text in (system, voice):
+        assert "[PRODUTO]" in text
+        assert "única" in text.lower()          # it is the ONLY source
+    # not knowing must produce "I don't know", never a plausible filler
+    assert "Nunca preencha a lacuna" in system
+
+
+def test_explaining_how_it_works_is_part_of_the_job():
+    """A lead asks "how does this actually work?" — for a seller that is the work, not a
+    digression. Every other persona stays product-blind (host-side flag)."""
+    system = (PROMPTS / "system.txt").read_text()
+    assert "como a solução funciona por dentro" in system
+    assert "linguagem de negócio" in system
+
+
+def test_the_close_does_not_promise_a_booking_it_cannot_make():
+    """The persona is conversational: it has no scheduler. It used to borrow the tenant's
+    MEDICAL agenda, where "let's talk 20 minutes" would book a consultation with an
+    endocrinologist."""
+    system = (PROMPTS / "system.txt").read_text()
+    assert "NÃO tem agenda para marcar" in system
+    assert "atendimento humano" in system
