@@ -1,6 +1,6 @@
 [project]
 name = "cogno-praxis"
-version = "0.1.0"
+version = "0.1.1"
 description = "The Cogno business verticals as standalone MCP servers (the product layer). Each vertical is an independent FastMCP server the host orchestrates via cogno-mcp; verticals own their domain logic + data behind their own store ports. Verticals: scheduler (agenda → SECRETARY persona) and bookkeeper (finance → BOOKKEEPER persona)."
 readme = "README.md"
 requires-python = ">=3.10"
