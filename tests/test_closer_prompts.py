@@ -25,8 +25,22 @@ def test_the_arc_is_ordered_and_the_diagnosis_comes_before_the_pitch():
     system = (PROMPTS / "system.txt").read_text()
     for step in ("1. ABERTURA", "2. DIAGNÓSTICO", "3. DEVOLUTIVA", "4. ENCAIXE", "5. FECHAMENTO"):
         assert step in system
-    # the one rule the whole persona rests on
-    assert "NUNCA venda antes do passo 3" in system
+    # The rule the whole persona rests on — and the distinction that makes it survivable:
+    # a live conversation died on it. The judge, reading "never talk product before act 3",
+    # rejected every attempt to ANSWER a direct question about price, integration and how the
+    # thing works, three times per turn, until the loop exhausted and the lead got
+    # "sorry, I'll transfer you to an agent". Not offering ≠ not answering.
+    assert "NUNCA **ofereça** produto antes do passo 3" in system
+    assert "se ela PERGUNTAR" in system
+
+
+def test_the_judge_must_not_reject_an_answer_to_a_direct_question():
+    """The limits slot is the judge's rubric, and it is what killed 4 of 11 turns live."""
+    limits = (PROMPTS / "limits.txt").read_text().replace("\n", " ")
+    assert "não confunda **oferecer** com **responder**" in limits
+    assert "responder é obrigatório" in limits
+    # and not knowing must be approvable, or the contact gets nothing at all
+    assert "dizer que não sabe" in limits
 
 
 def test_the_judge_can_approve_a_conversational_turn():
