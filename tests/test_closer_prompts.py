@@ -42,3 +42,20 @@ def test_the_honesty_rules_are_present_because_they_are_what_make_it_credible():
     assert "NUNCA invente" in system
     assert "diga isso na cara e não force" in system      # walk away when it does not fit
     assert "responda a verdade" in system                 # "are you an AI?"
+
+
+def test_the_voice_slot_carries_the_arc_because_short_answers_never_reach_the_executor():
+    """Live finding: the contact answered "Claro" and the NER classified it SOCIAL, so the ID
+    routed the turn to the SUPEREGO and the EXECUTOR never ran — meaning the five acts, which
+    live in system.txt, were not consulted at all. The voicer alone wrote a generic line.
+
+    A diagnosis is made of short answers ("claro", "uns 40", "só eu"), so this is the normal
+    case, not an edge one. The landing chat solved the same problem by handing the executor's
+    prompt to the voicer too; here the arc is restated in the voice slot."""
+    voice = (PROMPTS / "voice.txt").read_text()
+    assert "DIAGNÓSTICO" in voice
+    for cue in ("canais de entrada", "volume", "quem responde", "fora do horário"):
+        assert cue in voice.lower() or cue in voice
+    # the specific turn that failed live
+    assert "claro" in voice.lower()
+    assert "nunca como pergunta nova" in voice
