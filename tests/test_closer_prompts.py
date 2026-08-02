@@ -34,13 +34,39 @@ def test_the_arc_is_ordered_and_the_diagnosis_comes_before_the_pitch():
     assert "se ela PERGUNTAR" in system
 
 
-def test_the_judge_must_not_reject_an_answer_to_a_direct_question():
-    """The limits slot is the judge's rubric, and it is what killed 4 of 11 turns live."""
-    limits = (PROMPTS / "limits.txt").read_text().replace("\n", " ")
-    assert "não confunda **oferecer** com **responder**" in limits
-    assert "responder é obrigatório" in limits
-    # and not knowing must be approvable, or the contact gets nothing at all
-    assert "dizer que não sabe" in limits
+def test_the_judge_rubric_ranks_truth_above_answering():
+    """Both halves were learned from live conversations, in this order.
+
+    First the judge rejected every attempt to ANSWER a direct question about price or
+    integration ("never talk product before the recap"), three attempts per turn, until the
+    loop exhausted and the lead got "I'll transfer you to an agent" — 4 of 11 turns.
+
+    Then, told that answering was mandatory, it approved "Sim, o Cogno integra com o Bling" —
+    an integration that appears nowhere. Answering had outranked being true. So the rubric is
+    ORDERED now: truth first, then answering (with "I don't know" explicitly approvable), then
+    rhythm."""
+    limits = (PROMPTS / "limits.txt").read_text()
+    flat = " ".join(limits.split())
+    assert "## 1. VERDADE" in limits and "## 2. RESPONDER" in limits
+    assert limits.index("## 1. VERDADE") < limits.index("## 2. RESPONDER")
+    assert "não existe" in flat                       # an unlisted integration
+    assert "É uma resposta e deve ser APROVADA" in flat
+    assert "Não confunda **oferecer** com **responder**" in flat
+
+
+def test_an_explanation_is_not_rejected_for_being_long():
+    """The "how does it work?" turn kept dying: explaining the pipeline does not fit the
+    4-sentence budget a normal reply gets, and the judge rejected it three times per turn."""
+    # normalize the file's own wrapping before matching a sentence that spans two lines
+    limits = " ".join((PROMPTS / "limits.txt").read_text().split())
+    assert "pode usar até 8" in limits
+    assert "não rejeite uma explicação boa por tamanho" in limits
+
+
+def test_the_integration_trap_is_called_out_by_name():
+    system = (PROMPTS / "system.txt").read_text().replace("\n", " ")
+    assert "Integração é o caso mais perigoso" in system
+    assert "NUNCA \"sim, integra\"" in system
 
 
 def test_the_judge_can_approve_a_conversational_turn():
