@@ -50,8 +50,29 @@ def test_the_judge_rubric_ranks_truth_above_answering():
     assert "## 1. VERDADE" in limits and "## 2. RESPONDER" in limits
     assert limits.index("## 1. VERDADE") < limits.index("## 2. RESPONDER")
     assert "não existe" in flat                       # an unlisted integration
-    assert "É uma resposta e deve ser APROVADA" in flat
+    assert "Admitir limite É responder — APROVE." in flat
     assert "Não confunda **oferecer** com **responder**" in flat
+
+
+def test_the_judge_classifies_the_contact_turn_before_judging_it():
+    """Third live failure, and the one the two rules above could not fix.
+
+    In a diagnosis MOST contact turns are answers, not requests. Handed "umas 30 por dia", the
+    judge read it as a request, found the agent's next question did not "answer" it, and
+    rejected — critique verbatim: "A resposta não atendeu ao pedido do usuário, que era sobre a
+    quantidade de atendimentos". Three attempts, then the handoff text, on a turn where the
+    agent had done exactly the right thing. So the rubric now classifies the contact's turn
+    FIRST, and asking the next question is the approved outcome when they answered."""
+    limits = (PROMPTS / "limits.txt").read_text()
+    flat = " ".join(limits.split())
+    assert "## 0." in limits
+    # the classification has to come before every criterion it gates
+    assert limits.index("## 0.") < limits.index("## 1. VERDADE")
+    assert "A pessoa RESPONDEU" in flat and "A pessoa PERGUNTOU" in flat
+    assert "não houve pedido" in flat
+    # and the honest-limit answer needs an example, since the plain rule kept losing to the
+    # judge's "give a direct answer" instinct
+    assert "não está na lista de integrações" in flat
 
 
 def test_an_explanation_is_not_rejected_for_being_long():
@@ -128,4 +149,29 @@ def test_the_close_does_not_promise_a_booking_it_cannot_make():
     endocrinologist."""
     system = (PROMPTS / "system.txt").read_text()
     assert "NÃO tem agenda para marcar" in system
-    assert "atendimento humano" in system
+    # the close routes to a PERSON (see the handoff test below for when that is allowed)
+    assert "Encaminhar para humano" in system
+
+
+def test_handoff_is_the_close_not_an_escape_hatch():
+    """`human_handoff` is a builtin in EVERY turn, and the arc's own "encaminhe para
+    atendimento humano" line read as permission to use it whenever the model felt stuck. The
+    production-faithful bench (escalation port wired) measured SEVEN escalations in one run —
+    including on "isso é um robô?", which the persona must simply answer."""
+    system = " ".join((PROMPTS / "system.txt").read_text().split())
+    assert "Não é rota de fuga" in system
+    assert "Encaminhar por não saber é pior que dizer" in system
+
+
+def test_the_seller_sells_whoever_hired_it_not_only_cogno():
+    """The persona was always tenant-agnostic in wording, but it declared the [PRODUTO] block
+    the ONLY source — and that block is gated to the PLATFORM tenant, so any other tenant got
+    a seller that had to answer "I don't know" about its own product. The tenant's own
+    material arrives as `custom_rules` (rendered as "# Tenant-specific direction", and already
+    handed to the judge as legitimate grounding), so it is a first-class source here."""
+    system = " ".join((PROMPTS / "system.txt").read_text().split())
+    assert "Tenant-specific direction" in system
+    assert "produto de quem te contratou" in system
+    # neither source present → still diagnoses, just does not pitch
+    assert "Sem nenhuma das duas" in system
+    assert "Diagnóstico não depende de catálogo" in system
