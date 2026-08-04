@@ -471,6 +471,54 @@ def test_resolve_date_weekdays():
     assert svc.resolve_date("terça") == "2026-07-07"
 
 
+def test_resolve_date_counted_relatives():
+    """"daqui a N dias/semanas" — the family the host's tool description named VERBATIM.
+
+    The parser had no branch for it, so the model read "'daqui a X dias' style relatives"
+    off the tool description, passed exactly that, and got an error: measured on
+    `secretary_bench` 2026-08-04, `resolve_date` failed 50-86% of its calls.
+    """
+    svc = _svc()  # today = 2026-06-30 (Tuesday)
+    assert svc.resolve_date("daqui a 3 dias") == "2026-07-03"
+    assert svc.resolve_date("daqui a 1 dia") == "2026-07-01"
+    assert svc.resolve_date("dentro de 5 dias") == "2026-07-05"
+    assert svc.resolve_date("em 2 semanas") == "2026-07-14"
+    assert svc.resolve_date("in 10 days") == "2026-07-10"
+    # spelled-out counts: far more common in speech than "daqui a 1 semana"
+    assert svc.resolve_date("daqui a uma semana") == "2026-07-07"
+    assert svc.resolve_date("daqui a duas semanas") == "2026-07-14"
+    assert svc.resolve_date("in two weeks") == "2026-07-14"
+    # a trailing time-of-day must not defeat the match
+    assert svc.resolve_date("daqui a 3 dias de manhã") == "2026-07-03"
+    # the weekday reading still wins where there IS a weekday
+    assert svc.resolve_date("sexta que vem") == "2026-07-03"
+
+
+def test_resolve_date_counted_relative_needs_a_whole_word():
+    """"em"/"in" are two letters long and live inside plenty of other words. Without a word
+    boundary the relative branch fired on "tambem 3 dias" and "certain 3 days", inventing a
+    date out of a sentence that named none — the worst failure shape for a date tool, since
+    a wrong date books a wrong appointment silently."""
+    svc = _svc()
+    for not_a_date in ("tambem 3 dias", "também 3 dias", "certain 3 days", "a ordem 3 dias"):
+        with pytest.raises(SchedulerError):
+            svc.resolve_date(not_a_date)
+    # the real forms still parse
+    assert svc.resolve_date("em 3 dias") == "2026-07-03"
+    assert svc.resolve_date("marcar em 3 dias") == "2026-07-03"
+
+
+def test_resolve_date_refuses_vague_ranges_on_purpose():
+    """A span is not a day. Resolving "semana que vem" to (say) its Monday would let the
+    agent silently book a day the user never chose — strictly worse than asking. These
+    raise so the caller asks; the fix for them was to stop ADVERTISING them."""
+    svc = _svc()
+    for vague in ("semana que vem", "próxima semana", "essa semana", "no fim de semana",
+                  "mês que vem", "next week", "this week", "de manhã"):
+        with pytest.raises(SchedulerError):
+            svc.resolve_date(vague)
+
+
 def test_resolve_date_explicit_calendar():
     svc = _svc()  # today = 2026-06-30 (Tuesday)
     # numeric DAY-FIRST (pt-BR): 09/07 is 9 July, not 7 September

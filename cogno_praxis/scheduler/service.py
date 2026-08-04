@@ -68,6 +68,41 @@ def _fold(s: str) -> str:
     return unicodedata.normalize("NFKD", s.lower()).encode("ascii", "ignore").decode("ascii")
 
 
+# Spelled-out counts the model actually emits. Digits are handled by the regex; these cover
+# "daqui a uma semana", which is far more common in speech than "daqui a 1 semana".
+_COUNT_WORDS = {"um": 1, "uma": 1, "dois": 2, "duas": 2, "tres": 3, "quatro": 4, "cinco": 5,
+                "seis": 6, "sete": 7, "oito": 8, "nove": 9, "dez": 10,
+                "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+                "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+
+# "daqui a 3 dias", "em 2 semanas", "in 10 days" — a COUNT plus a unit resolves to exactly one
+# date, so it belongs here. A vague RANGE ("semana que vem", "esse mes") deliberately does not:
+# see `resolve_date`.
+# The leading \b is load-bearing: without it "em"/"in" match INSIDE another word, so
+# "tambem 3 dias" and "certain 3 days" both resolved as "em/in 3 days".
+# Counted MONTHS are deliberately absent — month length varies (31 Jan + 1 month?) and the
+# booking window is measured in days anyway. The tool description promises days and weeks
+# only, so the omission stays invisible to the model rather than becoming another
+# advertised-but-unreachable form.
+_RELATIVE_RE = re.compile(
+    r"\b(?:daqui\s+a|daqui|em|dentro\s+de|apos|in|after)\s+"
+    r"(?P<count>\d{1,3}|[a-z]+)\s*"
+    r"(?P<unit>dias?|semanas?|days?|weeks?)\b")
+
+
+def _parse_numeric_relative(folded: str, today: date) -> Optional[date]:
+    """``daqui a N dias|semanas`` / ``in N days|weeks`` → the exact date, else None."""
+    m = _RELATIVE_RE.search(folded)
+    if m is None:
+        return None
+    raw = m.group("count")
+    count = int(raw) if raw.isdigit() else _COUNT_WORDS.get(raw)
+    if count is None:
+        return None
+    days = count * 7 if m.group("unit").startswith(("semana", "week")) else count
+    return today + timedelta(days=days)
+
+
 def _year_for(day: int, month: int, today: date) -> Optional[date]:
     """Pick the year that puts (day, month) today-or-later — this year, else next.
     Returns None for an impossible day/month (e.g. 31/02)."""
@@ -605,6 +640,16 @@ class SchedulerService:
         year that puts it today-or-later. This exists because LLM date arithmetic is
         unreliable; the model calls this instead of guessing. Raises ``SchedulerError``
         when no date can be parsed (the caller then asks the user).
+
+        Also handles COUNTED relatives — "daqui a 3 dias", "em duas semanas", "in 10 days".
+        The host's tool description advertised that family verbatim while the parser had no
+        branch for it, so the model dutifully passed "daqui a X dias" and got an error:
+        measured on `secretary_bench` 2026-08-04, `resolve_date` failed 50-86% of its calls.
+
+        A vague RANGE — "semana que vem", "essa semana", "no fim de semana", "mes que vem" —
+        still raises, ON PURPOSE. Those name a span, not a day, and picking one (the Monday,
+        say) would let the agent silently book a day the user never chose. An error makes it
+        ask, which is the correct behaviour; the fix for those was to stop advertising them.
         """
         e = _fold(expression)
         today = self._today()
@@ -614,6 +659,11 @@ class SchedulerService:
             return (today + timedelta(days=1)).isoformat()
         if "hoje" in e or "today" in e:
             return today.isoformat()
+        # Before the weekday scan: "daqui a duas semanas" carries no weekday word, but a future
+        # phrasing might, and the count is the more specific reading.
+        rel = _parse_numeric_relative(e, today)
+        if rel is not None:
+            return rel.isoformat()
         for word, wd in _WEEKDAYS.items():
             if word in e:
                 ahead = (wd - today.weekday()) % 7 or 7   # strictly the NEXT occurrence
