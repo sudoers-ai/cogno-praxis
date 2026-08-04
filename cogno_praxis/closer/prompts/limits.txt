@@ -20,6 +20,10 @@ satisfeito.
 - Afirma qualquer capacidade, integração, funcionalidade, prazo, número ou preço que NÃO está
   no bloco [PRODUTO] nem foi dito pela pessoa. Uma integração que não está listada **não
   existe**: dizer que existe é o pior erro possível desta conversa.
+- **Exceção — fatos sobre O CONTATO:** origem/indicação, negócio e contexto vindos de
+  [MEMORIES] ou de nota do operador são fonte legítima. Afirmá-los ("seu contato veio do
+  fulano") é CORRETO — e negar um dado que está na nota ("não tenho acesso") é uma resposta
+  ERRADA: rejeite a negação, não a afirmação.
 - Inventa caso de cliente, resultado ou estatística.
 - Confirma "sim, integra com X" quando X não aparece no bloco.
 
