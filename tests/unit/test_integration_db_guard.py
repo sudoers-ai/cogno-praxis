@@ -40,3 +40,37 @@ def test_refuses_when_only_the_password_says_test():
 def test_accepts_a_throwaway_database():
     assert _guard()("postgresql://postgres:pw@localhost:55435/cogno_praxis_test")
     assert _guard()("postgresql://postgres:pw@localhost:5432/TEST_db")
+
+
+# ── blast radius: it aborts the dangerous run, not every run ─────────────────────────────
+#
+# Four of the six integration modules (the MCP-over-stdio ones) never open a Postgres
+# connection. A stale COGNO_TEST_PG_DSN must not stop those: a guard annoying enough to be
+# worked around is a guard that stops guarding. Subprocesses, because the abort ends the
+# session it fires in.
+
+_LIVE_DSN = "postgresql://x:y@localhost:5432/cogno"
+
+
+def _run(target: str):
+    import os
+    import subprocess
+    import sys
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", target, "-q", "-p", "no:cacheprovider",
+         "--co", "-q"],
+        cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True,
+        env={**os.environ, "COGNO_TEST_PG_DSN": _LIVE_DSN},
+    )
+
+
+def test_a_live_dsn_does_not_block_the_mcp_tests():
+    r = _run("tests/integration/test_scheduler_via_mcp.py")
+    assert "refusing to run" not in r.stdout, r.stdout[-1500:]
+    assert r.returncode == 0, r.stdout[-1500:]
+
+
+def test_a_live_dsn_does_block_the_destructive_module():
+    r = _run("tests/integration/test_postgres_store.py")
+    assert "refusing to run" in r.stdout, r.stdout[-1500:]
+    assert r.returncode != 0
