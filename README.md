@@ -114,6 +114,14 @@ so the EGO holds it for confirmation.
   loaded by the host via `cogno-persona`. The capability is persona-agnostic; SECRETARY
   is simply its default face.
 
+A vertical's tool **wins the name** over a host builtin (the dispatcher is first-wins and
+module sources come first) — if a vertical ships a tool, it is because that tool matters to
+the domain. The flip side: a model then sees *your* shell, so improvements to the host's
+builtin never reach personas using your module. Put the behaviour in `service.py` and keep
+both shells thin — `resolve_date` exports its parser **and** its spoken-form renderer, which
+the host's builtin imports rather than copying. See
+[`docs/HOST_INTEGRATION.md` §6.1](docs/HOST_INTEGRATION.md).
+
 ## The Cogno ecosystem
 
 `cogno-praxis` is one organ of **[Cogno](https://github.com/sudoers-ai)** — a family of
