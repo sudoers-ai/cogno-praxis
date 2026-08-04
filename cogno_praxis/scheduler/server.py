@@ -24,7 +24,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from cogno_praxis.scheduler.engine import SchedulerConfig
-from cogno_praxis.scheduler.service import SchedulerService
+from cogno_praxis.scheduler.service import SchedulerService, format_date
 from cogno_praxis.scheduler.store import (
     Appointment,
     AppointmentStore,
@@ -78,7 +78,15 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         which day instead of calling this.
         """
         iso = svc.resolve_date(expression)
-        return f"{expression} = {iso}"
+        # Same payload shape as the host's `resolve_date` builtin, deliberately: the two are
+        # one tool as far as a model is concerned, and the SECRETARY sees THIS one (a module
+        # owns its domain, so the module's copy wins the name). The spoken form is the point
+        # — the live incident behind it is a persona reading "2026-07-25 (Saturday)" and
+        # still voicing "sexta-feira". Handing it the words removes the arithmetic.
+        spoken = format_date(date.fromisoformat(iso),
+                             os.environ.get("COGNO_SCHEDULER_LANG", "pt"))
+        return (f"{iso} ({spoken}). Use the ISO date in tool calls; the written form when "
+                f"speaking to the user.")
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def check_availability(host_id: str, date: str) -> str:

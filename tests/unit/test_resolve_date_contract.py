@@ -67,6 +67,49 @@ def test_every_form_the_description_warns_against_really_fails():
             svc.resolve_date(form)
 
 
+def test_the_success_payload_carries_the_spoken_form():
+    """The ISO date AND the words for it — the model must never name a weekday itself.
+
+    The live incident behind this: a persona read the anchor "2026-07-25 (Saturday)" and
+    still voiced "sexta-feira". Handing it the words removes the arithmetic. The host's
+    builtin `resolve_date` returns this same shape on purpose — a module owns its domain, so
+    the SECRETARY sees THIS one, and the two must not read differently to a model.
+    """
+    import inspect
+    import re as _re
+
+    from cogno_praxis.scheduler import server
+
+    body = inspect.getsource(server)
+    m = _re.search(r"def resolve_date\(expression: str\) -> str:(?P<body>.*?)\n    @", body, _re.S)
+    assert m, "resolve_date's body moved"
+    fn = m.group("body")
+    assert "format_date" in fn, (
+        "the tool no longer renders the spoken form — a model handed only an ISO date goes "
+        "back to computing the weekday, which is the failure this exists to prevent")
+    assert "Use the ISO date in tool calls" in fn, "lost the instruction that pairs the two"
+
+
+def test_the_spoken_form_never_uses_the_server_locale():
+    """Names by index, never strftime/%A: %A follows the SERVER locale, and an English
+    weekday is exactly what got mistranslated into the wrong day."""
+    from cogno_praxis.scheduler.service import format_date
+
+    d = date(2026, 7, 25)                        # a Saturday
+    assert format_date(d, "pt") == "sábado, 25 de julho de 2026"
+    assert format_date(d, "en") == "Saturday, July 25, 2026"
+    assert format_date(d, "es") == "sábado, 25 de julio de 2026"
+    assert format_date(d, "pt-BR") == format_date(d, "pt")      # region suffix tolerated
+    assert format_date(d, "xx") == format_date(d, "pt")         # unknown falls back
+    # and the rendering must not go through strftime at all — %A/%B follow the SERVER
+    # locale. (Grepping for "%A" alone would match the comment that says not to use it.)
+    import inspect
+
+    from cogno_praxis.scheduler import service
+    src = inspect.getsource(service)
+    assert "strftime(" not in src, "strftime is locale-dependent; render by index"
+
+
 def test_the_error_tells_the_model_what_to_do():
     """This message is read by a MODEL: the MCP tool lets it propagate as the tool's error.
 

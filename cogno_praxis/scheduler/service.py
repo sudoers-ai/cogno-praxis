@@ -103,6 +103,44 @@ def _parse_numeric_relative(folded: str, today: date) -> Optional[date]:
     return today + timedelta(days=days)
 
 
+
+# ── the SPOKEN form of a date ────────────────────────────────────────────────────────────
+# Lives beside the parser because it is the other half of the same job: resolve_date hands
+# the model an ISO date AND the words for it, so the model never has to name a weekday
+# itself. That is not decorative — the live incident this exists for is an SDR reading the
+# anchor "2026-07-25 (Saturday)" and still voicing "sexta-feira".
+#
+# Names BY INDEX, never strftime/%A: %A follows the SERVER locale, and an English weekday is
+# exactly what got mistranslated into the wrong day.
+_SPOKEN_NAMES = {
+    "pt": (("segunda-feira", "terça-feira", "quarta-feira", "quinta-feira",
+            "sexta-feira", "sábado", "domingo"),
+           ("janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
+            "agosto", "setembro", "outubro", "novembro", "dezembro")),
+    "en": (("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
+           ("January", "February", "March", "April", "May", "June", "July",
+            "August", "September", "October", "November", "December")),
+    "es": (("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"),
+           ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+            "agosto", "septiembre", "octubre", "noviembre", "diciembre")),
+}
+_SPOKEN_FORMAT = {
+    "pt": "{wd}, {day} de {month} de {year}",
+    "en": "{wd}, {month} {day}, {year}",
+    "es": "{wd}, {day} de {month} de {year}",
+}
+
+
+def format_date(d: date, lang: str = "pt") -> str:
+    """``sábado, 26 de julho de 2026`` / ``Saturday, July 26, 2026`` — the spoken form the
+    model may echo verbatim. An unknown language falls back to pt-BR."""
+    key = (lang or "pt").lower().split("-")[0]
+    if key not in _SPOKEN_NAMES:
+        key = "pt"
+    weekdays, months = _SPOKEN_NAMES[key]
+    return _SPOKEN_FORMAT[key].format(wd=weekdays[d.weekday()], day=d.day,
+                                      month=months[d.month - 1], year=d.year)
+
 def _year_for(day: int, month: int, today: date) -> Optional[date]:
     """Pick the year that puts (day, month) today-or-later — this year, else next.
     Returns None for an impossible day/month (e.g. 31/02)."""
