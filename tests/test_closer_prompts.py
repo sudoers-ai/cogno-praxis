@@ -122,6 +122,23 @@ def test_the_voice_slot_carries_the_arc_because_short_answers_never_reach_the_ex
     assert "nunca como pergunta nova" in voice
 
 
+def test_the_voice_knows_how_to_open_a_conversation_it_started():
+    """Live failure (2026-08-03): on a proactive opening the voicer saw "[ABERTURA]" in the
+    user slot and no history, matched the arc's continuation rule — the only branch the voice
+    slot had — and answered a contact who had said nothing: "Claro, Vinicius. Pode perguntar."
+    The voice slot presumed the opening had already happened; on a turn the AGENT starts, it
+    hasn't. So the opening is a branch of its own, and it comes FIRST."""
+    voice = (PROMPTS / "voice.txt").read_text()
+    flat = " ".join(voice.split())
+    assert "[ABERTURA]" in voice
+    assert "cumprimente pelo nome" in flat
+    assert "peça licença para perguntar" in flat
+    # the specific failure: opening with an answer to something nobody said
+    assert 'NUNCA comece com "claro"' in flat
+    # the opening branch must come before the continuation branch it was mistaken for
+    assert flat.index("[ABERTURA]") < flat.index("acabou de pedir licença")
+
+
 def test_the_persona_knows_where_its_product_facts_come_from():
     """The host injects a [PRODUTO] block (curated catalog + sales sheet). Without the prompt
     naming it, the model has a source it does not know it has — and the first live turn came
