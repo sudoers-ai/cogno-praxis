@@ -17,6 +17,9 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_PASSWORD: postgres
+          # Named so the destructive-suite guard lets it through: the DROP TABLE
+          # suite refuses any database whose name does not say "test".
+          POSTGRES_DB: cogno_praxis_test
         ports:
           - 5432:5432
         options: >-
@@ -45,5 +48,5 @@ jobs:
         run: pytest tests/unit -q --cov=cogno_praxis --cov-report=term-missing --cov-fail-under=90
       - name: Integration tests (scheduler server over stdio via cogno-mcp; + Postgres store)
         env:
-          COGNO_TEST_PG_DSN: postgresql://postgres:postgres@localhost:5432/postgres
+          COGNO_TEST_PG_DSN: postgresql://postgres:postgres@localhost:5432/cogno_praxis_test
         run: pytest tests/integration -q || [ $? -eq 5 ]
