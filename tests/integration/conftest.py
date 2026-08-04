@@ -40,18 +40,27 @@ def names_a_test_database(dsn: str) -> bool:
     return _TEST_DB_MARKER in urlsplit(dsn).path.lstrip("/").lower()
 
 
-@pytest.fixture(autouse=True, scope="session")
-def _refuse_non_test_database() -> None:
-    """Abort the run when ``COGNO_TEST_PG_DSN`` does not name a test database."""
+def pytest_collection_modifyitems(items) -> None:
+    """Abort when a DSN-using test is about to run against a non-test database.
+
+    Fires on COLLECTION, not on every session in this directory. Four of the six modules
+    here (the MCP-over-stdio ones) never open a Postgres connection, and a stale
+    ``COGNO_TEST_PG_DSN`` in someone's shell must not stop them: a guard annoying enough to
+    be worked around is a guard that stops guarding. The trigger is a collected test whose
+    module reads the DSN — those are the ones that ``DROP TABLE``.
+
+    Unset DSN is the normal case: those modules skip on their own and nothing runs.
+    """
     dsn = os.environ.get("COGNO_TEST_PG_DSN", "").strip()
-    if not dsn:
+    if not dsn or names_a_test_database(dsn):
         return
+    if not any(getattr(getattr(i, "module", None), "DSN", None) for i in items):
+        return                                   # nothing collected would touch that database
     database = urlsplit(dsn).path.lstrip("/")
-    if not names_a_test_database(dsn):
-        pytest.exit(
-            f"refusing to run: COGNO_TEST_PG_DSN points at database {database!r}, which is not "
-            f"a test database (its name must contain {_TEST_DB_MARKER!r}). These tests DROP "
-            f"TABLE — running them here would destroy real data. Create a throwaway database "
-            f"(e.g. cogno_praxis_test) and point COGNO_TEST_PG_DSN at that instead.",
-            returncode=pytest.ExitCode.USAGE_ERROR,
-        )
+    pytest.exit(
+        f"refusing to run: COGNO_TEST_PG_DSN points at database {database!r}, which is not "
+        f"a test database (its name must contain {_TEST_DB_MARKER!r}). These tests DROP "
+        f"TABLE — running them here would destroy real data. Create a throwaway database "
+        f"(e.g. cogno_praxis_test) and point COGNO_TEST_PG_DSN at that instead.",
+        returncode=pytest.ExitCode.USAGE_ERROR,
+    )

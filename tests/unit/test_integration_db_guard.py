@@ -40,3 +40,57 @@ def test_refuses_when_only_the_password_says_test():
 def test_accepts_a_throwaway_database():
     assert _guard()("postgresql://postgres:pw@localhost:55435/cogno_praxis_test")
     assert _guard()("postgresql://postgres:pw@localhost:5432/TEST_db")
+
+
+# ── blast radius: it aborts the dangerous run, not every run ─────────────────────────────
+#
+# Four of the six integration modules (the MCP-over-stdio ones) never open a Postgres
+# connection. A stale COGNO_TEST_PG_DSN must not stop those: a guard annoying enough to be
+# worked around is a guard that stops guarding. Subprocesses, because the abort ends the
+# session it fires in.
+
+_LIVE_DSN = "postgresql://x:y@localhost:5432/cogno"
+
+
+def _run(target: str):
+    import os
+    import subprocess
+    import sys
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", target, "-q", "-p", "no:cacheprovider",
+         "--co", "-q"],
+        cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True,
+        env={**os.environ, "COGNO_TEST_PG_DSN": _LIVE_DSN},
+    )
+
+
+def test_a_live_dsn_does_not_block_the_mcp_tests():
+    r = _run("tests/integration/test_scheduler_via_mcp.py")
+    assert "refusing to run" not in r.stdout, r.stdout[-1500:]
+    assert r.returncode == 0, r.stdout[-1500:]
+
+
+def test_a_live_dsn_does_block_the_destructive_module():
+    r = _run("tests/integration/test_postgres_store.py")
+    assert "refusing to run" in r.stdout, r.stdout[-1500:]
+    assert r.returncode != 0
+
+
+# ── the convention the guard rests on ────────────────────────────────────────────────────
+#
+# The trigger is a collected test whose module exposes a module-level ``DSN``. That makes the
+# guard fail OPEN for a future module that reads COGNO_TEST_PG_DSN some other way — it would
+# connect, DROP, and never trip the abort. Assert the convention instead of trusting it.
+
+def test_every_module_reading_the_dsn_exposes_it_as_a_module_attribute():
+    import re
+
+    integ = Path(__file__).resolve().parents[1] / "integration"
+    offenders = [f.name for f in sorted(integ.glob("test_*.py"))
+                 if "COGNO_TEST_PG_DSN" in f.read_text()
+                 and not re.search(r"^DSN\s*=", f.read_text(), re.M)]
+    assert not offenders, (
+        f"{offenders} read COGNO_TEST_PG_DSN but expose no module-level `DSN`, so "
+        f"pytest_collection_modifyitems in tests/integration/conftest.py cannot see them "
+        f"and would let a DROP TABLE run against a live database."
+    )
