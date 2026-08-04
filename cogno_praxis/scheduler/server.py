@@ -65,10 +65,17 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def resolve_date(expression: str) -> str:
-        """Resolve a relative/named date ('amanhã', 'próxima sexta', 'quarta') to YYYY-MM-DD.
+        """Resolve a date phrase to YYYY-MM-DD.
+
+        Handles 'hoje', 'amanhã', 'depois de amanhã', counted relatives ('daqui a 3 dias',
+        'em 2 semanas'), weekday names ('sexta', 'próxima sexta'), numeric ('09/07'), written
+        ('9 de julho') and ISO ('2026-07-09') dates.
 
         Always call this for a relative or weekday phrase instead of computing the date
         yourself, then use the returned YYYY-MM-DD in check_availability / book_appointment.
+
+        A vague SPAN ('semana que vem', 'esse mês', 'de manhã') is not a date: ask the user
+        which day instead of calling this.
         """
         iso = svc.resolve_date(expression)
         return f"{expression} = {iso}"

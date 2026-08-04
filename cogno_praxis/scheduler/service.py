@@ -673,7 +673,17 @@ class SchedulerService:
         cal = _parse_calendar_date(e, today)
         if cal is not None:
             return cal.isoformat()
-        raise SchedulerError(f"could not resolve a date from: {expression!r}")
+        # The message is read by a MODEL, not a developer: the scheduler MCP tool lets this
+        # propagate as the tool's error text. "could not resolve" alone left it rewording the
+        # same unresolvable phrase and burning a second step on the identical failure — say
+        # what to DO. (The host's builtin `resolve_date` already returns this guidance; the
+        # SECRETARY uses the scheduler's tool and was getting the bare sentence.)
+        raise SchedulerError(
+            f"could not resolve a date from: {expression!r} — it names no single day. "
+            f"ASK THE USER which day they mean; do NOT call this again with a reworded "
+            f"version of the same phrase. Resolvable: 'hoje', 'amanhã', 'depois de amanhã', "
+            f"'daqui a 3 dias', 'em 2 semanas', a weekday ('sexta'), '09/07', '9 de julho', "
+            f"ISO ('2026-07-09').")
 
     # ── domain rules ───────────────────────────────────────────────────
     def _require_future(self, iso_date: str) -> None:
