@@ -1,7 +1,9 @@
 """Integration: the Postgres AppointmentStore against a real Postgres.
 
-Set ``COGNO_TEST_PG_DSN`` (e.g. ``postgresql://postgres:test@localhost:55432/cogno``) to
-run; auto-skips otherwise. Proves the full scheduler flow round-trips through Postgres,
+Set ``COGNO_TEST_PG_DSN`` (e.g. ``postgresql://postgres:pw@localhost:55432/cogno_praxis_test``)
+to run; auto-skips otherwise. These tests ``DROP TABLE``, so the database name must contain
+"test" or ``conftest.py`` aborts the run — this example used to end in ``/cogno``, which is
+the demo box's LIVE database. Proves the full scheduler flow round-trips through Postgres,
 the ``appointments`` table is HASH(scope)-partitioned, and scope isolates tenants.
 """
 
