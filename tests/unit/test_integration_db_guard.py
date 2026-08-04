@@ -74,3 +74,23 @@ def test_a_live_dsn_does_block_the_destructive_module():
     r = _run("tests/integration/test_postgres_store.py")
     assert "refusing to run" in r.stdout, r.stdout[-1500:]
     assert r.returncode != 0
+
+
+# ── the convention the guard rests on ────────────────────────────────────────────────────
+#
+# The trigger is a collected test whose module exposes a module-level ``DSN``. That makes the
+# guard fail OPEN for a future module that reads COGNO_TEST_PG_DSN some other way — it would
+# connect, DROP, and never trip the abort. Assert the convention instead of trusting it.
+
+def test_every_module_reading_the_dsn_exposes_it_as_a_module_attribute():
+    import re
+
+    integ = Path(__file__).resolve().parents[1] / "integration"
+    offenders = [f.name for f in sorted(integ.glob("test_*.py"))
+                 if "COGNO_TEST_PG_DSN" in f.read_text()
+                 and not re.search(r"^DSN\s*=", f.read_text(), re.M)]
+    assert not offenders, (
+        f"{offenders} read COGNO_TEST_PG_DSN but expose no module-level `DSN`, so "
+        f"pytest_collection_modifyitems in tests/integration/conftest.py cannot see them "
+        f"and would let a DROP TABLE run against a live database."
+    )
