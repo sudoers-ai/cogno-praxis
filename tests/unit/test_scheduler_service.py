@@ -494,6 +494,20 @@ def test_resolve_date_counted_relatives():
     assert svc.resolve_date("sexta que vem") == "2026-07-03"
 
 
+def test_resolve_date_counted_relative_needs_a_whole_word():
+    """"em"/"in" are two letters long and live inside plenty of other words. Without a word
+    boundary the relative branch fired on "tambem 3 dias" and "certain 3 days", inventing a
+    date out of a sentence that named none — the worst failure shape for a date tool, since
+    a wrong date books a wrong appointment silently."""
+    svc = _svc()
+    for not_a_date in ("tambem 3 dias", "também 3 dias", "certain 3 days", "a ordem 3 dias"):
+        with pytest.raises(SchedulerError):
+            svc.resolve_date(not_a_date)
+    # the real forms still parse
+    assert svc.resolve_date("em 3 dias") == "2026-07-03"
+    assert svc.resolve_date("marcar em 3 dias") == "2026-07-03"
+
+
 def test_resolve_date_refuses_vague_ranges_on_purpose():
     """A span is not a day. Resolving "semana que vem" to (say) its Monday would let the
     agent silently book a day the user never chose — strictly worse than asking. These

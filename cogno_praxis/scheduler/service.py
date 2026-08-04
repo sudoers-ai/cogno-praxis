@@ -78,8 +78,14 @@ _COUNT_WORDS = {"um": 1, "uma": 1, "dois": 2, "duas": 2, "tres": 3, "quatro": 4,
 # "daqui a 3 dias", "em 2 semanas", "in 10 days" — a COUNT plus a unit resolves to exactly one
 # date, so it belongs here. A vague RANGE ("semana que vem", "esse mes") deliberately does not:
 # see `resolve_date`.
+# The leading \b is load-bearing: without it "em"/"in" match INSIDE another word, so
+# "tambem 3 dias" and "certain 3 days" both resolved as "em/in 3 days".
+# Counted MONTHS are deliberately absent — month length varies (31 Jan + 1 month?) and the
+# booking window is measured in days anyway. The tool description promises days and weeks
+# only, so the omission stays invisible to the model rather than becoming another
+# advertised-but-unreachable form.
 _RELATIVE_RE = re.compile(
-    r"(?:daqui\s+a|daqui|em|dentro\s+de|apos|in|after)\s+"
+    r"\b(?:daqui\s+a|daqui|em|dentro\s+de|apos|in|after)\s+"
     r"(?P<count>\d{1,3}|[a-z]+)\s*"
     r"(?P<unit>dias?|semanas?|days?|weeks?)\b")
 
