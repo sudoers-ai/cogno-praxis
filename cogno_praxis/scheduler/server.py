@@ -125,7 +125,15 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
 
         No start_time blocks the WHOLE working day; start_time alone blocks one slot; both
         block every slot in [start_time, end_time). Refuses if a client booking sits in the
-        range. Use for "Dr. Silva is out on Friday" / "block the afternoon".
+        range.
+
+        ONE DAY PER CALL. For several days, call once per day.
+
+        Use it whenever someone says they will be AWAY, not only when they say "block":
+        "vou entrar de férias", "vou viajar", "não vou atender na sexta", "estarei fora
+        semana que vem", "tenho um congresso terça", "Dr. Silva is out on Friday",
+        "block the afternoon". If the dates are missing, ask which ones — do not look for
+        an absence record, there is none: an absence IS a block on this agenda.
         """
         blocks = svc.block_schedule(host_id, date, start_time=start_time,
                                     end_time=end_time, description=description)
