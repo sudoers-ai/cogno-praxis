@@ -80,14 +80,25 @@ def test_money_rounding_and_no_scientific_notation():
     assert evaluate("100/3") != Decimal("33.33")
 
 
-def test_the_pt_BR_thousands_dot_is_refused_not_reinterpreted():
-    """Review finding: only the COMMA form was refused, so "1.850" was silently read as
-    1.85 — a 1000x error shipped as a right-looking figure. Ambiguous, so it is refused like
-    the comma. "0.035" stays legal (a thousands group never follows a bare zero)."""
+def test_only_the_UNAMBIGUOUS_thousands_form_is_refused():
+    """A guard that blocks the primary use case is worse than the case it guards against.
+
+    The first version refused "1-3 digits + exactly 3 decimals" to catch "1.850" — and that
+    shape IS "1850 * 1.075" (a 7.5% reajuste) and "1000 * 1.005": the arithmetic this tool
+    is advertised for, refused. Only two-or-more dots can be nothing but thousands."""
     with pytest.raises(MathError, match="thousands separator"):
-        evaluate("1.850 * 2")
+        evaluate("1.234.567 + 1")
+    # the advertised cases must go through
+    assert format_number(evaluate("1850 * 1.075")) == "1988.75"
+    assert format_number(evaluate("1000 * 1.005")) == "1005"
     assert format_number(evaluate("0.035 * 2")) == "0.07"
     assert format_number(evaluate("1998.005 + 0")) == "1998.005"
+
+
+def test_a_refusal_quotes_what_the_caller_actually_sent():
+    """The old message named a literal ('1.850') at a caller who never wrote it."""
+    with pytest.raises(MathError, match=r"9\.876\.543"):
+        evaluate("9.876.543 * 2")
 
 
 def test_a_result_too_large_to_be_a_figure_is_refused():
@@ -140,6 +151,29 @@ def test_a_computed_figure_grounds_the_reply():
     grounded = ground_reply(_SAYS_A_TOTAL, tools=[
         ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True)])
     assert grounded is None
+
+
+def test_grounding_ignores_numerals_that_are_not_amounts():
+    """Requiring EVERY numeral to come from math un-grounded correct answers: "o total com o
+    reajuste de 8% fica R$ 48,60" failed on the 8, and so did any reply naming a year or an
+    item count. Only MONEY amounts are claims about the books."""
+    computed = [ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True)]
+    for reply in ("O total com o reajuste de 8% fica R$ 48,60.",
+                  "Em 2026 o total fica R$ 48,60.",
+                  "São 3 cortes; o total com reajuste fica R$ 48,60."):
+        assert ground_reply(reply, tools=computed) is None, reply
+
+
+def test_grounding_follows_the_LOCALE_not_a_hardcoded_pt_BR():
+    """`ground_reply` receives ``locale`` and the amount parsing must follow it: an English
+    reply writes "$48.60" (dot decimal), and reading the dot as a thousands separator turned
+    it into 4860 — making the exemption unreachable for 100% of English turns."""
+    computed = [ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True)]
+    assert ground_reply("The total with the increase is $48.60.",
+                        tools=computed, locale="en") is None
+    smuggled = ground_reply("The total is $48.60. Your balance is $12,400.00.",
+                            tools=computed, locale="en")
+    assert smuggled is not None and smuggled.rule == "conjured_totals"
 
 
 def test_math_grounds_ONLY_the_figures_it_produced():

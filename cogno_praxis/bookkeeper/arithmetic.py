@@ -39,11 +39,13 @@ _MAX_LEN = 200
 # Six places keeps unit costs and per-item ratios intact.
 _MAX_PLACES = Decimal("0.000001")
 
-# A number written 1-3 digits + exactly 3 decimals is the pt-BR THOUSANDS shape ("1.850"),
-# and reading it as 1.85 is a 1000x error shipped as a right-looking figure. Ambiguous, so
-# it is refused like the comma rather than guessed. "0.035" is excluded (a thousands group
-# never follows a bare zero) and 4+ digit integer parts are unambiguous decimals.
-_AMBIGUOUS_THOUSANDS = r"\b[1-9]\d{0,2}\.\d{3}\b"
+# Only the UNAMBIGUOUS thousands form is refused: two or more dots in one number
+# ("1.234.567") can be nothing else. A SINGLE dot is a decimal, full stop — the first
+# version refused "1-3 digits + 3 decimals" to catch "1.850", and that pattern is also
+# exactly "1850 * 1.075" (a 7.5% reajuste) and "1000 * 1.005": the tool's own advertised
+# use case, refused by a guard written for a rarer misreading. A guard that blocks the
+# primary case is worse than the case it guards against.
+_MULTI_DOT_THOUSANDS = r"\b\d{1,3}(?:\.\d{3}){2,}\b"
 
 
 class MathError(ValueError):
@@ -83,9 +85,11 @@ def evaluate(expression: str) -> Decimal:
     if "," in expr:
         raise MathError("use '.' for decimals and no thousands separator: 1234.56, not "
                         "1.234,56 or 1,234.56")
-    if re.search(_AMBIGUOUS_THOUSANDS, expr):
-        raise MathError("write numbers without a thousands separator — '1.850' is ambiguous "
-                        "(1850 or 1.85?). Send 1850 or 1.85.")
+    if match := re.search(_MULTI_DOT_THOUSANDS, expr):
+        # Quote what THEY sent, not a literal from the source — the old message named
+        # "1.850" at a caller who never wrote it.
+        raise MathError(f"write {match.group(0)!r} without thousands separators (e.g. "
+                        f"{match.group(0).replace('.', '')})")
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as exc:

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 
 from cogno_praxis.grounding import (
     GroundingVerdict,
@@ -157,52 +157,77 @@ def _summary_read(tools: Sequence[ToolCall]) -> bool:
     return bool(ok_results(tools, "get_summary")) or bool(ok_results(tools, "search"))
 
 
-_NUM_RE = re.compile(r"\d[\d.,]*")
+# Money AMOUNTS only — never every numeral. Requiring the reply's whole numeric content to
+# come from math un-grounded correct answers on the numbers a reply naturally carries: "o
+# total com o reajuste de 8% fica R$ 48,60" failed on the 8, and so did any reply naming a
+# year or an item count. The rule is about FIGURES presented as money; nothing else.
+# The bundles' ``money`` pattern is a PRESENCE detector ("R$ 4" is enough to say the reply
+# talks money) — it does not capture the amount, so it cannot be used to compare figures.
+# These do: a currency-marked number, or one written with cents.
+_AMOUNT_PT = re.compile(r"R\$\s*\d[\d.]*(?:,\d{1,2})?|\b\d[\d.]*,\d{2}\b")
+_AMOUNT_EN = re.compile(r"\$\s*\d[\d,]*(?:\.\d{1,2})?|\b\d[\d,]*\.\d{2}\b")
+_NUM_IN_RESULT = re.compile(r"\d[\d.]*")
 
 
-def _numbers(text: str, *, decimal_comma: bool) -> "set[str]":
-    """Numeric tokens as comparable values.
+def _norm(raw: str, *, decimal_comma: bool) -> "Optional[str]":
+    """One numeric token as a comparable value, per the SOURCE's separator convention."""
+    token = (raw.replace(".", "").replace(",", ".") if decimal_comma
+             else raw.replace(",", "")).strip().rstrip(".")
+    try:
+        return f"{float(token):.6f}".rstrip("0").rstrip(".")
+    except ValueError:
+        return None
 
-    The separator convention differs by SOURCE and conflating them was the first version's
-    bug: a pt-BR REPLY writes "R$ 48,60" (comma decimal, dot thousands) while a TOOL result
-    writes "48.6" (dot decimal). Stripping dots everywhere turned the tool's own 48.6 into
-    486, so a legitimately computed figure read as ungrounded.
+
+def _amounts(text: str, *, decimal_comma: bool) -> "set[str]":
+    """Money amounts in ``text`` as comparable values.
+
+    The separator convention differs by SOURCE, and conflating them was a real bug: a pt-BR
+    reply writes "R$ 48,60" (comma decimal, dot thousands) while a TOOL result writes "48.6"
+    (dot decimal). Stripping dots everywhere turned the tool's own 48.6 into 486.
     """
+    pattern = _AMOUNT_PT if decimal_comma else _AMOUNT_EN
     out = set()
-    for raw in _NUM_RE.findall(text or ""):
-        token = (raw.replace(".", "").replace(",", ".") if decimal_comma
-                 else raw.replace(",", ""))
-        token = token.rstrip(".")
-        if not token:
-            continue
-        try:
-            out.add(f"{float(token):.6f}".rstrip("0").rstrip("."))
-        except ValueError:
-            continue
+    for raw in pattern.findall(text or ""):
+        value = _norm(raw.replace("R$", "").replace("$", ""), decimal_comma=decimal_comma)
+        if value is not None:
+            out.add(value)
     return out
 
 
-def _math_covers_every_figure(reply: str, tools: Sequence[ToolCall]) -> bool:
-    """Did ``math`` produce EVERY figure the reply quotes?
+def _result_numbers(text: str) -> "set[str]":
+    """Every number a TOOL result carries (machine format: dot decimal, no thousands)."""
+    return {v for v in (_norm(raw, decimal_comma=False)
+                        for raw in _NUM_IN_RESULT.findall(text or "")) if v is not None}
 
-    Figure-wise, not turn-wide, and that distinction is the whole point. Counting any
-    successful math call as grounding exempted the WHOLE reply: the model could compute
-    "45 * 1.08" legitimately and, in the same breath, quote an invented "saldo do mês de
-    R$ 12.400,00" — no ledger read ran, and the fabrication shipped as a real balance.
-    Unlike get_summary/search, ``math`` reads nothing: it echoes back numbers the model
-    itself supplied, so it can only ground the figures it actually returned.
 
-    A REFUSED call grounds nothing: this module returns refusals as ordinary "ERROR: ..."
-    strings (the add_income convention), which is exactly the turn where the model failed
-    to compute and may have guessed.
+def _math_covers_the_amounts(reply: str, tools: Sequence[ToolCall], bundle: Any) -> bool:
+    """Did ``math`` produce every MONEY amount the reply quotes?
+
+    Figure-wise, not turn-wide, and that distinction is the point. Counting any successful
+    math call as grounding exempted the WHOLE reply: the model could compute "45 * 1.08"
+    legitimately and, in the same breath, quote an invented "saldo do mês de R$ 12.400,00" —
+    no ledger read ran and the fabrication shipped as a real balance. Unlike get_summary /
+    search, ``math`` reads nothing: it echoes back numbers the model itself supplied, so it
+    can only ground the amounts it actually returned.
+
+    A REFUSED call grounds nothing: refusals ride ordinary "ERROR: ..." strings (the
+    add_income convention), and that is exactly the turn where the model failed to compute
+    and may have guessed.
     """
     computed = [r for r in ok_results(tools, "math") if not r.startswith("ERROR:")]
     if not computed:
         return False
+    # The locale's own money pattern decides what counts as an AMOUNT — the reply's other
+    # numerals (a percentage, a year, a count) are not claims about the books.
+    decimal_comma = bundle.loc is not _EN
+    quoted = _amounts(reply, decimal_comma=decimal_comma)
+    if not quoted:
+        return False
     from_math: "set[str]" = set()
     for result in computed:
-        from_math |= _numbers(result, decimal_comma=False)
-    return bool(from_math) and _numbers(reply, decimal_comma=True) <= from_math
+        from_math |= _result_numbers(result)
+    return quoted <= from_math
 
 
 def _removed_ok(tools: Sequence[ToolCall]) -> bool:
@@ -242,7 +267,7 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
     #     legitimately echoes the amount ("registrei R$ 500") without a summary read.
     if (b.loc.money.search(reply) and affirmed(reply, b.totals, neg=b.loc.neg)
             and not _summary_read(tools) and not _entry_recorded(tools)
-            and not _math_covers_every_figure(reply, tools)):
+            and not _math_covers_the_amounts(reply, tools, b)):
         return GroundingVerdict(rule="conjured_totals", message=b.check_totals,
                                 repairable=True, critique=_CHECK_TOTALS_CRITIQUE)
 
