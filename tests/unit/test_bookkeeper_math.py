@@ -80,25 +80,34 @@ def test_money_rounding_and_no_scientific_notation():
     assert evaluate("100/3") != Decimal("33.33")
 
 
-def test_only_the_UNAMBIGUOUS_thousands_form_is_refused():
-    """A guard that blocks the primary use case is worse than the case it guards against.
+def test_an_AMBIGUOUS_dot_group_is_refused_never_guessed():
+    """Third position on this guard, and the reasoning that settles it: "1.850" is pt-BR for
+    1850 and "1.075" is a 7.5% multiplier — the tool cannot know which, so it must not pick.
+    The two failures are NOT symmetric. A refusal is recoverable text the EGO feeds straight
+    back; a WRONG number is invisible downstream and the voicer speaks it verbatim.
 
-    The first version refused "1-3 digits + exactly 3 decimals" to catch "1.850" — and that
-    shape IS "1850 * 1.075" (a 7.5% reajuste) and "1000 * 1.005": the arithmetic this tool
-    is advertised for, refused. Only two-or-more dots can be nothing but thousands."""
-    with pytest.raises(MathError, match="thousands separator"):
-        evaluate("1.234.567 + 1")
-    # the advertised cases must go through
-    assert format_number(evaluate("1850 * 1.075")) == "1988.75"
-    assert format_number(evaluate("1000 * 1.005")) == "1005"
+    Measured on the revision that allowed the single-dot form: "12.500 + 3.000" answered
+    15.5 instead of 15500."""
+    for ambiguous in ("12.500 + 3.000", "1.850 * 2", "1850 * 1.075", "2.500 / 2"):
+        with pytest.raises(MathError, match="ambiguous"):
+            evaluate(ambiguous)
+    # a leading zero excludes the thousands reading — these are plain fractions
     assert format_number(evaluate("0.035 * 2")) == "0.07"
     assert format_number(evaluate("1998.005 + 0")) == "1998.005"
+    # two decimals are never a thousands group
+    assert format_number(evaluate("45 * 1.08")) == "48.6"
 
 
-def test_a_refusal_quotes_what_the_caller_actually_sent():
-    """The old message named a literal ('1.850') at a caller who never wrote it."""
-    with pytest.raises(MathError, match=r"9\.876\.543"):
-        evaluate("9.876.543 * 2")
+def test_the_refusal_shows_BOTH_readings_and_how_to_send_each():
+    """It quotes the caller's own token (an earlier message named "1.850" at someone who
+    never wrote it) and names the unambiguous rewrite, so the model recovers in one step
+    instead of rephrasing the same ambiguity — the resolve_date lesson."""
+    with pytest.raises(MathError) as exc:
+        evaluate("1.075 * 1000")
+    message = str(exc.value)
+    assert "'1.075'" in message          # what they sent
+    assert "1075" in message             # the thousands reading
+    assert "1075/1000" in message        # how to write the fraction instead
 
 
 def test_a_result_too_large_to_be_a_figure_is_refused():
@@ -186,6 +195,55 @@ def test_math_grounds_ONLY_the_figures_it_produced():
     smuggled = ground_reply(
         "O corte fica R$ 48,60. Seu saldo do mês está em R$ 12.400,00.", tools=computed)
     assert smuggled is not None and smuggled.rule == "conjured_totals"
+
+
+def test_an_operand_the_model_TYPED_does_not_ground_anything():
+    """The result echoes the caller's expression ("12400 * 1 = 12400"), so scanning the whole
+    string grounded every number the MODEL supplied — one throwaway call laundered an
+    invented balance past the backstop. Only the right-hand side counts, and an identity
+    operation (result also among the operands) counts for nothing: that IS the laundering
+    shape."""
+    laundered = ground_reply(
+        "O corte fica R$ 48,60. Saldo: R$ 12.400,00.",
+        tools=[ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True),
+               ToolCall(tool="math", result="12400 * 1 = 12400", ok=True)])
+    assert laundered is not None and laundered.rule == "conjured_totals"
+
+
+def test_an_amount_written_any_common_way_is_recognised():
+    """Six revisions of locale-keyed parsers each failed in one direction. This one does not
+    DECIDE what a separator means — it reads a candidate both ways and a match under either
+    counts, which is sound because a value only passes if math actually computed it."""
+    computed = [ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True)]
+    # The LOCALE selects which bundle's money detector runs at all (a pt bundle does not
+    # recognise "$48.60"), so it travels with each phrasing here — as it does in production.
+    for grounded, locale in (("O total fica R$ 48,60.", "pt"),        # pt-BR voicer
+                             ("O total fica R$ 48.60.", "pt"),        # the TOOL's own output,
+                             ("The total is $48.60.", "en")):         # quoted verbatim
+        assert ground_reply(grounded, tools=computed, locale=locale) is None, grounded
+    # …and an amount math did NOT produce is caught however it is written
+    for fabricated, locale in (("O corte fica R$ 48,60. Saldo: R$ 12.400,00.", "pt"),
+                               ("O corte fica R$ 48,60. Saldo: 12.400 reais.", "pt"),
+                               ("The total is $48.60. Your balance is $12,400.00.", "en")):
+        verdict = ground_reply(fabricated, tools=computed, locale=locale)
+        assert verdict is not None and verdict.rule == "conjured_totals", fabricated
+
+
+def test_a_rounded_rendering_of_a_long_tail_still_grounds():
+    """The voicer quotes cents ("R$ 33,33") for a value the tool returned as 33.333333 —
+    the same claim, and demanding the exact string rewrote correct replies."""
+    assert ground_reply("Cada folha sai a R$ 33,33.",
+                        tools=[ToolCall(tool="math", result="100/3 = 33.333333",
+                                        ok=True)]) is None
+
+
+def test_the_SIGN_is_part_of_the_figure():
+    """A computed LOSS voiced as a profit is a different claim: dropping the sign on either
+    side grounded "o total do mês é R$ 500,00" against a computed -500."""
+    loss = [ToolCall(tool="math", result="300 - 800 = -500", ok=True)]
+    flipped = ground_reply("O total do mês é R$ 500,00.", tools=loss)
+    assert flipped is not None and flipped.rule == "conjured_totals"
+    assert ground_reply("O resultado do mês é -R$ 500,00.", tools=loss) is None
 
 
 def test_a_REFUSED_math_call_grounds_nothing():

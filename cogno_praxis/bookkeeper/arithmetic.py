@@ -39,13 +39,17 @@ _MAX_LEN = 200
 # Six places keeps unit costs and per-item ratios intact.
 _MAX_PLACES = Decimal("0.000001")
 
-# Only the UNAMBIGUOUS thousands form is refused: two or more dots in one number
-# ("1.234.567") can be nothing else. A SINGLE dot is a decimal, full stop — the first
-# version refused "1-3 digits + 3 decimals" to catch "1.850", and that pattern is also
-# exactly "1850 * 1.075" (a 7.5% reajuste) and "1000 * 1.005": the tool's own advertised
-# use case, refused by a guard written for a rarer misreading. A guard that blocks the
-# primary case is worse than the case it guards against.
-_MULTI_DOT_THOUSANDS = r"\b\d{1,3}(?:\.\d{3}){2,}\b"
+# ANY dot followed by exactly three digits is refused. Both readings are real — "1.850" is
+# pt-BR for 1850, "1.075" is a 7.5% multiplier — and the tool cannot know which, so it must
+# not choose: the two failures are not symmetric. A refusal is recoverable text the EGO
+# feeds straight back to the model; a WRONG number is not detectable anywhere downstream and
+# the voicer reproduces it verbatim. Measured on the previous revision, which allowed the
+# single-dot form: "12.500 + 3.000" answered 15.5 instead of 15500.
+#
+# The refusal names the unambiguous rewrite, so the model recovers in one step instead of
+# rephrasing the same ambiguity (the resolve_date lesson).
+# A leading zero excludes the thousands reading ("0.035" can only be a fraction).
+_AMBIGUOUS_DOT_GROUP = re.compile(r"\b[1-9]\d{0,2}\.\d{3}\b")
 
 
 class MathError(ValueError):
@@ -85,11 +89,15 @@ def evaluate(expression: str) -> Decimal:
     if "," in expr:
         raise MathError("use '.' for decimals and no thousands separator: 1234.56, not "
                         "1.234,56 or 1,234.56")
-    if match := re.search(_MULTI_DOT_THOUSANDS, expr):
-        # Quote what THEY sent, not a literal from the source — the old message named
+    if match := _AMBIGUOUS_DOT_GROUP.search(expr):
+        # Quote what THEY sent, not a literal from the source — an earlier message named
         # "1.850" at a caller who never wrote it.
-        raise MathError(f"write {match.group(0)!r} without thousands separators (e.g. "
-                        f"{match.group(0).replace('.', '')})")
+        token = match.group(0)
+        whole, frac = token.split(".")
+        raise MathError(
+            f"{token!r} is ambiguous — {whole}{frac} (thousands) or {whole} and {frac}"
+            f" thousandths? Send {whole}{frac}, or write the fraction as "
+            f"{whole}{frac}/1000.")
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as exc:
@@ -133,8 +141,11 @@ def format_number(value: Decimal, *, cap_tail: bool = True) -> str:
     # NaN/Infinity — neither of which arrives here (the evaluator raises first), but the
     # type says otherwise and a silent TypeError in a money path is not worth the shortcut.
     if cap_tail and isinstance(exponent, int) and -exponent > 6:
-        # ROUND_HALF_UP, not Decimal's default banker's rounding: 2.50*0.05 must be 0.13
-        # like the client's own invoice, not 0.12.
+        # ROUND_HALF_UP, not Decimal's default banker's rounding. It only bites on the
+        # 7th decimal place (everything shorter is returned untouched), so it is about the
+        # LAST digit of a long tail — 1/3 rendering as 0.333333 and 2/3 as 0.666667 — not
+        # about cents. An earlier comment here claimed it produced 0.13 for 2.50*0.05; the
+        # function returns 0.125, exactly, and always did.
         normalized = value.quantize(_MAX_PLACES, rounding=ROUND_HALF_UP).normalize()
     if normalized == normalized.to_integral_value():
         # normalize() renders 2500 as 2.5E+3 — quantize back to the plain integer form.
