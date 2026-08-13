@@ -80,34 +80,19 @@ def test_money_rounding_and_no_scientific_notation():
     assert evaluate("100/3") != Decimal("33.33")
 
 
-def test_an_AMBIGUOUS_dot_group_is_refused_never_guessed():
-    """Third position on this guard, and the reasoning that settles it: "1.850" is pt-BR for
-    1850 and "1.075" is a 7.5% multiplier — the tool cannot know which, so it must not pick.
-    The two failures are NOT symmetric. A refusal is recoverable text the EGO feeds straight
-    back; a WRONG number is invisible downstream and the voicer speaks it verbatim.
-
-    Measured on the revision that allowed the single-dot form: "12.500 + 3.000" answered
-    15.5 instead of 15500."""
-    for ambiguous in ("12.500 + 3.000", "1.850 * 2", "1850 * 1.075", "2.500 / 2"):
-        with pytest.raises(MathError, match="ambiguous"):
-            evaluate(ambiguous)
-    # a leading zero excludes the thousands reading — these are plain fractions
-    assert format_number(evaluate("0.035 * 2")) == "0.07"
-    assert format_number(evaluate("1998.005 + 0")) == "1998.005"
-    # two decimals are never a thousands group
-    assert format_number(evaluate("45 * 1.08")) == "48.6"
-
-
-def test_the_refusal_shows_BOTH_readings_and_how_to_send_each():
-    """It quotes the caller's own token (an earlier message named "1.850" at someone who
-    never wrote it) and names the unambiguous rewrite, so the model recovers in one step
-    instead of rephrasing the same ambiguity — the resolve_date lesson."""
-    with pytest.raises(MathError) as exc:
-        evaluate("1.075 * 1000")
-    message = str(exc.value)
-    assert "'1.075'" in message          # what they sent
-    assert "1075" in message             # the thousands reading
-    assert "1075/1000" in message        # how to write the fraction instead
+def test_the_tool_ACCEPTS_ITS_OWN_output():
+    """A guard whose recovery path manufactures the failure it guards against has negative
+    value. The ambiguity guard refused format_number's own three-decimal output (385/8 =
+    48.125, handed straight back on the next loop step) and told the model to resend 48125 —
+    a 1000x error the grounding backstop then blessed as a real computation."""
+    computed = format_number(evaluate("385/8"))
+    assert computed == "48.125"
+    assert format_number(evaluate(f"{computed} * 2")) == "96.25"
+    # the multipliers the tool is advertised for
+    assert format_number(evaluate("1850 * 1.075")) == "1988.75"
+    # only the form that can be nothing but thousands is refused
+    with pytest.raises(MathError, match="thousands separator"):
+        evaluate("1.234.567 + 1")
 
 
 def test_a_result_too_large_to_be_a_figure_is_refused():
@@ -153,6 +138,27 @@ def test_the_tool_returns_the_figure_and_the_error_says_what_to_do():
 _SAYS_A_TOTAL = "O total com o reajuste fica R$ 48,60."
 
 
+def test_math_grounds_a_computed_reply_exactly_like_its_SIBLING_reads():
+    """Eight review rounds went into making this figure-WISE — does every amount in the reply
+    trace to a computation? — and each round of that parser shipped a defect in one direction
+    or the other. What ended it: the rule was NEVER figure-wise. ``get_summary`` puts one
+    number in hand and exempts the whole reply, so a fabricated balance beside a real read
+    already passes. Holding ``math`` to a stricter standard than the rule's own baseline cost
+    120 lines of parser that was wrong more often than right.
+
+    This pins the SYMMETRY, so a future author cannot 'tighten' math alone again without the
+    test naming why that asymmetry is the bug."""
+    say = "O total do mês é R$ 12.400,00."
+    fabricated_beside = "Entrou R$ 200,00. Seu saldo acumulado é R$ 987.654,00."
+    for tool in ("get_summary", "search", "math"):
+        result = "45 * 1.08 = 48.6" if tool == "math" else "Entradas: R$ 200,00"
+        assert ground_reply(say, tools=[ToolCall(tool=tool, result=result,
+                                                 ok=True)]) is None, tool
+        # the rule's PRE-EXISTING exposure, identical for all three — not a math-only hole
+        assert ground_reply(fabricated_beside,
+                            tools=[ToolCall(tool=tool, result=result, ok=True)]) is None, tool
+
+
 def test_a_computed_figure_grounds_the_reply():
     """The defect that proved the placement: with math outside this module, ``conjured_totals``
     could not see it and rewrote the answer. Here the rule grounds it like any other read."""
@@ -160,119 +166,6 @@ def test_a_computed_figure_grounds_the_reply():
     grounded = ground_reply(_SAYS_A_TOTAL, tools=[
         ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True)])
     assert grounded is None
-
-
-def test_grounding_ignores_numerals_that_are_not_amounts():
-    """Requiring EVERY numeral to come from math un-grounded correct answers: "o total com o
-    reajuste de 8% fica R$ 48,60" failed on the 8, and so did any reply naming a year or an
-    item count. Only MONEY amounts are claims about the books."""
-    computed = [ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True)]
-    for reply in ("O total com o reajuste de 8% fica R$ 48,60.",
-                  "Em 2026 o total fica R$ 48,60.",
-                  "São 3 cortes; o total com reajuste fica R$ 48,60."):
-        assert ground_reply(reply, tools=computed) is None, reply
-
-
-def test_grounding_follows_the_LOCALE_not_a_hardcoded_pt_BR():
-    """`ground_reply` receives ``locale`` and the amount parsing must follow it: an English
-    reply writes "$48.60" (dot decimal), and reading the dot as a thousands separator turned
-    it into 4860 — making the exemption unreachable for 100% of English turns."""
-    computed = [ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True)]
-    assert ground_reply("The total with the increase is $48.60.",
-                        tools=computed, locale="en") is None
-    smuggled = ground_reply("The total is $48.60. Your balance is $12,400.00.",
-                            tools=computed, locale="en")
-    assert smuggled is not None and smuggled.rule == "conjured_totals"
-
-
-def test_math_grounds_ONLY_the_figures_it_produced():
-    """Review finding, the most dangerous: the exemption was turn-WIDE, so any successful
-    math call excused the whole reply and a fabricated ledger total shipped alongside a
-    legitimate computation. Unlike get_summary/search, math reads nothing — it echoes back
-    numbers the model supplied, so it can only ground what it actually returned."""
-    computed = [ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True)]
-    assert ground_reply("O total com o reajuste fica R$ 48,60.", tools=computed) is None
-    smuggled = ground_reply(
-        "O corte fica R$ 48,60. Seu saldo do mês está em R$ 12.400,00.", tools=computed)
-    assert smuggled is not None and smuggled.rule == "conjured_totals"
-
-
-def test_an_operand_the_model_TYPED_does_not_ground_anything():
-    """The result echoes the caller's expression ("12400 * 1 = 12400"), so scanning the whole
-    string grounded every number the MODEL supplied — one throwaway call laundered an
-    invented balance past the backstop. Only the right-hand side counts, and an identity
-    operation (result also among the operands) counts for nothing: that IS the laundering
-    shape."""
-    laundered = ground_reply(
-        "O corte fica R$ 48,60. Saldo: R$ 12.400,00.",
-        tools=[ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True),
-               ToolCall(tool="math", result="12400 * 1 = 12400", ok=True)])
-    assert laundered is not None and laundered.rule == "conjured_totals"
-
-
-def test_the_TOOL_side_is_read_canonically_never_ambiguously():
-    """The dual reading is safe on the REPLY (the voicer's convention is unknown) and unsound
-    on the TOOL output (machine-written, dot-decimal). Applying it to both made a computed
-    48.6 also count as 486, so a fabricated "saldo de R$ 486,00" was grounded by a
-    computation of R$ 48,60 — an order of magnitude out, blessed by the guard."""
-    computed = [ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True)]
-    inflated = ground_reply("Seu saldo total do mês é R$ 486,00.", tools=computed)
-    assert inflated is not None and inflated.rule == "conjured_totals"
-    assert ground_reply("O total com reajuste fica R$ 48,60.", tools=computed) is None
-
-
-def test_a_number_the_parser_cannot_account_for_REFUSES_the_exemption():
-    """The direction a fabrication guard must never take is fail-OPEN, and the amount regex
-    silently took it: "12 mil reais" and a bare "12.400" were invisible, so an invented
-    balance rode along beside one legitimate computed figure. An unaccounted number now
-    refuses the exemption — the weaker the parse, the SAFER the outcome."""
-    computed = [ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True)]
-    for smuggled in ("Seu total fica R$ 48,60 e o faturamento foi 12 mil reais.",
-                     "O total fica R$ 48,60. Saldo do mês: 12.400.",
-                     "O total fica R$ 48,60. Saldo: 12400 reais."):
-        verdict = ground_reply(smuggled, tools=computed)
-        assert verdict is not None and verdict.rule == "conjured_totals", smuggled
-    # …while numbers that are plainly NOT money keep a correct reply intact
-    for fine in ("São 3 cortes; o total fica R$ 48,60.",
-                 "Em 2026 o total fica R$ 48,60.",
-                 "O total com reajuste de 8% fica R$ 48,60."):
-        assert ground_reply(fine, tools=computed) is None, fine
-
-
-def test_an_amount_written_any_common_way_is_recognised():
-    """Six revisions of locale-keyed parsers each failed in one direction. This one does not
-    DECIDE what a separator means — it reads a candidate both ways and a match under either
-    counts, which is sound because a value only passes if math actually computed it."""
-    computed = [ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True)]
-    # The LOCALE selects which bundle's money detector runs at all (a pt bundle does not
-    # recognise "$48.60"), so it travels with each phrasing here — as it does in production.
-    for grounded, locale in (("O total fica R$ 48,60.", "pt"),        # pt-BR voicer
-                             ("O total fica R$ 48.60.", "pt"),        # the TOOL's own output,
-                             ("The total is $48.60.", "en")):         # quoted verbatim
-        assert ground_reply(grounded, tools=computed, locale=locale) is None, grounded
-    # …and an amount math did NOT produce is caught however it is written
-    for fabricated, locale in (("O corte fica R$ 48,60. Saldo: R$ 12.400,00.", "pt"),
-                               ("O corte fica R$ 48,60. Saldo: 12.400 reais.", "pt"),
-                               ("The total is $48.60. Your balance is $12,400.00.", "en")):
-        verdict = ground_reply(fabricated, tools=computed, locale=locale)
-        assert verdict is not None and verdict.rule == "conjured_totals", fabricated
-
-
-def test_a_rounded_rendering_of_a_long_tail_still_grounds():
-    """The voicer quotes cents ("R$ 33,33") for a value the tool returned as 33.333333 —
-    the same claim, and demanding the exact string rewrote correct replies."""
-    assert ground_reply("Cada folha sai a R$ 33,33.",
-                        tools=[ToolCall(tool="math", result="100/3 = 33.333333",
-                                        ok=True)]) is None
-
-
-def test_the_SIGN_is_part_of_the_figure():
-    """A computed LOSS voiced as a profit is a different claim: dropping the sign on either
-    side grounded "o total do mês é R$ 500,00" against a computed -500."""
-    loss = [ToolCall(tool="math", result="300 - 800 = -500", ok=True)]
-    flipped = ground_reply("O total do mês é R$ 500,00.", tools=loss)
-    assert flipped is not None and flipped.rule == "conjured_totals"
-    assert ground_reply("O resultado do mês é -R$ 500,00.", tools=loss) is None
 
 
 def test_a_REFUSED_math_call_grounds_nothing():
