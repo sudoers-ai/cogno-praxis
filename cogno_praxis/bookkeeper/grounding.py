@@ -153,20 +153,31 @@ def _entry_recorded(tools: Sequence[ToolCall]) -> bool:
 
 
 def _summary_read(tools: Sequence[ToolCall]) -> bool:
-    """A read that puts real figures in the model's hands this turn.
+    """A tool that puts real figures in the model's hands ran this turn.
 
-    ``math`` counts: a figure it computed is grounded — in THIS module's own tool. It was a
-    host builtin first, which the rule could not see, and a turn that legitimately computed
-    "45 * 1.08 = 48.6" had its answer rewritten into "let me check the real numbers"
-    (measured 2026-08-12). Grounding a vertical's figures is the vertical's job, so the tool
-    belongs here and the rule needs no exception anywhere else.
+    ``math`` counts, exactly like ``get_summary`` and ``search`` — no more strictly and no
+    less. Eight review rounds went into making math figure-WISE (does every amount in the
+    reply trace back to a computation?), and every round of that parser shipped a new defect
+    in one direction or the other: separator readings that grounded a 1000x-inflated
+    fabrication, a fail-open miss on "12 mil reais", a fail-closed rewrite of correct replies
+    that named their own operand.
+
+    What ended it was noticing the asymmetry had no basis. This rule was NEVER figure-wise:
+    `get_summary` puts one number in hand and exempts the whole reply, so a fabricated
+    balance beside a real read already passes — measured, both tools. Holding `math` to a
+    stricter standard than the rule's own baseline bought nothing and cost 120 lines of
+    parser that was wrong more often than it was right.
+
+    So the exposure here is the rule's PRE-EXISTING exposure, not a new one, and the real
+    per-figure guarantee lives where it belongs: the SUPEREGO's preserved-term backstop,
+    which checks that figures the executor grounded are reproduced unaltered.
+
+    A REFUSED call grounds nothing: refusals ride ordinary "ERROR: ..." strings (the
+    add_income convention), and that is precisely the turn where the model failed to compute
+    and may have guessed instead.
     """
-    if bool(ok_results(tools, "get_summary")) or bool(ok_results(tools, "search")):
+    if ok_results(tools, "get_summary") or ok_results(tools, "search"):
         return True
-    # A REFUSED math call grounds nothing, and this module returns its refusals as ordinary
-    # "ERROR: ..." strings (the add_income convention) — so ``ok_results`` alone would hand
-    # the exemption to exactly the turn where the model failed to compute and may have
-    # guessed instead.
     return any(not r.startswith("ERROR:") for r in ok_results(tools, "math"))
 
 

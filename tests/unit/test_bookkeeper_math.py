@@ -57,15 +57,51 @@ def test_the_comma_is_refused_not_guessed():
         evaluate("1.234,56 + 1")
 
 
+def test_the_tail_is_CAPPED_never_crushed_to_cents():
+    """Review finding, and the worst kind: the first version quantized to CENTS to kill the
+    28-digit tail, and a tool promising "EXACTLY" started shipping wrong numbers — 35/1000
+    became 0.04 (14% off) and 7/2000 became 0. Six places kills the tail and keeps unit
+    costs and per-item ratios intact."""
+    assert format_number(evaluate("35/1000")) == "0.035"
+    assert format_number(evaluate("7/2000")) == "0.0035"
+    assert format_number(evaluate("100/3")) == "33.333333"
+    # commercial rounding, not Decimal's banker's default: the client's invoice says 0,13
+    assert format_number(evaluate("2.50 * 0.05")) == "0.125"
+    assert format_number(Decimal("0.1255")) == "0.1255"
+
+
 def test_money_rounding_and_no_scientific_notation():
     """The voicer reproduces figures verbatim, so "2.5E+3" would be SPOKEN to a business
     owner and a 28-digit tail is noise nobody can use. Exact results are never padded."""
-    assert format_number(evaluate("100/3")) == "33.33"
     assert format_number(evaluate("2500 * 1")) == "2500"
     assert format_number(evaluate("1850 * 1.08")) == "1998"      # not "1998.00"
     assert "E" not in format_number(evaluate("2500000 * 2"))
     # the exact value stays available for a caller that wants it
     assert evaluate("100/3") != Decimal("33.33")
+
+
+def test_the_tool_ACCEPTS_ITS_OWN_output():
+    """A guard whose recovery path manufactures the failure it guards against has negative
+    value. The ambiguity guard refused format_number's own three-decimal output (385/8 =
+    48.125, handed straight back on the next loop step) and told the model to resend 48125 —
+    a 1000x error the grounding backstop then blessed as a real computation."""
+    computed = format_number(evaluate("385/8"))
+    assert computed == "48.125"
+    assert format_number(evaluate(f"{computed} * 2")) == "96.25"
+    # the multipliers the tool is advertised for
+    assert format_number(evaluate("1850 * 1.075")) == "1988.75"
+    # only the form that can be nothing but thousands is refused
+    with pytest.raises(MathError, match="thousands separator"):
+        evaluate("1.234.567 + 1")
+
+
+def test_a_result_too_large_to_be_a_figure_is_refused():
+    """Decimal saturates to Infinity instead of raising, and "Infinity" would be SPOKEN to a
+    business owner as if it were an answer. Also pins the exception contract: Overflow and
+    InvalidOperation are DecimalException — not OverflowError — so a hand-listed tuple let
+    them escape and the MCP tool RAISED where it promises a recoverable "ERROR:" string."""
+    with pytest.raises(MathError, match="too large"):
+        evaluate("1e400 * 1e400")
 
 
 def test_a_long_expression_is_refused():
@@ -100,6 +136,27 @@ def test_the_tool_returns_the_figure_and_the_error_says_what_to_do():
 
 # ── grounding: a computed figure is NOT a conjured total ─────────────────────────────
 _SAYS_A_TOTAL = "O total com o reajuste fica R$ 48,60."
+
+
+def test_math_grounds_a_computed_reply_exactly_like_its_SIBLING_reads():
+    """Eight review rounds went into making this figure-WISE — does every amount in the reply
+    trace to a computation? — and each round of that parser shipped a defect in one direction
+    or the other. What ended it: the rule was NEVER figure-wise. ``get_summary`` puts one
+    number in hand and exempts the whole reply, so a fabricated balance beside a real read
+    already passes. Holding ``math`` to a stricter standard than the rule's own baseline cost
+    120 lines of parser that was wrong more often than right.
+
+    This pins the SYMMETRY, so a future author cannot 'tighten' math alone again without the
+    test naming why that asymmetry is the bug."""
+    say = "O total do mês é R$ 12.400,00."
+    fabricated_beside = "Entrou R$ 200,00. Seu saldo acumulado é R$ 987.654,00."
+    for tool in ("get_summary", "search", "math"):
+        result = "45 * 1.08 = 48.6" if tool == "math" else "Entradas: R$ 200,00"
+        assert ground_reply(say, tools=[ToolCall(tool=tool, result=result,
+                                                 ok=True)]) is None, tool
+        # the rule's PRE-EXISTING exposure, identical for all three — not a math-only hole
+        assert ground_reply(fabricated_beside,
+                            tools=[ToolCall(tool=tool, result=result, ok=True)]) is None, tool
 
 
 def test_a_computed_figure_grounds_the_reply():
