@@ -23,8 +23,10 @@ def _text(call_result):
 async def test_tools_and_annotations():
     tools = await _server().list_tools()
     ann = {t.name: t.annotations for t in tools}
+    # 2026-08-12: ``math`` joined the vertical (exact arithmetic over figures the client
+    # quotes — reajuste/markup/rateio). Read-only, so no mask and no confirmation gate.
     assert set(ann) == {"add_income", "add_outcome", "get_summary", "list_clients",
-                        "search", "remove_by_search", "get_usage", "help"}
+                        "search", "remove_by_search", "get_usage", "help", "math"}
     # reads are read-only; writes are not; remove is destructive (EGO gate B holds it)
     for ro in ("get_summary", "list_clients", "search", "get_usage", "help"):
         assert ann[ro].readOnlyHint is True

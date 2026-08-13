@@ -153,8 +153,21 @@ def _entry_recorded(tools: Sequence[ToolCall]) -> bool:
 
 
 def _summary_read(tools: Sequence[ToolCall]) -> bool:
-    """A get_summary/search read succeeded this turn (any figures in hand)."""
-    return bool(ok_results(tools, "get_summary")) or bool(ok_results(tools, "search"))
+    """A read that puts real figures in the model's hands this turn.
+
+    ``math`` counts: a figure it computed is grounded — in THIS module's own tool. It was a
+    host builtin first, which the rule could not see, and a turn that legitimately computed
+    "45 * 1.08 = 48.6" had its answer rewritten into "let me check the real numbers"
+    (measured 2026-08-12). Grounding a vertical's figures is the vertical's job, so the tool
+    belongs here and the rule needs no exception anywhere else.
+    """
+    if bool(ok_results(tools, "get_summary")) or bool(ok_results(tools, "search")):
+        return True
+    # A REFUSED math call grounds nothing, and this module returns its refusals as ordinary
+    # "ERROR: ..." strings (the add_income convention) — so ``ok_results`` alone would hand
+    # the exemption to exactly the turn where the model failed to compute and may have
+    # guessed instead.
+    return any(not r.startswith("ERROR:") for r in ok_results(tools, "math"))
 
 
 def _removed_ok(tools: Sequence[ToolCall]) -> bool:
