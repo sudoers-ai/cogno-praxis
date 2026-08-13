@@ -153,21 +153,56 @@ def _entry_recorded(tools: Sequence[ToolCall]) -> bool:
 
 
 def _summary_read(tools: Sequence[ToolCall]) -> bool:
-    """A read that puts real figures in the model's hands this turn.
+    """A get_summary/search read succeeded this turn (real figures in hand)."""
+    return bool(ok_results(tools, "get_summary")) or bool(ok_results(tools, "search"))
 
-    ``math`` counts: a figure it computed is grounded — in THIS module's own tool. It was a
-    host builtin first, which the rule could not see, and a turn that legitimately computed
-    "45 * 1.08 = 48.6" had its answer rewritten into "let me check the real numbers"
-    (measured 2026-08-12). Grounding a vertical's figures is the vertical's job, so the tool
-    belongs here and the rule needs no exception anywhere else.
+
+_NUM_RE = re.compile(r"\d[\d.,]*")
+
+
+def _numbers(text: str, *, decimal_comma: bool) -> "set[str]":
+    """Numeric tokens as comparable values.
+
+    The separator convention differs by SOURCE and conflating them was the first version's
+    bug: a pt-BR REPLY writes "R$ 48,60" (comma decimal, dot thousands) while a TOOL result
+    writes "48.6" (dot decimal). Stripping dots everywhere turned the tool's own 48.6 into
+    486, so a legitimately computed figure read as ungrounded.
     """
-    if bool(ok_results(tools, "get_summary")) or bool(ok_results(tools, "search")):
-        return True
-    # A REFUSED math call grounds nothing, and this module returns its refusals as ordinary
-    # "ERROR: ..." strings (the add_income convention) — so ``ok_results`` alone would hand
-    # the exemption to exactly the turn where the model failed to compute and may have
-    # guessed instead.
-    return any(not r.startswith("ERROR:") for r in ok_results(tools, "math"))
+    out = set()
+    for raw in _NUM_RE.findall(text or ""):
+        token = (raw.replace(".", "").replace(",", ".") if decimal_comma
+                 else raw.replace(",", ""))
+        token = token.rstrip(".")
+        if not token:
+            continue
+        try:
+            out.add(f"{float(token):.6f}".rstrip("0").rstrip("."))
+        except ValueError:
+            continue
+    return out
+
+
+def _math_covers_every_figure(reply: str, tools: Sequence[ToolCall]) -> bool:
+    """Did ``math`` produce EVERY figure the reply quotes?
+
+    Figure-wise, not turn-wide, and that distinction is the whole point. Counting any
+    successful math call as grounding exempted the WHOLE reply: the model could compute
+    "45 * 1.08" legitimately and, in the same breath, quote an invented "saldo do mês de
+    R$ 12.400,00" — no ledger read ran, and the fabrication shipped as a real balance.
+    Unlike get_summary/search, ``math`` reads nothing: it echoes back numbers the model
+    itself supplied, so it can only ground the figures it actually returned.
+
+    A REFUSED call grounds nothing: this module returns refusals as ordinary "ERROR: ..."
+    strings (the add_income convention), which is exactly the turn where the model failed
+    to compute and may have guessed.
+    """
+    computed = [r for r in ok_results(tools, "math") if not r.startswith("ERROR:")]
+    if not computed:
+        return False
+    from_math: "set[str]" = set()
+    for result in computed:
+        from_math |= _numbers(result, decimal_comma=False)
+    return bool(from_math) and _numbers(reply, decimal_comma=True) <= from_math
 
 
 def _removed_ok(tools: Sequence[ToolCall]) -> bool:
@@ -206,7 +241,8 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
     #     hand. Repairable: read the real numbers. Checked LAST: a recorded-entry reply
     #     legitimately echoes the amount ("registrei R$ 500") without a summary read.
     if (b.loc.money.search(reply) and affirmed(reply, b.totals, neg=b.loc.neg)
-            and not _summary_read(tools) and not _entry_recorded(tools)):
+            and not _summary_read(tools) and not _entry_recorded(tools)
+            and not _math_covers_every_figure(reply, tools)):
         return GroundingVerdict(rule="conjured_totals", message=b.check_totals,
                                 repairable=True, critique=_CHECK_TOTALS_CRITIQUE)
 

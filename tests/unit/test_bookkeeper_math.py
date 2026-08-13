@@ -57,15 +57,46 @@ def test_the_comma_is_refused_not_guessed():
         evaluate("1.234,56 + 1")
 
 
+def test_the_tail_is_CAPPED_never_crushed_to_cents():
+    """Review finding, and the worst kind: the first version quantized to CENTS to kill the
+    28-digit tail, and a tool promising "EXACTLY" started shipping wrong numbers — 35/1000
+    became 0.04 (14% off) and 7/2000 became 0. Six places kills the tail and keeps unit
+    costs and per-item ratios intact."""
+    assert format_number(evaluate("35/1000")) == "0.035"
+    assert format_number(evaluate("7/2000")) == "0.0035"
+    assert format_number(evaluate("100/3")) == "33.333333"
+    # commercial rounding, not Decimal's banker's default: the client's invoice says 0,13
+    assert format_number(evaluate("2.50 * 0.05")) == "0.125"
+    assert format_number(Decimal("0.1255")) == "0.1255"
+
+
 def test_money_rounding_and_no_scientific_notation():
     """The voicer reproduces figures verbatim, so "2.5E+3" would be SPOKEN to a business
     owner and a 28-digit tail is noise nobody can use. Exact results are never padded."""
-    assert format_number(evaluate("100/3")) == "33.33"
     assert format_number(evaluate("2500 * 1")) == "2500"
     assert format_number(evaluate("1850 * 1.08")) == "1998"      # not "1998.00"
     assert "E" not in format_number(evaluate("2500000 * 2"))
     # the exact value stays available for a caller that wants it
     assert evaluate("100/3") != Decimal("33.33")
+
+
+def test_the_pt_BR_thousands_dot_is_refused_not_reinterpreted():
+    """Review finding: only the COMMA form was refused, so "1.850" was silently read as
+    1.85 — a 1000x error shipped as a right-looking figure. Ambiguous, so it is refused like
+    the comma. "0.035" stays legal (a thousands group never follows a bare zero)."""
+    with pytest.raises(MathError, match="thousands separator"):
+        evaluate("1.850 * 2")
+    assert format_number(evaluate("0.035 * 2")) == "0.07"
+    assert format_number(evaluate("1998.005 + 0")) == "1998.005"
+
+
+def test_a_result_too_large_to_be_a_figure_is_refused():
+    """Decimal saturates to Infinity instead of raising, and "Infinity" would be SPOKEN to a
+    business owner as if it were an answer. Also pins the exception contract: Overflow and
+    InvalidOperation are DecimalException — not OverflowError — so a hand-listed tuple let
+    them escape and the MCP tool RAISED where it promises a recoverable "ERROR:" string."""
+    with pytest.raises(MathError, match="too large"):
+        evaluate("1e400 * 1e400")
 
 
 def test_a_long_expression_is_refused():
@@ -109,6 +140,18 @@ def test_a_computed_figure_grounds_the_reply():
     grounded = ground_reply(_SAYS_A_TOTAL, tools=[
         ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True)])
     assert grounded is None
+
+
+def test_math_grounds_ONLY_the_figures_it_produced():
+    """Review finding, the most dangerous: the exemption was turn-WIDE, so any successful
+    math call excused the whole reply and a fabricated ledger total shipped alongside a
+    legitimate computation. Unlike get_summary/search, math reads nothing — it echoes back
+    numbers the model supplied, so it can only ground what it actually returned."""
+    computed = [ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True)]
+    assert ground_reply("O total com o reajuste fica R$ 48,60.", tools=computed) is None
+    smuggled = ground_reply(
+        "O corte fica R$ 48,60. Seu saldo do mês está em R$ 12.400,00.", tools=computed)
+    assert smuggled is not None and smuggled.rule == "conjured_totals"
 
 
 def test_a_REFUSED_math_call_grounds_nothing():
