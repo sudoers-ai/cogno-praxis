@@ -20,6 +20,7 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from cogno_praxis.bookkeeper.arithmetic import MathError, evaluate, format_number
 from cogno_praxis.bookkeeper.engine import BookkeeperError
 from cogno_praxis.bookkeeper.service import BookkeeperService
 from cogno_praxis.bookkeeper.store import BookkeeperStore, InMemoryBookkeeperStore
@@ -100,6 +101,25 @@ def build_server(service: Optional[BookkeeperService] = None, *,
     def get_usage() -> str:
         """AI token/usage — delegated to the host's metering."""
         return svc.usage_note()
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    def math(expression: str) -> str:
+        """Compute an arithmetic expression EXACTLY: + - * / ** and parentheses over numbers
+        the user gave you (a price, a percentage, a quantity). Use it for reajustes, markups,
+        rateios, juros simples — e.g. '1850 * 1.08', '(1200 - 340) / 4'. NEVER do arithmetic
+        in your head. Decimals use '.', never ',' (1234.56). This does NOT read the books:
+        totals, balances and period summaries come from get_summary/search — never fetch
+        entries in order to add them up here."""
+        try:
+            value = evaluate(expression)
+        except MathError as exc:
+            # Recoverable: the EGO feeds the text back so the model can fix the expression.
+            # Say what to DO, not only which forms exist — an error naming only forms gets
+            # the same wrong input reworded (the resolve_date lesson).
+            return (f"ERROR: could not compute {expression!r}: {exc}. Send a plain arithmetic "
+                    "expression over the numbers you already have, e.g. '1850 * 1.08'. "
+                    "If a number is missing, ASK the user for it instead of guessing.")
+        return f"{expression} = {format_number(value)}"
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def help() -> str:
