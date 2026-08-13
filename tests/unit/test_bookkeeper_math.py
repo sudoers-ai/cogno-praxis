@@ -210,6 +210,35 @@ def test_an_operand_the_model_TYPED_does_not_ground_anything():
     assert laundered is not None and laundered.rule == "conjured_totals"
 
 
+def test_the_TOOL_side_is_read_canonically_never_ambiguously():
+    """The dual reading is safe on the REPLY (the voicer's convention is unknown) and unsound
+    on the TOOL output (machine-written, dot-decimal). Applying it to both made a computed
+    48.6 also count as 486, so a fabricated "saldo de R$ 486,00" was grounded by a
+    computation of R$ 48,60 — an order of magnitude out, blessed by the guard."""
+    computed = [ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True)]
+    inflated = ground_reply("Seu saldo total do mês é R$ 486,00.", tools=computed)
+    assert inflated is not None and inflated.rule == "conjured_totals"
+    assert ground_reply("O total com reajuste fica R$ 48,60.", tools=computed) is None
+
+
+def test_a_number_the_parser_cannot_account_for_REFUSES_the_exemption():
+    """The direction a fabrication guard must never take is fail-OPEN, and the amount regex
+    silently took it: "12 mil reais" and a bare "12.400" were invisible, so an invented
+    balance rode along beside one legitimate computed figure. An unaccounted number now
+    refuses the exemption — the weaker the parse, the SAFER the outcome."""
+    computed = [ToolCall(tool="math", result="45 * 1.08 = 48.6", ok=True)]
+    for smuggled in ("Seu total fica R$ 48,60 e o faturamento foi 12 mil reais.",
+                     "O total fica R$ 48,60. Saldo do mês: 12.400.",
+                     "O total fica R$ 48,60. Saldo: 12400 reais."):
+        verdict = ground_reply(smuggled, tools=computed)
+        assert verdict is not None and verdict.rule == "conjured_totals", smuggled
+    # …while numbers that are plainly NOT money keep a correct reply intact
+    for fine in ("São 3 cortes; o total fica R$ 48,60.",
+                 "Em 2026 o total fica R$ 48,60.",
+                 "O total com reajuste de 8% fica R$ 48,60."):
+        assert ground_reply(fine, tools=computed) is None, fine
+
+
 def test_an_amount_written_any_common_way_is_recognised():
     """Six revisions of locale-keyed parsers each failed in one direction. This one does not
     DECIDE what a separator means — it reads a candidate both ways and a match under either

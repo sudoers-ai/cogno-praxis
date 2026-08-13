@@ -173,13 +173,28 @@ _AMOUNT_CONTEXT = re.compile(
     r"|(-?\d[\d.,]*[.,]\d{2})\b")
 
 
-def _readings(raw: str) -> "set[Decimal]":
-    """Every value ``raw`` could denote — dot-decimal AND comma-decimal.
+def _canonical(raw: str) -> "Optional[Decimal]":
+    """The value of a token the TOOL produced — dot-decimal, no thousands separators.
 
-    Deliberately ambiguous. A pt-BR voicer writes "R$ 48,60" and an EN one "$48.60", but the
-    voicer ALSO quotes the tool's own "48.6" verbatim into a pt reply — and a locale-keyed
-    parser read that as 486 and rewrote a correct answer. Reading both ways cannot produce a
-    false GROUNDING here: a value only counts if math actually computed it.
+    The tool's output is machine-written and never ambiguous, so it gets ONE reading. An
+    earlier version ran the ambiguous reader over this side too, and that is not a subtlety:
+    a computed 48.6 then also counted as 486, and a fabricated "saldo de R$ 486,00" was
+    grounded by a computation of R$ 48,60. The comment there claimed the dual reading "cannot
+    produce a false GROUNDING" — true of the REPLY side, false the moment it is applied here.
+    """
+    try:
+        return Decimal(raw.replace(",", "").strip().rstrip("."))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _readings(raw: str) -> "set[Decimal]":
+    """Every value ``raw`` could denote — dot-decimal AND comma-decimal. REPLY side only.
+
+    The voicer's convention is genuinely unknown: a pt-BR reply writes "R$ 48,60", an EN one
+    "$48.60", and either may quote the tool's own "48.6" verbatim. Reading both ways here is
+    safe because the reply side is the one being CHECKED — a value passes only if it matches
+    something the tool actually computed.
     """
     out: "set[Decimal]" = set()
     for candidate in ({raw.replace(".", "").replace(",", "."), raw.replace(",", "")}
@@ -217,10 +232,12 @@ def _computed_values(tools: Sequence[ToolCall]) -> "set[Decimal]":
         if result.startswith("ERROR:") or "=" not in result:
             continue
         left, _, right = result.rpartition("=")
-        computed = _readings(right.strip())
-        operands: "set[Decimal]" = set()
-        for token in _CANDIDATE.findall(left):
-            operands |= _readings(token)
+        value = _canonical(right.strip())
+        if value is None:
+            continue
+        computed = {value}
+        operands = {v for v in (_canonical(t) for t in _CANDIDATE.findall(left))
+                    if v is not None}
         if computed & operands:
             continue                      # "12400 * 1 = 12400" — grounds nothing
         values |= computed
@@ -229,6 +246,11 @@ def _computed_values(tools: Sequence[ToolCall]) -> "set[Decimal]":
         for value in list(computed):
             values.add(value.quantize(Decimal("0.01")))
     return values
+
+
+# Any number at all. Used to decide whether the reply carries digits the amount extractor
+# could NOT account for — the exemption is refused when it does.
+_ANY_NUMBER = re.compile(r"-?\d[\d.,]*")
 
 
 def _math_covers_the_amounts(reply: str, tools: Sequence[ToolCall]) -> bool:
@@ -243,7 +265,49 @@ def _math_covers_the_amounts(reply: str, tools: Sequence[ToolCall]) -> bool:
     if not computed:
         return False
     quoted = _quoted_amounts(reply)
-    return bool(quoted) and all(readings & computed for readings in quoted)
+    if not quoted or not all(readings & computed for readings in quoted):
+        return False
+    # Every DIGIT in the reply must be accounted for — matched as an amount the tool
+    # computed, or recognisable as something that is not money. An unparsed number REFUSES
+    # the exemption instead of riding along: "…R$ 48,60 e o faturamento foi 12 mil reais"
+    # and "Saldo do mês: 12.400" both slipped past an extractor that only looked for
+    # sigils and cents, and the miss failed OPEN — the direction a fabrication guard must
+    # never take. Now the weaker the parse, the SAFER the outcome.
+    accounted: "set[Decimal]" = set()
+    for readings in quoted:
+        accounted |= readings
+    for match in _ANY_NUMBER.finditer(reply or ""):
+        values = _readings(match.group(0))
+        if not values or values & accounted or values & computed:
+            continue
+        # A SCALE or currency word right after makes it money whatever its size: "12 mil
+        # reais" is a balance, and the small-integer exemption below was swallowing it.
+        if _SCALE_AFTER.match(reply[match.end():match.end() + 24]):
+            return False
+        if values & _NOT_MONEY or _is_year(match.group(0), values):
+            continue          # a count ("São 3 cortes") or a year ("Em 2026") is no claim
+        return False
+    return True
+
+
+# Small bare integers are counts, not amounts ("São 3 cortes", "em 2 dias"). A fabricated
+# BALANCE is never written as a bare 3 — and treating counts as amounts rewrote correct
+# replies, which is how this check earned its narrow shape.
+_NOT_MONEY = {Decimal(n) for n in range(0, 32)}
+
+def _is_year(raw: str, values: "set[Decimal]") -> bool:
+    """A bare four-digit number in the calendar range — "Em 2026 o total fica…".
+
+    Written plainly (no separator, no cents): an AMOUNT of two thousand and twenty-six reais
+    would carry a sigil or cents and be captured as one, and those paths run first.
+    """
+    return (raw.isdigit() and len(raw) == 4
+            and any(Decimal(1900) <= v <= Decimal(2100) for v in values))
+
+
+_SCALE_AFTER = re.compile(
+    r"^\s*(mil|milh[oõ]es?|milhao|mi|k|reais|real|reales|euros?|d[oó]lares|dollars|"
+    r"thousand|million)\b")
 
 
 def _removed_ok(tools: Sequence[ToolCall]) -> bool:
