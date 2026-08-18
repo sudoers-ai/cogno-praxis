@@ -17,6 +17,19 @@ def _server():
     return build_server(SchedulerService(store, today=lambda: _TODAY))
 
 
+def _clocked_server():
+    """A server whose "today" moves, so a booking can be played forward to its own day.
+
+    Needed since 2026-08-18: only an appointment that has already come due may be COMPLETED
+    (completing a FUTURE booking used to evaporate it and free the slot, through a tool with
+    no destructiveHint). Booking still requires a future date, so any test that completes has
+    to travel."""
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_silva"] = Host("dr_silva", "Dr. Silva", "GP")
+    clock = {"d": _TODAY}
+    return build_server(SchedulerService(store, today=lambda: clock["d"])), clock
+
+
 def _text(call_result):
     # FastMCP call_tool returns (content_blocks, structured)
     content = call_result[0]
@@ -79,48 +92,62 @@ async def test_book_then_list_then_cancel_flow():
 
 
 async def test_complete_appointment_tool():
-    mcp = _server()
+    mcp, clock = _clocked_server()
     booked = _text(await mcp.call_tool(
         "book_appointment",
         {"host_id": "dr_silva", "date": "2026-07-01", "time": "09:00", "with_name": "Ana"}))
     appt_id = booked.split()[1].rstrip(":")
+    clock["d"] = date(2026, 7, 1)          # the consultation day arrives
     out = _text(await mcp.call_tool("complete_appointment", {"appointment_id": appt_id}))
     assert f"Appointment {appt_id} is now COMPLETED" in out
 
 
 async def test_neither_status_verb_can_reach_CANCELED():
-    """The bypass, pinned shut from the OUTSIDE — by effect, not by reading the signature.
+    """The bypass, pinned shut by EFFECT — and with both legs actually exercised.
 
-    A cancellation frees the slot; that is the observable. If either verb ever grew a status
-    argument again, the appointment would leave the live agenda through a tool the host's
-    confirmation gate does not hold.
+    First cut of this test used the auto-confirming host, so the "confirm" leg only ever hit
+    the ALREADY-CONFIRMED no-op branch and the closing assertion read a listing that renders
+    "No CANCELED appointments found." — it would have passed with the id simply absent. A host
+    with ``auto_confirm=False`` makes PENDING→CONFIRMED a real transition, and the history
+    listing shows the status per row, so both legs discriminate.
     """
-    mcp = _server()
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_souza"] = Host("dr_souza", "Dr. Souza", "GP", auto_confirm=False)
+    clock = {"d": _TODAY}
+    mcp = build_server(SchedulerService(store, today=lambda: clock["d"]))
+
     booked = _text(await mcp.call_tool(
         "book_appointment",
-        {"host_id": "dr_silva", "date": "2026-07-01", "time": "09:00", "with_name": "Ana"}))
+        {"host_id": "dr_souza", "date": "2026-07-01", "time": "09:00", "with_name": "Ana"}))
     appt_id = booked.split()[1].rstrip(":")
+    assert "PENDING" in booked                       # the transition below is real, not a no-op
 
     # FastMCP does not reject an unknown argument — it IGNORES it. So "the tool has no status
     # parameter" is not observable from an exception, and asserting one would have been a test
     # that passes for the wrong reason. Assert the EFFECT: the extra argument changes nothing.
-    for verb, expected in (("confirm_appointment", "CONFIRMED"),
-                           ("complete_appointment", "COMPLETED")):
-        out = _text(await mcp.call_tool(
-            verb, {"appointment_id": appt_id, "new_status": "CANCELED"}))
-        assert "CANCELED" not in out, f"{verb} honoured a smuggled status: {out!r}"
-        assert expected in out
+    out = _text(await mcp.call_tool(
+        "confirm_appointment", {"appointment_id": appt_id, "new_status": "CANCELED"}))
+    assert "is now CONFIRMED" in out, f"confirm honoured a smuggled status: {out!r}"
 
-    _text(await mcp.call_tool("complete_appointment", {"appointment_id": appt_id}))
-    canceled = _text(await mcp.call_tool("list_appointments", {"status": "CANCELED"}))
-    assert appt_id not in canceled, "no status verb may reach the terminal CANCELED state"
-    # …and the tool that IS allowed to cancel still does, so this is not a lockout.
-    again = _text(await mcp.call_tool(
+    clock["d"] = date(2026, 7, 1)
+    out = _text(await mcp.call_tool(
+        "complete_appointment", {"appointment_id": appt_id, "new_status": "CANCELED"}))
+    assert "is now COMPLETED" in out, f"complete honoured a smuggled status: {out!r}"
+
+    # …and the row's real status in the history listing, which prints one per line.
+    history = _text(await mcp.call_tool("list_appointments", {"include_history": True}))
+    row = next(line for line in history.splitlines() if appt_id in line)
+    assert "[COMPLETED]" in row and "CANCELED" not in row, row
+
+    # The tool that IS allowed to cancel still does — this is a gate, not a lockout.
+    other = _text(await mcp.call_tool(
         "book_appointment",
-        {"host_id": "dr_silva", "date": "2026-07-02", "time": "09:00", "with_name": "Bia"}))
-    second = again.split()[1].rstrip(":")
-    _text(await mcp.call_tool("cancel_appointment", {"appointment_id": second}))
-    assert second in _text(await mcp.call_tool("list_appointments", {"status": "CANCELED"}))
+        {"host_id": "dr_souza", "date": "2026-07-02", "time": "09:00", "with_name": "Bia"}))
+    other_id = other.split()[1].rstrip(":")
+    _text(await mcp.call_tool("cancel_appointment", {"appointment_id": other_id}))
+    history = _text(await mcp.call_tool("list_appointments", {"include_history": True}))
+    row = next(line for line in history.splitlines() if other_id in line)
+    assert "[CANCELED]" in row, row
 
 
 async def test_confirm_noop_says_already():

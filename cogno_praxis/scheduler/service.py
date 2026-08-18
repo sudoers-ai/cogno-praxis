@@ -495,13 +495,31 @@ class SchedulerService:
 
         Ownership (parent parity; host-authorised) is enforced via ``_authorize``.
 
-        Two guards (live finding — a bulk "confirme os pendentes" acting on stale ids):
+        The LIFECYCLE, not just the vocabulary. Splitting the MCP tool into `confirm_` /
+        `complete_` narrowed which NAMES the model can reach; it did nothing about which
+        TRANSITIONS are legal, and four of the illegal ones were measured on 2026-08-18:
+        completing a FUTURE booking evaporated it and freed the slot with no way back;
+        completing a CANCELED row resurrected it into the billable set; completing a
+        self-occupation BLOCK re-opened the agenda and put the block in revenue; and reviving
+        a canceled row whose slot had been retaken produced TWO confirmed appointments at the
+        same time. A per-tool split cannot reach any of those — this is the layer that owns
+        the lifecycle, so the rules live here.
+
+        Guards, in order:
         - **no-op transition** is idempotent (``changed=False``), never an error — a judge-
           rejected retry that re-issues the same call must succeed (same rationale as book's
           idempotency), but the caller can now SAY "it was already CONFIRMED" so the model
           notices it acted on the wrong id instead of celebrating a change that never happened;
+        - **COMPLETED is terminal**: nothing leaves it. ``cancel()`` already refused
+          COMPLETED→CANCELED; ``update_status`` let COMPLETED→CONFIRMED "un-complete" a row;
+        - **only a real, already-due appointment may COMPLETE**: not a block (a block is not a
+          consultation and must never enter the revenue set — the expiry path says so in
+          ``expire_past``), not a canceled one (it did not happen), and not one in the future;
         - a **past appointment never goes (back) to PENDING/CONFIRMED** — confirming yesterday
-          is meaningless; closing out the past (COMPLETED/CANCELED) stays allowed."""
+          is meaningless; closing out the past (COMPLETED/CANCELED) stays allowed;
+        - **reviving checks the slot HERE**, not in the store. Only the Postgres adapter raises
+          ``SlotTakenError``; the in-memory store overwrites blindly, so relying on the store
+          meant the shipped default double-booked."""
         appt = self.store.get(appointment_id)
         if appt is None:
             raise SchedulerError(f"unknown appointment: {appointment_id}")
@@ -511,25 +529,58 @@ class SchedulerService:
             raise SchedulerError(f"invalid status: {new_status}")
         if appt.status == status:
             return appt, False
+        if appt.status == COMPLETED:
+            raise SchedulerError(
+                f"{appt.appointment_id} is COMPLETED — a finished appointment is final and "
+                f"cannot be reopened. Book a new one instead.")
+        try:
+            appt_day: "Optional[date]" = date.fromisoformat(appt.date)
+        except ValueError:
+            appt_day = None     # unparseable → never terminalize/revive a bad row on a guess
+        if status == COMPLETED:
+            if appt.is_block:
+                raise SchedulerError(
+                    f"{appt.appointment_id} is a schedule BLOCK, not a consultation — it "
+                    f"cannot be marked COMPLETED. Cancel it to free the time.")
+            if appt.status == CANCELED:
+                raise SchedulerError(
+                    f"{appt.appointment_id} was CANCELED — it did not happen, so it cannot be "
+                    f"marked COMPLETED. Book a new appointment instead.")
+            if appt_day is not None and appt_day > self._today():
+                raise SchedulerError(
+                    f"{appt.appointment_id} is on {appt.date}, in the future — it cannot have "
+                    f"happened yet. Cancel it if it will not, or wait until the day.")
         if status in ACTIVE_STATUS:
-            try:
-                appt_day = date.fromisoformat(appt.date)
-            except ValueError:
-                appt_day = None
             if appt_day is not None and appt_day < self._today():
                 raise SchedulerError(
                     f"{appt.appointment_id} was on {appt.date} (past); a past appointment "
                     f"cannot go to {status} — mark it COMPLETED or CANCELED instead")
+            self._refuse_if_slot_retaken(appt)
         appt.status = status
         try:
             self.store.update(appt)
         except SlotTakenError:
-            # Reviving a terminal appointment (CANCELED/COMPLETED → active) whose slot was
-            # taken in the meantime. Refuse in domain terms; the slot is genuinely gone.
+            # Lost race behind the pre-check above (Postgres adapter only). Same domain wording.
             raise SchedulerError(
                 f"{appt.appointment_id} cannot go to {status}: {appt.time} on {appt.date} "
                 f"is now booked by someone else — rebook at a free slot instead") from None
         return appt, True
+
+    def _refuse_if_slot_retaken(self, appt: Appointment) -> None:
+        """Bringing a row back to the LIVE agenda must not double-book its old slot.
+
+        Measured on the shipped in-memory store: cancel Ana 09:00 → book Bia 09:00 → confirm
+        Ana's id → two CONFIRMED rows at 09:00. The service trusted ``store.update`` to raise,
+        but only the Postgres adapter does; the default overwrites blindly. A rule the default
+        store does not enforce is not a rule."""
+        taken = next((a for a in self.store.list(host_id=appt.host_id)
+                      if a.date == appt.date and a.time == appt.time
+                      and a.appointment_id != appt.appointment_id
+                      and a.status in ACTIVE_STATUS), None)
+        if taken is not None:
+            raise SchedulerError(
+                f"{appt.appointment_id} cannot return to the agenda: {appt.time} on "
+                f"{appt.date} is now booked by someone else — rebook at a free slot instead")
 
     def cancel(self, appointment_id: str, reason: str = "", *,
                identity_id: Optional[str] = None, role: Optional[str] = None,

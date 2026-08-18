@@ -190,11 +190,12 @@ def test_list_appointments_filters():
 def test_list_appointments_hides_terminal_by_default():
     # A stale CANCELED/COMPLETED row must not leak into the live agenda — that noise made the
     # voicer narrate a fresh cancellation ("cancelado com sucesso") off an old row.
-    svc = _svc()
+    svc, clock = _clocked(_TODAY)
     live = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
     gone = svc.book("dr_silva", "2026-07-01", "10:00", "Bob")
     done = svc.book("dr_silva", "2026-07-01", "11:00", "Cid")
     svc.cancel(gone.appointment_id)
+    clock["d"] = date(2026, 7, 1)     # o dia chegou — só então "aconteceu" é verdade
     svc.update_status(done.appointment_id, COMPLETED)
 
     active = svc.list_appointments()
@@ -285,8 +286,9 @@ def test_cancel_unknown_raises():
 def test_cancel_completed_is_refused():
     """A finished appointment must not be un-completed by a stray cancel (the integrity hole:
     the parent blocked terminal rows; here reschedule/update_status guarded but cancel didn't)."""
-    svc = _svc()
+    svc, clock = _clocked(_TODAY)
     appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
+    clock["d"] = date(2026, 7, 1)
     svc.update_status(appt.appointment_id, COMPLETED)
     with pytest.raises(SchedulerError, match="COMPLETED and cannot be canceled"):
         svc.cancel(appt.appointment_id)
@@ -364,12 +366,16 @@ def test_unknown_role_is_denied_failsafe():
 
 
 def test_update_status_lifecycle():
-    svc = _svc()
+    svc, clock = _clocked(_TODAY)
     appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
     assert svc.update_status(appt.appointment_id, "confirmed")[0].status == CONFIRMED
+    clock["d"] = date(2026, 7, 1)     # só se completa o que já aconteceu
     assert svc.update_status(appt.appointment_id, "COMPLETED")[0].status == COMPLETED
-    # a COMPLETED appointment frees the slot again
-    assert "09:00" in svc.check_availability("dr_silva", "2026-07-01")
+    # a COMPLETED appointment frees the slot again. Read through the STORE, not
+    # check_availability: with the clock on the appointment's own day, the availability API
+    # refuses it outright ("scheduling starts from tomorrow") — a booking policy, not the fact
+    # under test.
+    assert "09:00" not in svc.store.booked_times("dr_silva", "2026-07-01")
 
 
 def test_update_status_noop_is_idempotent_and_flagged():
@@ -710,3 +716,106 @@ def test_single_active_follows_guest_id_not_name():
     # a DIFFERENT guest_id with the SAME display name → allowed (not the same client)
     other = svc.book("h", "2026-07-07", "11:00", "Ana", guest_id="ana2_id")
     assert other.guest_id == "ana2_id"
+
+
+# ── the status LIFECYCLE, not just the vocabulary ────────────────────────────────────
+# Splitting the MCP tool into confirm_/complete_ narrowed which NAMES the model reaches; it
+# did nothing about which TRANSITIONS are legal. All four cases below were MEASURED against
+# the split as first shipped (2026-08-18) — each one succeeded and each one is a real loss.
+
+
+def _clocked(today: date, *, auto_confirm: bool = True):
+    """A service whose "today" can be moved, so the DOCTOR flow can be played out in order:
+    book (must be in the future) → confirm → the day arrives → complete."""
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_silva"] = Host("dr_silva", "Dr. Silva", "GP", auto_confirm=auto_confirm)
+    clock = {"d": today}
+    return SchedulerService(store, today=lambda: clock["d"]), clock
+
+
+def test_a_future_appointment_cannot_be_COMPLETED():
+    """Measured before the guard: completing tomorrow's booking removed it from the agenda,
+    freed the slot for someone else, and `cancel_appointment` then refused it forever — a
+    booking evaporated through a tool with no destructiveHint, which is the very gate bypass
+    the tool split was made to close."""
+    svc, _clock = _clocked(_TODAY)
+    appt = svc.book("dr_silva", "2026-07-01", "09:00", "Maria")
+    with pytest.raises(SchedulerError, match="in the future"):
+        svc.update_status(appt.appointment_id, COMPLETED)
+    assert svc.store.get(appt.appointment_id).status == CONFIRMED   # untouched
+    assert "09:00" not in svc.check_availability("dr_silva", "2026-07-01")   # still taken
+
+
+def test_a_CANCELED_appointment_cannot_be_COMPLETED():
+    """COMPLETED is the billable set the bookkeeper queries. Resurrecting a canceled row into
+    it books phantom revenue — and `cancel()` already guarded the inverse direction, so the
+    asymmetry was the bug."""
+    svc, _clock = _clocked(_TODAY)
+    appt = svc.book("dr_silva", "2026-07-01", "09:00", "Maria")
+    svc.cancel(appt.appointment_id)
+    with pytest.raises(SchedulerError, match="CANCELED"):
+        svc.update_status(appt.appointment_id, COMPLETED)
+    assert svc.store.get(appt.appointment_id).status == CANCELED
+
+
+def test_a_schedule_BLOCK_cannot_be_COMPLETED():
+    """``expire_past`` states the rule outright: "a block is not a consultation, so it must
+    never enter the COMPLETED/revenue set" — it sends past blocks to CANCELED for exactly this
+    reason. Measured: completing a block re-opened the blocked time for booking AND filed the
+    block as revenue."""
+    svc, _clock = _clocked(_TODAY)
+    svc.block_schedule("dr_silva", "2026-07-01", start_time="09:00", end_time="10:00",
+                       description="Congresso")
+    block = next(a for a in svc.store.list() if a.is_block)
+    with pytest.raises(SchedulerError, match="BLOCK"):
+        svc.update_status(block.appointment_id, COMPLETED)
+    assert "09:00" not in svc.check_availability("dr_silva", "2026-07-01")   # still blocked
+
+
+def test_reviving_a_canceled_row_never_double_books_its_old_slot():
+    """The service trusted ``store.update`` to raise ``SlotTakenError`` — but only the Postgres
+    adapter does; ``InMemoryAppointmentStore`` (the shipped default, and what every test and
+    bench runs on) overwrites blindly. Measured: cancel Ana 09:00 → book Bia 09:00 → confirm
+    Ana's id → TWO CONFIRMED rows at the same slot. A rule the default store does not enforce
+    is not a rule, so the check moved into the service."""
+    svc, _clock = _clocked(_TODAY)
+    ana = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
+    svc.cancel(ana.appointment_id)
+    svc.book("dr_silva", "2026-07-01", "09:00", "Bia")
+    with pytest.raises(SchedulerError, match="booked by someone else"):
+        svc.update_status(ana.appointment_id, CONFIRMED)
+    live = [a for a in svc.store.list() if a.status == CONFIRMED and a.time == "09:00"]
+    assert [a.with_name for a in live] == ["Bia"]
+
+
+def test_COMPLETED_is_terminal_in_both_directions():
+    """``cancel()`` already refused COMPLETED→CANCELED; ``update_status`` happily
+    "un-completed" a row back to CONFIRMED. One finished appointment, two exits."""
+    svc, clock = _clocked(_TODAY)
+    appt = svc.book("dr_silva", "2026-07-01", "09:00", "Maria")
+    clock["d"] = date(2026, 7, 1)
+    svc.update_status(appt.appointment_id, COMPLETED)
+    for target in (CONFIRMED, PENDING):
+        with pytest.raises(SchedulerError, match="final"):
+            svc.update_status(appt.appointment_id, target)
+    with pytest.raises(SchedulerError, match="cannot be canceled"):
+        svc.cancel(appt.appointment_id)
+
+
+def test_the_whole_DOCTOR_flow_still_runs_end_to_end():
+    """THE control arm. Every guard above forbids something; this proves they forbid only
+    that. A rule that also blocks "confirma a Maria" / "já atendi" would be worse than the
+    hole it closes."""
+    svc, clock = _clocked(_TODAY, auto_confirm=False)
+    appt = svc.book("dr_silva", "2026-07-01", "09:00", "Maria")
+    assert appt.status == PENDING
+    _, changed = svc.update_status(appt.appointment_id, CONFIRMED)
+    assert changed
+    clock["d"] = date(2026, 7, 1)                       # the day arrives
+    done, changed = svc.update_status(appt.appointment_id, COMPLETED)
+    assert changed and done.status == COMPLETED
+    # …and a cancel-then-change-of-mind still works when the slot is free.
+    other = svc.book("dr_silva", "2026-07-02", "10:00", "João")
+    svc.cancel(other.appointment_id)
+    revived, changed = svc.update_status(other.appointment_id, CONFIRMED)
+    assert changed and revived.status == CONFIRMED
