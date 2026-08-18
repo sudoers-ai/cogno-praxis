@@ -22,7 +22,7 @@ Two layers of "business rules" stay separate: **orchestration** rules live in th
 
 | Vertical | What it is | Tools |
 |---|---|---|
-| **scheduler** | the agenda capability — ships the **SECRETARY** persona, the universal reception/scheduling front door for any client | `list_schedulable_hosts`, `check_availability`, `book_appointment`, `list_appointments`, `update_appointment_status`, `cancel_appointment` |
+| **scheduler** | the agenda capability — ships the **SECRETARY** persona, the universal reception/scheduling front door for any client | `list_schedulable_hosts`, `check_availability`, `book_appointment`, `list_appointments`, `confirm_appointment`, `complete_appointment`, `cancel_appointment` |
 | **bookkeeper** | the financial capability — ships the **BOOKKEEPER** persona (parent SaaS ANALYST): records income/expenses, tracks clients, produces summaries. See [`docs/BOOKKEEPER.md`](docs/BOOKKEEPER.md) | `add_income`, `add_outcome`, `get_summary`, `list_clients`, `search`, `remove_by_search`, `get_usage`, `help` |
 
 More verticals (restaurant, veterinary, …) follow the same shape.

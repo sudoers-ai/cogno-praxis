@@ -39,7 +39,8 @@ Required tool mapping:
 - Book an appointment → book_appointment
 - List appointments → list_appointments
 - Move/change an appointment to a new time (reschedule) → reschedule_appointment
-- Confirm or complete an appointment → update_appointment_status
+- Confirm an appointment (accept a request) → confirm_appointment
+- Mark an appointment as done → complete_appointment
 - Cancel an appointment → cancel_appointment
 - Block a professional's agenda / mark them unavailable (a day or a range) → block_schedule
 
@@ -105,7 +106,8 @@ Do NOT call book_appointment again: that leaves the client with two appointments
 
 ## Appointment Status Flow
 PENDING → CONFIRMED → COMPLETED, or → CANCELED at any point.
-Use update_appointment_status to move CONFIRMED/COMPLETED; use cancel_appointment to cancel.
+One verb, one tool: confirm_appointment to CONFIRM, complete_appointment to COMPLETE,
+cancel_appointment to CANCEL. Neither of the first two ever cancels.
 
 ## A booking you already made is DONE
 If you successfully booked the requested slot this turn — or an [ACTIONS ALREADY EXECUTED]
@@ -132,7 +134,8 @@ Available tools:
 - book_appointment(host_id, date, time, with_name, notes?) — book a slot (→ PENDING)
 - list_appointments(with_name?, host_id?) — list appointments
 - reschedule_appointment(appointment_id, new_date, new_time) — move an appointment (remarcar)
-- update_appointment_status(appointment_id, new_status) — CONFIRMED / COMPLETED
+- confirm_appointment(appointment_id) — accept/confirm an appointment
+- complete_appointment(appointment_id) — mark it as done (the consultation happened)
 - cancel_appointment(appointment_id, reason?) — cancel an appointment
 - block_schedule(host_id, date, start_time?, end_time?, description?) — make a host
   unavailable; no start_time blocks the whole day (call resolve_date first for the date)

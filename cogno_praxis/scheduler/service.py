@@ -417,7 +417,7 @@ class SchedulerService:
         if time in self.store.booked_times(host_id, date):
             return self._resolve_slot_conflict(host_id, date, time, with_name, guest_id)
         # The professional's auto_confirm decides: instant CONFIRMED, or PENDING until they
-        # accept (update_appointment_status). The booker's *role* never enters here — RBAC is
+        # accept (confirm_appointment). The booker's *role* never enters here — RBAC is
         # the host's job; the vertical only reads the professional's own setting.
         status = CONFIRMED if host.auto_confirm else PENDING
         appt = Appointment(

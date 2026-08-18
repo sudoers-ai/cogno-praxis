@@ -43,7 +43,7 @@ async def test_scheduler_loop_over_mcp():
         # the EGO sees the scheduling tools as ordinary tools
         names = {s["function"]["name"] for s in disp.tools_schema()}
         assert {"list_schedulable_hosts", "check_availability", "book_appointment",
-                "list_appointments", "update_appointment_status",
+                "list_appointments", "confirm_appointment", "complete_appointment",
                 "cancel_appointment"} <= names
 
         # policy flows from the server's annotations through cogno-mcp
