@@ -26,11 +26,25 @@ from mcp.types import ToolAnnotations
 from cogno_praxis.scheduler.engine import SchedulerConfig
 from cogno_praxis.scheduler.service import SchedulerService, format_date
 from cogno_praxis.scheduler.store import (
+    COMPLETED,
+    CONFIRMED,
     Appointment,
     AppointmentStore,
     Host,
     InMemoryAppointmentStore,
 )
+
+
+def _status_reply(appt: Appointment, changed: bool) -> str:
+    """Shared wording for the status verbs — a no-op must SAY it was a no-op.
+
+    The idempotent path is not an error (a judge-rejected retry re-issues the same call), but
+    the caller has to be able to tell "I changed it" from "it was already like that", or the
+    model celebrates a change that never happened — the live bulk-confirm bug."""
+    if not changed:
+        return (f"Appointment {appt.appointment_id} was ALREADY {appt.status} — no change "
+                f"was made. If you meant a different appointment, list them again.")
+    return f"Appointment {appt.appointment_id} is now {appt.status}."
 
 
 def _format_appt(a: Appointment) -> str:
@@ -193,19 +207,46 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         return (f"Rescheduled {appt.appointment_id}: {appt.with_name} with {appt.host_id} "
                 f"is now on {appt.date} at {appt.time} [{appt.status}].")
 
+    # ── one verb, one tool ──────────────────────────────────────────────────────────
+    # These two replaced `update_appointment_status(appointment_id, new_status)` on 2026-08-18,
+    # and the reason is a CAPABILITY gate, not ergonomics. MCP carries destructiveness per TOOL
+    # (`destructiveHint`), and the host's confirmation gate reads it by NAME
+    # (`ToolPolicyDispatcher.requires_confirmation(name)` — no arguments). One tool spanning a
+    # free-text status therefore spanned opposite risks: `cancel_appointment` is held for
+    # confirmation, and the very same effect was reachable through the non-destructive twin.
+    # Measured, not reasoned: `update_appointment_status(id, "CANCELED")` cancelled the
+    # appointment and freed the slot, with `destructiveHint=None`. The prompt already told the
+    # model to cancel via `cancel_appointment` ("Use update_appointment_status to move
+    # CONFIRMED/COMPLETED") — the code just did not enforce what the prompt promised.
+    #
+    # Splitting also drops two transitions the model never had business making: back to PENDING,
+    # and to CANCELED by another name. `svc.update_status` keeps the general contract for host
+    # code; what changed is what the MODEL can reach.
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
-    def update_appointment_status(appointment_id: str, new_status: str,
-                                  identity_id: str = "", role: str = "") -> str:
-        """Move an appointment along its lifecycle (CONFIRMED / COMPLETED / etc.).
+    def confirm_appointment(appointment_id: str, identity_id: str = "",
+                            role: str = "") -> str:
+        """Confirm an appointment — accept a PENDING request, or re-activate a canceled one.
+
+        Use this for "confirma o da Maria", "pode confirmar", "aceito". To CANCEL, call
+        ``cancel_appointment`` — this tool never cancels.
 
         The ids MUST come from a ``list_appointments`` call in THIS conversation turn —
         never from memory of an earlier turn (the agenda may have changed since)."""
-        appt, changed = svc.update_status(appointment_id, new_status,
-                                          identity_id=identity_id or None, role=role or None)
-        if not changed:
-            return (f"Appointment {appt.appointment_id} was ALREADY {appt.status} — no change "
-                    f"was made. If you meant a different appointment, list them again.")
-        return f"Appointment {appt.appointment_id} is now {appt.status}."
+        return _status_reply(*svc.update_status(
+            appointment_id, CONFIRMED, identity_id=identity_id or None, role=role or None))
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
+    def complete_appointment(appointment_id: str, identity_id: str = "",
+                             role: str = "") -> str:
+        """Mark an appointment as COMPLETED — the consultation happened.
+
+        Use this for "já atendi", "foi realizada", "concluído". To CANCEL a no-show or a
+        withdrawal, call ``cancel_appointment`` — this tool never cancels.
+
+        The ids MUST come from a ``list_appointments`` call in THIS conversation turn —
+        never from memory of an earlier turn (the agenda may have changed since)."""
+        return _status_reply(*svc.update_status(
+            appointment_id, COMPLETED, identity_id=identity_id or None, role=role or None))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
     def cancel_appointment(appointment_id: str, reason: str = "",

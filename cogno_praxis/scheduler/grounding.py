@@ -128,8 +128,9 @@ _CONJURED_SLOTS_CRITIQUE = (
     "slots the tool returns.")
 _UNVERIFIED_STATUS_CRITIQUE = (
     "The previous reply claimed the appointment status was changed, but no scheduler mutation "
-    "was executed. Execute the user's decision now (update_appointment_status or "
-    "cancel_appointment for the appointment_id in context) and report only the real outcome.")
+    "was executed. Execute the user's decision now (confirm_appointment, complete_appointment "
+    "or cancel_appointment for the appointment_id in context) and report only the real "
+    "outcome.")
 _NO_ACTION_TAKEN_CRITIQUE = (
     "The previous reply claimed a scheduling action was completed, but NO tool ran this turn. "
     "Execute the requested action for real (check availability / book / update as asked) and "
@@ -336,10 +337,18 @@ def _contradicts_booking(tools: Sequence[ToolCall]) -> bool:
     return _list_read_empty(tools) or _book_attempted(tools)
 
 
+# The mutating scheduler verbs, by NAME. `update_appointment_status` was split into
+# `confirm_appointment` + `complete_appointment` on 2026-08-18; the old name stays listed so a
+# PERSISTED trace from before the split still reads as a real mutation (this runs over whatever
+# trace the host hands back, including a correction loop replaying an earlier turn).
+_MUTATIONS = ("confirm_appointment", "complete_appointment", "update_appointment_status",
+              "cancel_appointment", "reschedule_appointment", "book_appointment")
+
+
 def _status_changed(tools: Sequence[ToolCall]) -> bool:
-    """A scheduler MUTATION actually succeeded this turn (confirm/cancel/reschedule/book)."""
-    return any(ok_results(tools, t) for t in ("update_appointment_status", "cancel_appointment",
-                                              "reschedule_appointment", "book_appointment"))
+    """A scheduler MUTATION actually succeeded this turn (confirm/complete/cancel/reschedule/
+    book)."""
+    return any(ok_results(tools, t) for t in _MUTATIONS)
 
 
 def _pending_in_hand(tools: Sequence[ToolCall]) -> bool:

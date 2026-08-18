@@ -28,7 +28,8 @@ async def test_tools_and_annotations():
     ann = {t.name: t.annotations for t in tools}
     assert set(ann) == {"resolve_date", "list_schedulable_hosts", "check_availability",
                         "book_appointment", "block_schedule", "list_appointments",
-                        "reschedule_appointment", "update_appointment_status",
+                        "reschedule_appointment", "confirm_appointment",
+                        "complete_appointment",
                         "cancel_appointment", "get_schedule_settings",
                         "set_schedule_settings", "set_auto_confirm"}
     assert ann["get_schedule_settings"].readOnlyHint is True
@@ -38,10 +39,21 @@ async def test_tools_and_annotations():
     assert ann["check_availability"].readOnlyHint is True
     assert ann["book_appointment"].readOnlyHint is False
     assert ann["block_schedule"].readOnlyHint is False
-    assert ann["update_appointment_status"].readOnlyHint is False
+    assert ann["confirm_appointment"].readOnlyHint is False
+    assert ann["complete_appointment"].readOnlyHint is False
     assert ann["cancel_appointment"].destructiveHint is True
     # reschedule is a confirmed (destructive) action → EGO gate B holds it
     assert ann["reschedule_appointment"].destructiveHint is True
+    # THE point of the split (2026-08-18). The host's confirmation gate decides by tool NAME
+    # (`requires_confirmation(name)`, no arguments), so a single tool taking a free-text status
+    # spanned opposite risks: cancelling was reachable through the non-destructive twin while
+    # `cancel_appointment` was held. Measured before the split:
+    # `update_appointment_status(id, "CANCELED")` cancelled the appointment and freed the slot,
+    # with `destructiveHint=None`. Neither confirm nor complete may carry a cancel path.
+    assert "update_appointment_status" not in ann, (
+        "the status catch-all is a cancellation bypass — it must not come back")
+    assert ann["confirm_appointment"].destructiveHint in (None, False)
+    assert ann["complete_appointment"].destructiveHint in (None, False)
 
 
 async def test_list_hosts_tool():
@@ -66,18 +78,52 @@ async def test_book_then_list_then_cancel_flow():
     assert "09:00" not in avail
 
 
-async def test_update_status_tool():
+async def test_complete_appointment_tool():
     mcp = _server()
     booked = _text(await mcp.call_tool(
         "book_appointment",
         {"host_id": "dr_silva", "date": "2026-07-01", "time": "09:00", "with_name": "Ana"}))
     appt_id = booked.split()[1].rstrip(":")
-    out = _text(await mcp.call_tool(
-        "update_appointment_status", {"appointment_id": appt_id, "new_status": "COMPLETED"}))
+    out = _text(await mcp.call_tool("complete_appointment", {"appointment_id": appt_id}))
     assert f"Appointment {appt_id} is now COMPLETED" in out
 
 
-async def test_update_status_tool_noop_says_already():
+async def test_neither_status_verb_can_reach_CANCELED():
+    """The bypass, pinned shut from the OUTSIDE — by effect, not by reading the signature.
+
+    A cancellation frees the slot; that is the observable. If either verb ever grew a status
+    argument again, the appointment would leave the live agenda through a tool the host's
+    confirmation gate does not hold.
+    """
+    mcp = _server()
+    booked = _text(await mcp.call_tool(
+        "book_appointment",
+        {"host_id": "dr_silva", "date": "2026-07-01", "time": "09:00", "with_name": "Ana"}))
+    appt_id = booked.split()[1].rstrip(":")
+
+    # FastMCP does not reject an unknown argument — it IGNORES it. So "the tool has no status
+    # parameter" is not observable from an exception, and asserting one would have been a test
+    # that passes for the wrong reason. Assert the EFFECT: the extra argument changes nothing.
+    for verb, expected in (("confirm_appointment", "CONFIRMED"),
+                           ("complete_appointment", "COMPLETED")):
+        out = _text(await mcp.call_tool(
+            verb, {"appointment_id": appt_id, "new_status": "CANCELED"}))
+        assert "CANCELED" not in out, f"{verb} honoured a smuggled status: {out!r}"
+        assert expected in out
+
+    _text(await mcp.call_tool("complete_appointment", {"appointment_id": appt_id}))
+    canceled = _text(await mcp.call_tool("list_appointments", {"status": "CANCELED"}))
+    assert appt_id not in canceled, "no status verb may reach the terminal CANCELED state"
+    # …and the tool that IS allowed to cancel still does, so this is not a lockout.
+    again = _text(await mcp.call_tool(
+        "book_appointment",
+        {"host_id": "dr_silva", "date": "2026-07-02", "time": "09:00", "with_name": "Bia"}))
+    second = again.split()[1].rstrip(":")
+    _text(await mcp.call_tool("cancel_appointment", {"appointment_id": second}))
+    assert second in _text(await mcp.call_tool("list_appointments", {"status": "CANCELED"}))
+
+
+async def test_confirm_noop_says_already():
     """dr_silva auto_confirms → re-confirming is a NO-OP: the tool must SAY so (the model
     otherwise celebrates a change that never happened — the bulk-confirm live bug)."""
     mcp = _server()
@@ -85,8 +131,7 @@ async def test_update_status_tool_noop_says_already():
         "book_appointment",
         {"host_id": "dr_silva", "date": "2026-07-01", "time": "09:00", "with_name": "Ana"}))
     appt_id = booked.split()[1].rstrip(":")   # already CONFIRMED (auto_confirm)
-    out = _text(await mcp.call_tool(
-        "update_appointment_status", {"appointment_id": appt_id, "new_status": "CONFIRMED"}))
+    out = _text(await mcp.call_tool("confirm_appointment", {"appointment_id": appt_id}))
     assert "ALREADY CONFIRMED" in out and "no change" in out
 
 
