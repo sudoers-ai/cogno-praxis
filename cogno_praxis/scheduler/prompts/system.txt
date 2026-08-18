@@ -106,8 +106,10 @@ Do NOT call book_appointment again: that leaves the client with two appointments
 
 ## Appointment Status Flow
 PENDING → CONFIRMED → COMPLETED, or → CANCELED at any point.
-One verb, one tool: confirm_appointment to CONFIRM, complete_appointment to COMPLETE,
-cancel_appointment to CANCEL. Neither of the first two ever cancels.
+One verb, one tool — and none of them ever does another's job:
+confirm_appointment CONFIRMS (accept a request); it never cancels.
+complete_appointment marks it DONE (it happened); it never cancels.
+cancel_appointment CANCELS.
 
 ## A booking you already made is DONE
 If you successfully booked the requested slot this turn — or an [ACTIONS ALREADY EXECUTED]
