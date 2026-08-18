@@ -70,23 +70,6 @@ def test_filtered_empty_with_hint_but_reply_lists_appointments_is_repaired():
     assert fixed.rule == "stale_filtered_listing" and fixed.repairable and fixed.critique
 
 
-def test_a_persisted_trace_from_before_the_split_still_counts_as_a_mutation():
-    """`update_appointment_status` was split on 2026-08-18, but traces outlive tool names.
-
-    This runs over whatever trace the host hands back — including a correction loop replaying
-    an earlier turn, and rows already written to `turn_traces`. Dropping the old name from
-    `_MUTATIONS` would make a real mutation read as "no action taken" and rewrite a correct reply.
-    """
-    old_name = ToolCall(tool="update_appointment_status", ok=True, side_effect=True,
-                        result="Appointment abc (2026-07-13 at 11:00) is now CONFIRMED.")
-    reply = "Prontinho! Confirmei seu agendamento de 13/07 às 11h. ✅"
-    assert ground_reply(reply, tools=[old_name, _list(_FILTERED_HINT)]) is None
-    # …and the new name does the same job, which is the control.
-    new_name = ToolCall(tool="confirm_appointment", ok=True, side_effect=True,
-                        result="Appointment abc (2026-07-13 at 11:00) is now CONFIRMED.")
-    assert ground_reply(reply, tools=[new_name, _list(_FILTERED_HINT)]) is None
-
-
 def test_confirm_all_then_filtered_relist_is_kept():
     # Legit shape: a confirm-all executed, then a PENDING re-list finds none — the mutation
     # result grounds the dates in the reply; must NOT be rewritten.
@@ -433,3 +416,30 @@ def test_pt_conjured_slots_livres_and_qual_voce_prefere():
     reply = "Temos dois horários livres no dia 8, às 9h e às 10h, qual você prefere?"
     v = ground_reply(reply, tools=())
     assert v is not None and v.rule == "conjured_slots"
+
+
+def test_a_NO_OP_status_call_is_not_a_mutation():
+    """The bulk-confirm bug, from the backstop's side.
+
+    A no-op returns ``ok=True`` ("was ALREADY CONFIRMED — no change was made"), so filtering on
+    ok alone counted it as a real mutation and switched the fabrication rules OFF for the turn:
+    the model acted on a stale id, nothing changed, and "Prontinho! Confirmei os seus
+    pendentes" shipped unchallenged. `server._status_reply` exists so the MODEL notices the
+    no-op; this is the other half — the backstop reading it the same way.
+    """
+    noop = ToolCall(tool="confirm_appointment", ok=True, side_effect=True,
+                    result="Appointment abc was ALREADY CONFIRMED — no change was made. "
+                           "If you meant a different appointment, list them again.")
+    # A MESMA resposta do `test_confirm_all_then_filtered_relist_is_kept` logo acima — que
+    # prova que ela satisfaz as demais pré-condições da regra 1b. Trocar só o resultado da
+    # tool isola a variável: no-op vs mudança real, tudo o mais igual.
+    reply = "Prontinho! Confirmei seu agendamento de 13/07 às 11h. ✅"
+    assert ground_reply(reply, tools=[noop, _list(_FILTERED_HINT)]) is not None
+    # …and a REAL change still suppresses the rule, which is the control.
+    real = ToolCall(tool="confirm_appointment", ok=True, side_effect=True,
+                    result="Appointment abc (2026-07-13 at 11:00) is now CONFIRMED.")
+    assert ground_reply(reply, tools=[real, _list(_FILTERED_HINT)]) is None
+    # the same wording comes back from cancel — one regex has to cover both verbs
+    noop_cancel = ToolCall(tool="cancel_appointment", ok=True, side_effect=True,
+                           result="Appointment abc was ALREADY CANCELED — no change was made.")
+    assert ground_reply(reply, tools=[noop_cancel, _list(_FILTERED_HINT)]) is not None

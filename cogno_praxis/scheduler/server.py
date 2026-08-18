@@ -225,10 +225,18 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     def confirm_appointment(appointment_id: str, identity_id: str = "",
                             role: str = "") -> str:
-        """Confirm an appointment — accept a PENDING request, or re-activate a canceled one.
+        """Confirm an appointment: accept a PENDING request so it becomes CONFIRMED.
 
         Use this for "confirma o da Maria", "pode confirmar", "aceito". To CANCEL, call
         ``cancel_appointment`` — this tool never cancels.
+
+        It does NOT advertise reviving a canceled appointment. The service still allows it
+        (and refuses when the slot was retaken), but the host fires no notification, creates
+        no reminder and sends no invite on that path — `scheduler_notify` and
+        `reminders.bookings_from_context` both key on book/reschedule/cancel. A revived row
+        would be live on the agenda while every downstream side-effect still believed it was
+        canceled, so the model is not steered there: a description is a promise, and this one
+        the host does not keep. Rebook instead.
 
         The ids MUST come from a ``list_appointments`` call in THIS conversation turn —
         never from memory of an earlier turn (the agenda may have changed since)."""
@@ -255,8 +263,7 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         appt, changed = svc.cancel(appointment_id, reason,
                                    identity_id=identity_id or None, role=role or None)
         if not changed:
-            return (f"Appointment {appt.appointment_id} was ALREADY {appt.status} — no change "
-                    f"was made. If you meant a different appointment, list them again.")
+            return _status_reply(appt, changed)
         suffix = f" — {appt.cancel_reason}" if appt.cancel_reason else ""
         # ``with {host_id}`` mirrors reschedule's shape so the host can parse who to notify.
         return (f"Cancelled {appt.appointment_id} ({appt.with_name} with {appt.host_id} "

@@ -337,18 +337,37 @@ def _contradicts_booking(tools: Sequence[ToolCall]) -> bool:
     return _list_read_empty(tools) or _book_attempted(tools)
 
 
-# The mutating scheduler verbs, by NAME. `update_appointment_status` was split into
-# `confirm_appointment` + `complete_appointment` on 2026-08-18; the old name stays listed so a
-# PERSISTED trace from before the split still reads as a real mutation (this runs over whatever
-# trace the host hands back, including a correction loop replaying an earlier turn).
-_MUTATIONS = ("confirm_appointment", "complete_appointment", "update_appointment_status",
+# The mutating scheduler verbs, by NAME.
+#
+# `update_appointment_status` is NOT here, and the first cut of the split had it listed with a
+# rationale that was simply false ("traces outlive tool names"). Checked: the host builds the
+# trace from `ctx.ego_result.tools_executed` of THIS turn (cogno_host/grounding.py:_tool_calls),
+# the correction loop re-steps inside the same turn against the same package, and this module
+# ships in the same wheel as `server.py` — so a trace can only carry the old name when the OLD
+# praxis is loaded, whose own copy of this tuple already lists it. There is no window. A dead
+# entry with a confident comment is worse than no entry: it teaches the next reader a rule that
+# does not exist.
+_MUTATIONS = ("confirm_appointment", "complete_appointment",
               "cancel_appointment", "reschedule_appointment", "book_appointment")
+
+
+# "was ALREADY CONFIRMED — no change was made": the idempotent reply the status verbs and
+# `cancel_appointment` return when the row was already in that state.
+_NOOP_RE = re.compile(r"was ALREADY .* no change was made", re.IGNORECASE)
 
 
 def _status_changed(tools: Sequence[ToolCall]) -> bool:
     """A scheduler MUTATION actually succeeded this turn (confirm/complete/cancel/reschedule/
-    book)."""
-    return any(ok_results(tools, t) for t in _MUTATIONS)
+    book) — and CHANGED something.
+
+    A no-op returns ``ok=True``, so filtering on ok alone counted "it was already CONFIRMED"
+    as a mutation and switched the fabrication backstops OFF for that turn. That is precisely
+    the bulk-confirm bug: the model acts on a stale/wrong id, nothing changes, the voicer
+    writes "Prontinho! Confirmei os seus pendentes" — and rules 1b/3 stayed silent because
+    this said a mutation had happened. The tool wording exists so the model NOTICES the no-op
+    (`server._status_reply`); the backstop has to read it the same way."""
+    return any(not _NOOP_RE.search(r)
+               for t in _MUTATIONS for r in ok_results(tools, t))
 
 
 def _pending_in_hand(tools: Sequence[ToolCall]) -> bool:

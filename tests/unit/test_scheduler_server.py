@@ -379,3 +379,38 @@ async def test_empty_status_filter_hints_other_statuses():
     out2 = _text(await mcp.call_tool("list_appointments",
                                      {"status": "COMPLETED", "with_name": "Bruno"}))
     assert "another status" not in out2
+
+
+async def test_the_status_verbs_forward_the_ownership_identity():
+    """The row-level guard is only armed if the TOOL passes `identity_id`/`role` through.
+
+    `_authorize` returns immediately on `role is None` — by design, since the host is what
+    authorises. So a tool that forgets to forward does not fail loudly: it fails OPEN, and any
+    caller confirms or completes ANY appointment across agendas. Measured on the split as first
+    shipped: deleting both forwards from `confirm_appointment`/`complete_appointment` left the
+    whole suite green (308/308), so the guard the split rewrote had no coverage at all in this
+    repo — the only test lived in cogno-host, keyed on the retired tool name.
+
+    Both verbs, both directions.
+    """
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_silva"] = Host("dr_silva", "Dr. Silva", "GP")
+    clock = {"d": _TODAY}
+    mcp = build_server(SchedulerService(store, today=lambda: clock["d"]))
+    booked = _text(await mcp.call_tool(
+        "book_appointment",
+        {"host_id": "dr_silva", "date": "2026-07-01", "time": "09:00", "with_name": "Ana"}))
+    appt_id = booked.split()[1].rstrip(":")
+
+    for verb in ("confirm_appointment", "complete_appointment"):
+        with pytest.raises(Exception, match="not yours"):
+            await mcp.call_tool(verb, {"appointment_id": appt_id,
+                                       "identity_id": "dr_outro", "role": "EMPLOYEE"})
+    assert store.get(appt_id).status == "CONFIRMED"        # untouched by either attempt
+
+    # The control: the OWNER of the agenda gets through, so the refusal above is the guard
+    # doing its job and not the call being malformed.
+    clock["d"] = date(2026, 7, 1)
+    out = _text(await mcp.call_tool("complete_appointment", {
+        "appointment_id": appt_id, "identity_id": "dr_silva", "role": "EMPLOYEE"}))
+    assert "is now COMPLETED" in out
