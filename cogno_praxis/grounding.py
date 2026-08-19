@@ -113,10 +113,35 @@ def clauses(text: str) -> Iterable[str]:
     return _CLAUSE_SPLIT_RE.split(text)
 
 
-def affirmed(text: str, pattern: re.Pattern[str], *, neg: re.Pattern[str] = NEG_RE) -> bool:
-    """Some clause matches ``pattern`` and is not negated in that clause. ``neg`` is the
-    active locale's negation (defaults to pt for pre-locale callers)."""
-    return any(pattern.search(c) and not neg.search(c) for c in clauses(text))
+def affirmed(text: str, pattern: re.Pattern[str], *, neg: re.Pattern[str] = NEG_RE,
+             recalled: "Optional[tuple[re.Pattern[str], re.Pattern[str]]]" = None) -> bool:
+    """Some clause matches ``pattern``, is not negated, and is not a RECALL of an earlier turn.
+
+    ``recalled`` is ``(stative, past)`` — a clause carrying BOTH is describing something that
+    already happened, not claiming it happened now. Both are required, and that is the whole
+    precision of it:
+
+    * stative alone — "foi registrado com sucesso" — is how a fresh confirmation is phrased in
+      pt-BR too, so suppressing on it would let a real fabrication through;
+    * past alone — "já registrei" — is first-person performative, a claim about THIS turn.
+
+    Per CLAUSE, so a mixed reply still fires: "foi registrado ontem, e registrei o novo agora"
+    suppresses the first clause and fires on the second.
+
+    Why it exists: measured 3/3 on the production path — a truthful recall of the previous
+    turn's write ("já foi registrado ontem") matched `fabricated_entry`, the verdict came back
+    ``repairable``, and the repair re-stepped with the tool FORCED. Result: the same R$ 150
+    written twice, different ``tx_id``, no dedup, under a reply that reads as correct. The
+    turn-level side-effect guard could not see it — the write was in the PREVIOUS turn."""
+    for c in clauses(text):
+        if not pattern.search(c) or neg.search(c):
+            continue
+        if recalled is not None:
+            stative, past = recalled
+            if stative.search(c) and past.search(c):
+                continue
+        return True
+    return False
 
 
 @dataclass(frozen=True)

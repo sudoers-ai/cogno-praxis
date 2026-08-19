@@ -42,6 +42,17 @@ _RECORDED_RE = re.compile(
     r"\b(?:registrad|lançad|lancad|anotad)[oa]s?\b|"
     r"acabei\s+de\s+(?:registrar|lançar|lancar|anotar)",
     re.IGNORECASE)
+# ── RECALL: a escrita é de OUTRO turno, não deste ────────────────────────────────────
+# Duas marcas, e só as duas juntas: construção ESTATIVA (auxiliar + particípio) mais uma
+# referência ao PASSADO. Sozinha, nenhuma separa — "foi registrado com sucesso" é como se
+# confirma agora, e "já registrei" é primeira pessoa sobre este turno. Ver `affirmed`.
+_PT_STATIVE = re.compile(
+    r"\b(?:foi|foram|est[áa]|est[ãa]o|estava|estavam|ficou|ficaram)\s+(?:\w+\s+){0,2}"
+    r"(?:registrad|lan[çc]ad|anotad|removid|exclu[íi]d|apagad)[oa]s?\b", re.IGNORECASE)
+_PT_PAST = re.compile(
+    r"\b(?:j[áa]|ontem|anteontem|anteriormente|antes|na semana passada|no m[êe]s passado|"
+    r"outro dia|naquele dia|no dia \d{1,2}|em \d{1,2}/\d{1,2})\b", re.IGNORECASE)
+
 # The reply quotes totals/saldo (a money figure near a totals noun).
 _TOTALS_RE = re.compile(
     r"\b(?:total|totais|saldo|l[íi]quido|entradas?|sa[íi]das?|faturamento|balan[çc]o)\b",
@@ -84,6 +95,8 @@ class _Bundle:
 
     loc: Locale
     recorded: re.Pattern[str]
+    # (estativo, passado) — uma cláusula com AS DUAS está relembrando, não afirmando.
+    recalled: "tuple[re.Pattern[str], re.Pattern[str]]"
     totals: re.Pattern[str]
     removed: re.Pattern[str]
     no_entry: str
@@ -93,10 +106,16 @@ class _Bundle:
 
 _PT_BUNDLE = _Bundle(
     loc=_PT, recorded=_RECORDED_RE, totals=_TOTALS_RE, removed=_REMOVED_RE,
+    recalled=(_PT_STATIVE, _PT_PAST),
     no_entry=NO_ENTRY_MSG, check_totals=CHECK_TOTALS_MSG, no_removal=NO_REMOVAL_MSG)
 
 _EN_BUNDLE = _Bundle(
     loc=_EN,
+    recalled=(
+        re.compile(r"\b(?:was|were|is|are|has been|have been|had been)\s+(?:\w+\s+){0,2}"
+                   r"(?:recorded|logged|entered|booked|removed|deleted|erased)\b", re.I),
+        re.compile(r"\b(?:already|yesterday|earlier|previously|before|last (?:week|month)|"
+                   r"the other day|back (?:then|on))\b", re.I)),
     recorded=re.compile(
         r"\b(?:recorded|logged|entered|booked)\b|"
         r"\bi(?:'ve|\s+have|\s+just|)\s+(?:recorded|logged|added|entered)\b|"
@@ -119,6 +138,12 @@ _EN_BUNDLE = _Bundle(
 
 _ES_BUNDLE = _Bundle(
     loc=_ES,
+    recalled=(
+        re.compile(r"\b(?:fue|fueron|est[áa]|est[áa]n|ha sido|han sido|hab[íi]a sido)\s+"
+                   r"(?:\w+\s+){0,2}"
+                   r"(?:registrad|anotad|apuntad|a[ñn]adid|eliminad|borrad)[oa]s?\b", re.I),
+        re.compile(r"\b(?:ya|ayer|anteayer|anteriormente|antes|la semana pasada|"
+                   r"el mes pasado|el otro d[íi]a)\b", re.I)),
     recorded=re.compile(
         r"\b(?:registr[ée]|anot[ée]|apunt[ée]|a[ñn]ad[íi])\b|"
         r"\b(?:registrad|anotad|apuntad|a[ñn]adid)[oa]s?\b|"
@@ -202,14 +227,16 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
     # (1) fabricated entry — the reply claims a transaction was recorded (with a money
     #     anchor so book-keeping small talk doesn't trip it), but no write succeeded.
     #     Repairable: record it for real.
-    if (b.loc.money.search(reply) and affirmed(reply, b.recorded, neg=b.loc.neg)
+    if (b.loc.money.search(reply)
+            and affirmed(reply, b.recorded, neg=b.loc.neg, recalled=b.recalled)
             and not _entry_recorded(tools)):
         return GroundingVerdict(rule="fabricated_entry", message=b.no_entry,
                                 repairable=True, critique=_NO_ENTRY_CRITIQUE)
 
     # (2) fabricated removal — "removi/excluí" with no successful remove_by_search.
     #     Repairable: perform the removal for real.
-    if affirmed(reply, b.removed, neg=b.loc.neg) and not _removed_ok(tools):
+    if (affirmed(reply, b.removed, neg=b.loc.neg, recalled=b.recalled)
+            and not _removed_ok(tools)):
         return GroundingVerdict(rule="fabricated_removal", message=b.no_removal,
                                 repairable=True, critique=_NO_REMOVAL_CRITIQUE)
 

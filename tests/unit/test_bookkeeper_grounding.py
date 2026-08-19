@@ -127,3 +127,60 @@ def test_server_result_markers_match_the_rules():
                                                              "identity_id": "u1"}))
         assert rem.startswith(REMOVED_PREFIX)
     asyncio.run(run())
+
+
+# ── recall de outro turno NÃO é afirmação deste ──────────────────────────────────────
+# O defeito, medido 3/3 no caminho de PRODUÇÃO (ChatService + reparo): a resposta relembrava
+# corretamente a escrita do turno anterior, `fabricated_entry` disparava, o veredito voltava
+# `repairable`, e o reparo re-executava com a tool FORÇADA. Mesmo R$ 150 gravado duas vezes,
+# `tx_id` diferentes, sem dedup, sob uma resposta que lê como correta.
+#
+# O guard de side-effect do turno não enxergava: a escrita estava no turno ANTERIOR. A
+# docstring do reparo diz "double-commit impossible by construction" e está certa — DENTRO de
+# um turno. A duplicata é entre turnos.
+
+_WROTE = [ToolCall(tool="add_income", ok=True, side_effect=True,
+                   result="Income recorded: Consulta (Maria) = R$ 150.00 on 2026-08-18.")]
+
+
+def _verdict(reply, tools=(), locale="pt"):
+    return ground_reply(reply, tools=list(tools), locale=locale)
+
+
+def test_a_truthful_recall_of_an_earlier_write_is_not_rewritten():
+    """O caso medido. Sem isto, dizer a verdade custa uma segunda escrita."""
+    assert _verdict("Sim, o lançamento de R$ 150,00 da Maria já foi registrado ontem.") is None
+    assert _verdict("Yes, the R$ 150.00 entry was already recorded yesterday.",
+                    locale="en") is None
+    assert _verdict("Sí, el asiento de R$ 150,00 ya fue registrado ayer.", locale="es") is None
+    # remoção tem a mesma forma e o mesmo risco (remover de novo remove OUTRA coisa)
+    assert _verdict("Aquele lançamento de R$ 150,00 já foi removido na semana passada.") is None
+
+
+def test_the_exclusion_needs_BOTH_marks_or_it_would_swallow_real_fabrication():
+    """A precisão inteira está em exigir estativo E passado na mesma cláusula.
+
+    Cada uma sozinha derrubaria a regra para casos que TÊM que reprovar:
+    - estativo sozinho: "foi registrado com sucesso" é como se confirma AGORA em pt-BR;
+    - passado sozinho: "já registrei" é primeira pessoa sobre ESTE turno.
+    """
+    for reply in ("Pronto! Registrei a entrada de R$ 150,00 da Maria.",     # performativo
+                  "Registrado! R$ 150,00 da Maria.",                        # particípio nu
+                  "A entrada de R$ 150,00 foi registrada com sucesso.",     # estativo, sem passado
+                  "Já registrei a entrada de R$ 150,00."):                  # passado, sem estativo
+        v = _verdict(reply)
+        assert v is not None and v.rule == "fabricated_entry", reply
+    assert _verdict("The R$ 150.00 entry was recorded successfully.",
+                    locale="en") is not None
+    assert _verdict("Ya registré el asiento de R$ 150,00.", locale="es") is not None
+
+
+def test_a_mixed_reply_still_fires_because_the_check_is_per_CLAUSE():
+    """Relembrar uma escrita não dá alvará para inventar outra na mesma frase."""
+    v = _verdict("O de ontem já foi registrado, e registrei o novo de R$ 150,00 agora.")
+    assert v is not None and v.rule == "fabricated_entry"
+
+
+def test_a_real_write_this_turn_still_passes():
+    """Controle: o caminho feliz não pode ter sido afetado."""
+    assert _verdict("Registrei a entrada de R$ 150,00 da Maria.", tools=_WROTE) is None
