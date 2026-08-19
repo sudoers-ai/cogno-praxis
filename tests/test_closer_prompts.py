@@ -49,7 +49,14 @@ def test_the_judge_rubric_ranks_truth_above_answering():
     flat = " ".join(limits.split())
     assert "## 1. VERDADE" in limits and "## 2. RESPONDER" in limits
     assert limits.index("## 1. VERDADE") < limits.index("## 2. RESPONDER")
-    assert "não existe" in flat                       # an unlisted integration
+    # Integração tem DUAS metades, e a regra mudou por decisão do dono do produto: o Cogno
+    # conecta a qualquer sistema com API via MCP. O absoluto antigo ("não existe") tornava a
+    # metade construível impronunciável e o juiz aprovava meia verdade — o que custava a venda.
+    # O que NÃO pode afrouxar é a outra metade: afirmar que JÁ integra segue sendo o pior erro.
+    assert "não está\n  PRONTA" in limits or "não está PRONTA" in flat
+    assert "pior erro possível" in flat                # claiming a ready-made one still is
+    assert "MCP" in limits, "the buildable half must be sayable"
+    assert "prazo, preço ou esforço" in flat, "promising the build is still forbidden"
     assert "Admitir limite É responder — APROVE." in flat
     assert "Não confunda **oferecer** com **responder**" in flat
 
