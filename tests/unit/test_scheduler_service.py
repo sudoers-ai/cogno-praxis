@@ -955,8 +955,21 @@ def test_the_cancel_refusal_names_the_way_out():
     with pytest.raises(SchedulerError) as exc:
         svc.cancel("a1")
     msg = str(exc.value)
-    assert "confirm_appointment" in msg, "the refusal must name the tool that undoes it"
     assert "then cancel" in msg, "…and the second step, or the model stops at the first"
+    # Resolved against the REAL surface, not spelled out here. The service module is
+    # MCP-agnostic by its own docstring and this message names an MCP tool — a name that has
+    # already been renamed once (`update_appointment_status` was split on 2026-08-18). Assert
+    # only that the string is present and the tool EXISTS, so a rename turns the message into
+    # a compile-time-ish failure instead of a promise to something that is not there, which is
+    # the exact failure this message was added to prevent.
+    import asyncio
+
+    from cogno_praxis.scheduler.server import build_server
+
+    live = {t.name for t in asyncio.run(build_server(svc).list_tools())}
+    named = [t for t in live if t in msg]
+    assert named, f"the refusal names no live tool; surface is {sorted(live)}"
+    assert "confirm_appointment" in named
 
 
 def test_a_no_show_can_actually_be_corrected_end_to_end():
