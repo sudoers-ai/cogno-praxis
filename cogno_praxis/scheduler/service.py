@@ -562,7 +562,26 @@ class SchedulerService:
                     f"{appt.appointment_id} is on {appt.date}, in the future — it cannot have "
                     f"happened yet. Cancel it if it will not, or wait until the day.")
         if status in ACTIVE_STATUS:
-            if appt_day is not None and appt_day < self._today():
+            # UNDOING A COMPLETION is exempt from the past rule, and the exemption is the whole
+            # reason `complete_appointment` may honestly ship WITHOUT `destructiveHint`.
+            #
+            # Measured 2026-08-19: it could not. Only an already-due appointment may COMPLETE,
+            # and a past one may not go back to CONFIRMED — so the two rules closed on each
+            # other and COMPLETED was reversible on the appointment's own DAY and never again.
+            # The real use is "ontem": the professional closes out yesterday's attendances. So
+            # marking the wrong row as attended was permanent, through a non-destructive verb —
+            # the exact bypass the confirm/complete split existed to close, left open on the
+            # side I had just declared safe. (The #75 note that made COMPLETED reversible again
+            # was right about the direction and wrong about the reach.)
+            #
+            # Narrow on purpose. It does NOT open PENDING, and it does not open CANCELED→
+            # CONFIRMED: only the exact undo. What it restores is a state the system already
+            # produces on its own — a CONFIRMED appointment whose day passed with nobody
+            # completing it sits precisely there until `_sweep_expired` moves it. Confirming a
+            # past appointment that was never completed stays meaningless, and stays refused.
+            undoing_a_completion = appt.status == COMPLETED and status == CONFIRMED
+            if (appt_day is not None and appt_day < self._today()
+                    and not undoing_a_completion):
                 raise SchedulerError(
                     f"{appt.appointment_id} was on {appt.date} (past); a past appointment "
                     f"cannot go to {status} — mark it COMPLETED or CANCELED instead")
