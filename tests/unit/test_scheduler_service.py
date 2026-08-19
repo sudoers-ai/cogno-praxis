@@ -1,6 +1,6 @@
 """Unit tests for the scheduler domain logic (service + store), no MCP."""
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -920,3 +920,50 @@ def test_a_config_already_persisted_bad_still_LOADS():
     assert bad.work_end < bad.work_start
     with pytest.raises(ValueError):
         bad.validate()
+
+
+# ── a no-show must be correctable, because the completion was not a decision ───────────
+def _swept_past_row():
+    """A CONFIRMED appointment from yesterday, after one listing has run.
+
+    That listing is what matters: `_sweep_expired` terminalizes past rows by billable class
+    on every read, so a past CONFIRMED becomes COMPLETED with nobody deciding anything. This
+    is the state a professional saying "a Beatriz não veio" actually arrives at."""
+    from cogno_praxis.scheduler import Host, InMemoryAppointmentStore, SchedulerService
+    from cogno_praxis.scheduler.store import Appointment
+
+    today = date(2026, 7, 6)
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_silva"] = Host("dr_silva", "Dr. Silva", "GP")
+    store.add(Appointment(appointment_id="a1", host_id="dr_silva", host_name="Dr. Silva",
+                          date=(today - timedelta(days=1)).isoformat(), time="09:00",
+                          with_name="Beatriz", status="CONFIRMED"))
+    svc = SchedulerService(store, today=lambda: today)
+    svc.list_appointments(host_id="dr_silva")
+    assert store.get("a1").status == COMPLETED, "premise: the sweep completes it on its own"
+    return svc
+
+
+def test_the_cancel_refusal_names_the_way_out():
+    """A refusal with no path forward is a dead end the model has to invent its way out of.
+
+    Measured 2026-08-19: a professional reporting a no-show hit `is COMPLETED and cannot be
+    canceled` and stopped there — so an appointment nobody attended stayed recorded as
+    attended, and billable. The completion was not even a human decision: the expiry sweep
+    made it. The undo has existed since #78; the message never mentioned it."""
+    svc = _swept_past_row()
+    with pytest.raises(SchedulerError) as exc:
+        svc.cancel("a1")
+    msg = str(exc.value)
+    assert "confirm_appointment" in msg, "the refusal must name the tool that undoes it"
+    assert "then cancel" in msg, "…and the second step, or the model stops at the first"
+
+
+def test_a_no_show_can_actually_be_corrected_end_to_end():
+    """The path the message promises, walked. A promise nobody performs is how this whole
+    class of defect starts."""
+    svc = _swept_past_row()
+    svc.update_status("a1", CONFIRMED)                     # undo the automatic completion
+    appt, changed = svc.cancel("a1", reason="no-show")
+    assert appt.status == CANCELED and changed
+    assert svc.store.get("a1").cancel_reason == "no-show"
