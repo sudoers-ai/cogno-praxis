@@ -139,8 +139,7 @@ Available tools:
 - confirm_appointment(appointment_id) — accept/confirm an appointment
 - complete_appointment(appointment_id) — mark it as done (the consultation happened)
 - cancel_appointment(appointment_id, reason?) — cancel an appointment
-- block_schedule(host_id, date, start_time?, end_time?, description?) — make a host
-  unavailable; no start_time blocks the whole day (call resolve_date first for the date)
+- block_schedule(host_id, date, start_time?, end_time?, description?) — make a host unavailable for a slot, a range, or (with no start_time) the whole day; call resolve_date first
 
 ## Examples
 User: "Quero agendar uma consulta"

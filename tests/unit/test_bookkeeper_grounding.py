@@ -150,6 +150,9 @@ def _verdict(reply, tools=(), locale="pt"):
 def test_a_truthful_recall_of_an_earlier_write_is_not_rewritten():
     """O caso medido. Sem isto, dizer a verdade custa uma segunda escrita."""
     assert _verdict("Sim, o lançamento de R$ 150,00 da Maria já foi registrado ontem.") is None
+    # sem o `já`, para provar que quem carrega a exclusão é a marca TEMPORAL — a versão
+    # anterior deste teste só tinha a frase acima e passava pelo motivo errado.
+    assert _verdict("O lançamento de R$ 150,00 foi registrado ontem.") is None
     assert _verdict("Yes, the R$ 150.00 entry was already recorded yesterday.",
                     locale="en") is None
     assert _verdict("Sí, el asiento de R$ 150,00 ya fue registrado ayer.", locale="es") is None
@@ -184,3 +187,27 @@ def test_a_mixed_reply_still_fires_because_the_check_is_per_CLAUSE():
 def test_a_real_write_this_turn_still_passes():
     """Controle: o caminho feliz não pode ter sido afetado."""
     assert _verdict("Registrei a entrada de R$ 150,00 da Maria.", tools=_WROTE) is None
+
+
+def test_JA_is_not_a_past_marker_it_is_how_pt_BR_confirms_the_present():
+    """A regressão que a exclusão de recall introduziu, e o motivo dela.
+
+    `já foi registrado` / `já está lançado` é a forma CANÔNICA de confirmar em pt-BR o que se
+    acabou de fazer — não uma referência ao passado. Enquanto `já` esteve na lista de marcas
+    temporais, uma alucinação pura de PRIMEIRO turno passava batido, com zero tools. Isso é
+    pior que a duplicata que a exclusão foi escrita para evitar: ali o dado ficava errado no
+    banco; aqui uma confirmação financeira inventada chega ao usuário sem nada barrar.
+
+    O teste original usava "já foi registrado ONTEM" e passava pelo motivo errado — `ontem`
+    sozinho já bastava, e o `já` nunca foi isolado. Estes cinco isolam.
+
+    Mutação: devolver `j[áa]`/`already`/`ya` às marcas temporais e cada um destes morre.
+    """
+    for reply in ("Pronto! Já foi registrado o valor de R$ 150,00.",
+                  "Certo, já está lançado o valor de R$ 150,00."):
+        v = _verdict(reply)
+        assert v is not None and v.rule == "fabricated_entry", reply
+    v = _verdict("Já foi removido o lançamento de R$ 150,00.")
+    assert v is not None and v.rule == "fabricated_removal"
+    assert _verdict("The amount of R$ 150.00 was already recorded.", locale="en") is not None
+    assert _verdict("Ya fue registrado el monto de R$ 150,00.", locale="es") is not None

@@ -49,8 +49,19 @@ _RECORDED_RE = re.compile(
 _PT_STATIVE = re.compile(
     r"\b(?:foi|foram|est[áa]|est[ãa]o|estava|estavam|ficou|ficaram)\s+(?:\w+\s+){0,2}"
     r"(?:registrad|lan[çc]ad|anotad|removid|exclu[íi]d|apagad)[oa]s?\b", re.IGNORECASE)
+# `já` NÃO está aqui, e a ausência custou uma regressão para ser aprendida. Em pt-BR
+# "já foi registrado" / "já está lançado" é a forma CANÔNICA de confirmar o que se acabou de
+# fazer — não uma referência ao passado. Com `já` na lista, uma alucinação pura de primeiro
+# turno ("Pronto! Já foi registrado o valor de R$ 150,00", zero tools) passava batido. O teste
+# que eu tinha escrito usava "já foi registrado ONTEM" e passou pelo motivo errado: o `ontem`
+# sozinho já bastava, e o `já` nunca foi isolado. Mesma coisa para `already`/`ya`.
+#
+# O preço de tirar: uma recall SEM marca temporal ("já foi registrado", sem "ontem") volta a
+# disparar, e num turno sem escrita isso ainda leva ao reparo. É o lado certo da troca — uma
+# confirmação financeira inventada chegando ao usuário é pior que uma reescrita a mais numa
+# frase ambígua, e o caso medido em produção trazia "ontem".
 _PT_PAST = re.compile(
-    r"\b(?:j[áa]|ontem|anteontem|anteriormente|antes|na semana passada|no m[êe]s passado|"
+    r"\b(?:ontem|anteontem|anteriormente|na semana passada|no m[êe]s passado|"
     r"outro dia|naquele dia|no dia \d{1,2}|em \d{1,2}/\d{1,2})\b", re.IGNORECASE)
 
 # The reply quotes totals/saldo (a money figure near a totals noun).
@@ -114,7 +125,8 @@ _EN_BUNDLE = _Bundle(
     recalled=(
         re.compile(r"\b(?:was|were|is|are|has been|have been|had been)\s+(?:\w+\s+){0,2}"
                    r"(?:recorded|logged|entered|booked|removed|deleted|erased)\b", re.I),
-        re.compile(r"\b(?:already|yesterday|earlier|previously|before|last (?:week|month)|"
+        # sem `already` — "was already recorded" confirma o agora, ver _PT_PAST
+        re.compile(r"\b(?:yesterday|earlier|previously|last (?:week|month)|"
                    r"the other day|back (?:then|on))\b", re.I)),
     recorded=re.compile(
         r"\b(?:recorded|logged|entered|booked)\b|"
@@ -142,7 +154,8 @@ _ES_BUNDLE = _Bundle(
         re.compile(r"\b(?:fue|fueron|est[áa]|est[áa]n|ha sido|han sido|hab[íi]a sido)\s+"
                    r"(?:\w+\s+){0,2}"
                    r"(?:registrad|anotad|apuntad|a[ñn]adid|eliminad|borrad)[oa]s?\b", re.I),
-        re.compile(r"\b(?:ya|ayer|anteayer|anteriormente|antes|la semana pasada|"
+        # sem `ya` — mesma razão do `já`
+        re.compile(r"\b(?:ayer|anteayer|anteriormente|la semana pasada|"
                    r"el mes pasado|el otro d[íi]a)\b", re.I)),
     recorded=re.compile(
         r"\b(?:registr[ée]|anot[ée]|apunt[ée]|a[ñn]ad[íi])\b|"

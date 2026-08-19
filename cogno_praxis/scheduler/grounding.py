@@ -345,6 +345,19 @@ _MUTATIONS = ("confirm_appointment", "complete_appointment", "update_appointment
               "cancel_appointment", "reschedule_appointment", "book_appointment")
 
 
+# RECALL, igual ao bookkeeper (`affirmed(recalled=...)`): estativo + marca temporal na mesma
+# cláusula descreve o que já aconteceu. Sem isto, "o agendamento da Maria foi confirmado
+# ontem" disparava `unverified_status` com `repairable=True`, e o reparo re-executava com a
+# tool forçada — sobre um `appointment_id` carregado de turno anterior, que é exatamente o
+# dano de linha-errada que o doctor_bench existe para pegar. `já` fica FORA por decisão: em
+# pt-BR "já foi confirmado" confirma o agora (ver a regressão registrada no bookkeeper).
+_PT_RECALLED = (
+    re.compile(r"\b(?:foi|foram|est[áa]|est[ãa]o|ficou|ficaram)\s+(?:\w+\s+){0,2}"
+               r"(?:confirmad|cancelad|remarcad|agendad|conclu[íi]d|realizad)[oa]s?\b", re.I),
+    re.compile(r"\b(?:ontem|anteontem|anteriormente|na semana passada|no m[êe]s passado|"
+               r"outro dia|naquele dia)\b", re.I))
+
+
 def _status_changed(tools: Sequence[ToolCall]) -> bool:
     """A scheduler MUTATION actually succeeded this turn (confirm/complete/cancel/reschedule/
     book)."""
@@ -441,7 +454,7 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
     #     appointment was confirmed/cancelled, but NO scheduler mutation ran. Never on a
     #     read; suppressed when a CONFIRMED result is in hand (grounded stative recall).
     if (not is_read_query and pending_confirmation
-            and affirmed(reply, b.status_done, neg=b.loc.neg)
+            and affirmed(reply, b.status_done, neg=b.loc.neg, recalled=_PT_RECALLED)
             and not _status_changed(tools) and not _confirmed_in_hand(tools)):
         return GroundingVerdict(rule="unverified_status", message=b.unverified_status,
                                 repairable=True, critique=_UNVERIFIED_STATUS_CRITIQUE)
