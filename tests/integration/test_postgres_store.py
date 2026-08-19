@@ -333,12 +333,12 @@ def test_undo_then_cancel_round_trips_through_postgres():
     assert row == ("CANCELED", "no-show")
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "MESMO DEFEITO ABERTO do unitário `test_the_sweep_undoes_the_undo`, medido aqui contra "
-    "Postgres para provar que não é artefato da store de memória: a varredura recompleta a "
-    "linha na listagem seguinte e o cancelamento volta a ser recusado."))
 def test_the_sweep_undoes_the_undo_in_postgres_too():
-    """Desfazer, algo lista, cancelar — a ordem que uma conversa realmente produz."""
+    """Desfazer, algo lista, cancelar — a ordem que uma conversa realmente produz. Agora verde.
+
+    Subiu como `xfail(strict)` no #80 e perde o marcador aqui, no commit que o merece. Vale
+    manter contra Postgres pela mesma razão de antes: "é artefato da store de memória?" é
+    pergunta legítima neste arquivo."""
     svc, store = _swept_past_row_pg("undo_race")
     svc.update_status("ontem1", "CONFIRMED")
     svc.list_appointments(host_id="dr_silva")
