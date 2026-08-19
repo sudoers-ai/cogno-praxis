@@ -579,7 +579,17 @@ class SchedulerService:
             # produces on its own — a CONFIRMED appointment whose day passed with nobody
             # completing it sits precisely there until `_sweep_expired` moves it. Confirming a
             # past appointment that was never completed stays meaningless, and stays refused.
-            undoing_a_completion = appt.status == COMPLETED and status == CONFIRMED
+            # …and only when the completion could have been a real attendance. A row that
+            # reached COMPLETED *from* CANCELED still carries its `cancel_reason`, and that is
+            # the provenance: measured 2026-08-19, a past PENDING nobody ever confirmed went
+            # sweep → CANCELED('expired') → complete_appointment (the expired exemption) →
+            # confirm_appointment (this one) → and the NEXT sweep made it COMPLETED, i.e.
+            # BILLABLE REVENUE, in two calls the model can reach, with the stale
+            # `cancel_reason='expired'` still on the row. The one-step CANCELED→CONFIRMED was
+            # refused the whole time; the two exemptions composed into it behind that refusal.
+            # The comment claiming narrowness was the only thing asserting it.
+            undoing_a_completion = (appt.status == COMPLETED and status == CONFIRMED
+                                    and not (appt.cancel_reason or "").strip())
             if (appt_day is not None and appt_day < self._today()
                     and not undoing_a_completion):
                 raise SchedulerError(

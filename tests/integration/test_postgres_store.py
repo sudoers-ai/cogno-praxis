@@ -286,3 +286,62 @@ def test_primary_key_collision_is_not_reported_as_a_taken_slot():
         store.add(Appointment(appointment_id="dup", host_id="h1", date="2026-07-01",
                               time="11:00", with_name="Bob", status="CONFIRMED"))
     store.close()
+
+
+# ── a varredura, através do banco de verdade ──────────────────────────────────────────
+def _swept_past_row_pg(scope: str):
+    """Uma consulta CONFIRMED de ontem, em Postgres, depois de UMA listagem.
+
+    A listagem é o ponto: `_sweep_expired` terminaliza as linhas passadas pela classe
+    faturável em toda leitura, então uma CONFIRMED do passado vira COMPLETED sem ninguém
+    decidir nada — e ela ESCREVE no banco, o que é justamente o que só a integração prova."""
+    from datetime import timedelta
+
+    store = _drop_and_store(scope)
+    store.add_host(Host("dr_silva", "Dr. Silva", "GP"))
+    store.add(Appointment(appointment_id="ontem1", host_id="dr_silva", host_name="Dr. Silva",
+                          date=(_TODAY - timedelta(days=1)).isoformat(), time="09:00",
+                          with_name="Beatriz", status="CONFIRMED"))
+    svc = SchedulerService(store, today=lambda: _TODAY)
+    svc.list_appointments(host_id="dr_silva")
+    assert store.get("ontem1").status == "COMPLETED", "premissa: a varredura conclui sozinha"
+    return svc, store
+
+
+def test_the_automatic_completion_is_written_to_postgres_not_just_in_memory():
+    """A varredura persiste — não é artefato da store de memória.
+
+    Vale medir por aqui porque esta distinção já mordeu neste mesmo arquivo: a revivência com
+    slot retomado passava em memória porque só o Postgres levanta `SlotTakenError`. Uma regra
+    que a store default não cumpre não é uma regra; uma escrita que só a de memória faz não é
+    uma escrita."""
+    _svc, store = _swept_past_row_pg("sweep_writes")
+    with psycopg.connect(DSN) as c:
+        row = c.execute("SELECT status FROM appointments WHERE scope=%s AND appointment_id=%s",
+                        ("sweep_writes", "ontem1")).fetchone()
+    assert row and row[0] == "COMPLETED", "a conclusão automática não chegou ao banco"
+
+
+def test_undo_then_cancel_round_trips_through_postgres():
+    """O caminho do não-comparecimento, com as duas chamadas coladas — a ordem que funciona."""
+    svc, store = _swept_past_row_pg("undo_ok")
+    svc.update_status("ontem1", "CONFIRMED")
+    svc.cancel("ontem1", reason="no-show")
+    with psycopg.connect(DSN) as c:
+        row = c.execute("SELECT status, cancel_reason FROM appointments "
+                        "WHERE scope=%s AND appointment_id=%s", ("undo_ok", "ontem1")).fetchone()
+    assert row == ("CANCELED", "no-show")
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "MESMO DEFEITO ABERTO do unitário `test_the_sweep_undoes_the_undo`, medido aqui contra "
+    "Postgres para provar que não é artefato da store de memória: a varredura recompleta a "
+    "linha na listagem seguinte e o cancelamento volta a ser recusado."))
+def test_the_sweep_undoes_the_undo_in_postgres_too():
+    """Desfazer, algo lista, cancelar — a ordem que uma conversa realmente produz."""
+    svc, store = _swept_past_row_pg("undo_race")
+    svc.update_status("ontem1", "CONFIRMED")
+    svc.list_appointments(host_id="dr_silva")
+    svc.cancel("ontem1", reason="no-show")
+    # O RESULTADO, não uma rota até ele — ver a nota no unitário equivalente.
+    assert store.get("ontem1").status == "CANCELED", "o não-comparecimento não ficou registrado"

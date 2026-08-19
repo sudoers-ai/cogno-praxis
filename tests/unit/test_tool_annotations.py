@@ -37,7 +37,12 @@ from cogno_praxis.scheduler.server import build_server as build_scheduler
 _UNDOABLE: "dict[str, str]" = {
     "book_appointment": "cancel_appointment frees the slot again",
     "block_schedule": "a block IS an appointment row — cancel_appointment reopens the time",
-    "confirm_appointment": "update_status moves a future row back to PENDING",
+    # NOT "back to PENDING": server.py's split deliberately dropped that transition and no
+    # tool exposes it. The first version of this entry claimed it anyway, and the test below
+    # "measured" it through `svc.update_status` — the SERVICE api, one layer under the
+    # surface this file is about. A claim asserted at the wrong layer is the same mistake the
+    # header credits for the `complete_appointment` hole.
+    "confirm_appointment": "cancel_appointment ends the row a wrong confirm accepted",
     "complete_appointment": "update_status moves it back to CONFIRMED — including in the past",
     "set_auto_confirm": "call it again with the other value",
     "set_schedule_settings": "write the previous values back",
@@ -58,8 +63,17 @@ async def test_every_mutating_tool_is_gated_or_declared_undoable(vertical):
     ann = await _annotations(vertical)
     ungoverned = []
     for name, a in sorted(ann.items()):
-        if getattr(a, "readOnlyHint", None) is not False:
+        read_only = getattr(a, "readOnlyHint", None)
+        if read_only is True:
             continue                                    # a read cannot damage anything
+        if read_only is None:
+            # NOT a read — an UNDECLARED tool. `@mcp.tool()` with no `annotations=` yields
+            # `annotations is None`, which is the DEFAULT, so skipping it let the dangerous
+            # case through the one check written to catch it: such a tool escapes this sweep
+            # and gate B (opt-in on destructiveHint) at the same time. Verified against
+            # FastMCP. Fall through and demand a declaration.
+            ungoverned.append(f"{name} (sem annotations)")
+            continue
         if getattr(a, "destructiveHint", None) is True:
             continue                                    # gate B holds it
         if name not in _UNDOABLE:
@@ -125,10 +139,10 @@ def test_every_undoable_tool_really_undoes():
     svc.cancel(blocks[0].appointment_id)
     assert "09:00" in svc.check_availability("dr_silva", _FUT)
 
-    svc = _sched()                                            # confirm → PENDING
+    svc = _sched()                                            # confirm → cancel
     a = svc.book("dr_silva", _FUT, "09:00", "Ana")
     svc.update_status(a.appointment_id, "CONFIRMED")
-    assert svc.update_status(a.appointment_id, "PENDING")[0].status == "PENDING"
+    assert svc.cancel(a.appointment_id)[0].status == "CANCELED"
 
     svc = _sched()                                            # set_auto_confirm → flip back
     before = svc.store.get_host("dr_silva").auto_confirm
@@ -178,3 +192,21 @@ def test_the_past_rule_still_refuses_everything_else(start, target):
 
     with pytest.raises(SchedulerError, match="past"):
         _past_row(1, status=start).update_status("x1", target)
+
+
+def test_the_expired_exemption_does_not_compose_into_a_past_revival():
+    """O braço-controle acima semeia um CANCELED NU, e o produto não produz esses.
+
+    `_sweep_expired` escreve `cancel_reason='expired'` em todo PENDING vencido, e com essa
+    linha as DUAS isenções se encadeiam: completar (isenção do 'expired') e depois desfazer
+    (isenção do undo) chega ao passado-CONFIRMED que o passo direto recusa — e a varredura
+    seguinte o torna COMPLETED, isto é, receita faturável numa consulta que ninguém nunca
+    confirmou. O teste de um passo ficava verde os dois lados, então "a isenção é UMA
+    transição" tinha um teste passando por trás de uma afirmação falsa."""
+    from cogno_praxis.scheduler import SchedulerError
+
+    svc = _past_row(1, status="CANCELED")
+    svc.store.get("x1").cancel_reason = "expired"          # como a varredura a deixa
+    assert svc.update_status("x1", "COMPLETED")[0].status == "COMPLETED"
+    with pytest.raises(SchedulerError, match="past"):
+        svc.update_status("x1", "CONFIRMED")
