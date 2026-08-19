@@ -169,8 +169,15 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         When the user asks for ONE status ("os pendentes", "as confirmadas"), pass ``status``
         (PENDING/CONFIRMED/COMPLETED/CANCELED) — do NOT list everything and filter yourself.
 
-        Canceled and completed appointments are hidden by default — set ``include_history=True``
-        ONLY when the user explicitly asks about past or canceled appointments."""
+        Canceled and completed appointments are hidden by default. Set ``include_history=True``
+        WHENEVER the turn is about an appointment that is no longer live — the user names a
+        past date ("ontem", "na semana passada", a date already gone), reports a no-show, asks
+        what was cancelled, or wants to correct something already closed. Without it those rows
+        do not exist for you and you will answer that there is nothing there.
+
+        Note a past appointment is terminalized automatically: a CONFIRMED one whose day has
+        passed becomes COMPLETED on its own. So "fulano não veio ontem" is ALWAYS a history
+        lookup, never a live one."""
         appts = svc.list_appointments(
             identity_id=identity_id or None, role=role or None,
             host_id=host_id or None, guest_id=guest_id or None, with_name=with_name or None,
