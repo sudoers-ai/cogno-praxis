@@ -230,3 +230,72 @@ def test_cooldown_blocks_until_elapsed():
     # without the cooldown guard the same booking is fine
     svc2 = SchedulerService(store, today=lambda: _TODAY)
     assert svc2.book("dr_silva", _WED, "10:00", "Ana").time == "10:00"
+
+
+# ── a config is validated by its OUTCOME, not by the ordering of its knobs ──────────────
+#
+# `validate()` grew one check per mistake already made (work_end<=work_start, inverted lunch,
+# non-positive slot). Each is a specific diagnosis worth keeping, but the LIST is only ever as
+# complete as the last incident. The three configs below order every knob correctly and still
+# leave nowhere to book — and a day with zero slots is indistinguishable, from the customer's
+# side, from a day that is fully booked: "no free slots ... and none in the next two weeks"
+# blames availability for what is a setting. That message is precisely what this validation
+# exists to prevent, so the check has to ask the question directly.
+@pytest.mark.parametrize("raw,why", [
+    ({"work_start": "09:00", "work_end": "17:00",
+      "lunch_start": "09:00", "lunch_end": "17:00"}, "lunch spans the whole workday"),
+    ({"work_start": "09:00", "work_end": "17:00",
+      "slot_duration_minutes": 600}, "a slot longer than the day"),
+    ({"work_start": "09:00", "work_end": "17:00",
+      "slot_duration_minutes": 481}, "a slot that does not fit once around lunch"),
+])
+def test_config_that_leaves_nowhere_to_book_is_refused(raw, why):
+    cfg = SchedulerConfig(raw)
+    assert AvailabilityEngine(cfg).generate_all_slots() == [], f"premise broken: {why}"
+    with pytest.raises(ValueError, match="no bookable slot"):
+        cfg.validate()
+
+
+@pytest.mark.parametrize("raw", [
+    {"work_start": "09:00", "work_end": "17:00"},                       # the default day
+    {"work_start": "08:00", "work_end": "18:00",
+     "slot_duration_minutes": 30},                                      # a denser one
+    {"work_start": "09:00", "work_end": "17:00",
+     "lunch_start": "20:00", "lunch_end": "22:00"},                     # lunch outside hours
+])
+def test_a_config_that_does_leave_slots_still_passes(raw):
+    """The control arm: the outcome check must not start refusing working configurations.
+
+    The third is deliberately odd (a lunch break nobody works through) — odd is not the same
+    as unbookable, and this check only speaks to the latter."""
+    cfg = SchedulerConfig(raw)
+    assert AvailabilityEngine(cfg).generate_all_slots()
+    cfg.validate()
+
+
+def test_a_persisted_zero_duration_renders_an_empty_day_instead_of_spinning():
+    """A row already in the database with ``slot_duration_minutes: 0``.
+
+    Validation lives on the WRITE path on purpose, so such a row still LOADS — but loading it
+    then stepped the slot loop by zero minutes and never terminated: every availability query
+    on that tenant hung, with no error and no log. The dashboard validates nothing, so the row
+    is reachable. An empty day is the same answer the tenant's broken config already implies,
+    and it is an answer."""
+    cfg = SchedulerConfig({"slot_duration_minutes": 0})
+    assert cfg.slot_duration_minutes == 0                    # it loaded, as designed
+    assert AvailabilityEngine(cfg).generate_all_slots() == []
+    assert AvailabilityEngine(cfg).get_available_slots(date(2026, 7, 1)) == []
+
+
+def test_set_settings_refuses_the_unbookable_day_through_the_write_path():
+    """The write path is where validation actually runs — the unit above is not enough.
+
+    ``set_settings`` catches ValueError and re-raises SchedulerError, and it must leave the
+    live config untouched: a refused write that half-applied would darken the very agenda the
+    refusal exists to protect."""
+    svc = _svc()
+    before = svc.get_settings()
+    with pytest.raises(SchedulerError, match="no bookable slot"):
+        svc.set_settings(lunch_start="09:00", lunch_end="17:00")
+    assert svc.get_settings() == before
+    assert svc.check_availability("dr_silva", _WED)

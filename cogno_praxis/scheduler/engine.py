@@ -86,6 +86,24 @@ class SchedulerConfig:
         if self.slot_duration_minutes <= 0:
             raise ValueError(
                 f"slot_duration_minutes must be positive, got {self.slot_duration_minutes}")
+        # The OUTCOME, not the ordering of the knobs. The three checks above each name one
+        # specific way to break the day and their messages are worth keeping — but they are a
+        # list of the mistakes already made, and every one of them was added after the fact.
+        # This asks the question the tenant actually has: does the configuration leave
+        # anywhere to book? Measured to catch three that the orderings accepted in silence —
+        # a lunch spanning the whole workday, a slot longer than the day, and a slot that
+        # simply does not fit. All three rendered the very message this validation exists to
+        # kill: "no free slots ... and none in the next two weeks", which blames availability
+        # for what is a setting. Runs LAST so a specific diagnosis always wins over this one,
+        # and only after slot_duration is known positive (``_day_slots`` would not terminate
+        # on a zero-length step).
+        if not _day_slots(self.work_start, self.work_end, self.lunch_start,
+                          self.lunch_end, self.slot_duration_minutes):
+            raise ValueError(
+                f"this configuration leaves no bookable slot on a working day "
+                f"(work {self.work_start:%H:%M}-{self.work_end:%H:%M}, "
+                f"lunch {self.lunch_start:%H:%M}-{self.lunch_end:%H:%M}, "
+                f"slot {self.slot_duration_minutes}min)")
 
     @staticmethod
     def _parse_time(value: str) -> time:
@@ -140,6 +158,33 @@ class Slot:
 
     def __hash__(self) -> int:
         return hash((self.start, self.end))
+
+
+def _day_slots(work_start: time, work_end: time, lunch_start: time, lunch_end: time,
+               duration_minutes: int) -> list[Slot]:
+    """The slots of one working day — pure arithmetic, no calendar and no I/O.
+
+    Module-level because BOTH sides need the same answer: ``AvailabilityEngine`` to serve
+    availability, and ``SchedulerConfig.validate`` to check that a config being written
+    actually leaves somewhere to book. Written twice, the check would drift from the thing it
+    is checking — and the drift would be invisible, because a config that renders zero slots
+    looks exactly like a fully booked day.
+
+    Caller guarantees ``duration_minutes > 0``; a zero step would not terminate.
+    """
+    slots: list[Slot] = []
+    duration = timedelta(minutes=duration_minutes)
+    ref = datetime(2000, 1, 1)
+    cur = ref.replace(hour=work_start.hour, minute=work_start.minute)
+    end = ref.replace(hour=work_end.hour, minute=work_end.minute)
+    lunch_a = ref.replace(hour=lunch_start.hour, minute=lunch_start.minute)
+    lunch_b = ref.replace(hour=lunch_end.hour, minute=lunch_end.minute)
+    while cur + duration <= end:
+        nxt = cur + duration
+        if not _overlaps(cur, nxt, lunch_a, lunch_b):
+            slots.append(Slot(cur.time(), nxt.time()))
+        cur = nxt
+    return slots
 
 
 def _load_holiday_set(country: Optional[str], state: Optional[str]) -> dict[date, str]:
@@ -217,20 +262,16 @@ class AvailabilityEngine:
 
     # ── slot generation ────────────────────────────────────────────────
     def generate_all_slots(self) -> list[Slot]:
-        """All slots of a working day: work_start→work_end by slot_duration, minus lunch."""
-        slots: list[Slot] = []
-        duration = timedelta(minutes=self._config.slot_duration_minutes)
-        ref = datetime(2000, 1, 1)
-        cur = ref.replace(hour=self._config.work_start.hour, minute=self._config.work_start.minute)
-        end = ref.replace(hour=self._config.work_end.hour, minute=self._config.work_end.minute)
-        lunch_a = ref.replace(hour=self._config.lunch_start.hour, minute=self._config.lunch_start.minute)
-        lunch_b = ref.replace(hour=self._config.lunch_end.hour, minute=self._config.lunch_end.minute)
-        while cur + duration <= end:
-            nxt = cur + duration
-            if not _overlaps(cur, nxt, lunch_a, lunch_b):
-                slots.append(Slot(cur.time(), nxt.time()))
-            cur = nxt
-        return slots
+        """All slots of a working day: work_start→work_end by slot_duration, minus lunch.
+
+        A config already persisted may carry a non-positive duration (validation lives on the
+        WRITE path so a bad row still loads) — that renders an empty day here rather than
+        spinning forever."""
+        c = self._config
+        if c.slot_duration_minutes <= 0:
+            return []
+        return _day_slots(c.work_start, c.work_end, c.lunch_start, c.lunch_end,
+                          c.slot_duration_minutes)
 
     def slot_starts(self) -> list[str]:
         """The slot start times as 'HH:MM' strings (the service's interface)."""
