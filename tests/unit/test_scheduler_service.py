@@ -283,15 +283,24 @@ def test_cancel_unknown_raises():
 
 # ── Gap 2: cancel now guards status like its siblings (reschedule / update_status) ──
 
-def test_cancel_completed_is_refused():
-    """A finished appointment must not be un-completed by a stray cancel (the integrity hole:
-    the parent blocked terminal rows; here reschedule/update_status guarded but cancel didn't)."""
+def test_cancel_completed_records_a_reason_instead_of_refusing():
+    """Era `test_cancel_completed_is_refused`, e a recusa saiu em 2026-08-19.
+
+    A regra vinha do pai ("linhas terminais são intocáveis") e custava caro aqui, porque neste
+    produto a varredura conclui SOZINHA toda consulta passada — então o profissional relatando
+    uma falta batia sempre nela, e o desvio de dois passos que a contornava corria contra
+    qualquer listagem. O que ela protegia continua protegido em outro lugar: `cancel` é
+    `destructiveHint=True`, o Gate B segura, o host confirma.
+
+    O que sobra da regra, e é o que este teste passa a fixar: o cancelamento GRAVA o motivo.
+    Uma linha atendida que vira cancelada tem que ficar legível depois."""
     svc, clock = _clocked(_TODAY)
     appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")
     clock["d"] = date(2026, 7, 1)
     svc.update_status(appt.appointment_id, COMPLETED)
-    with pytest.raises(SchedulerError, match="COMPLETED and cannot be canceled"):
-        svc.cancel(appt.appointment_id)
+    canceled, changed = svc.cancel(appt.appointment_id, reason="paciente faltou")
+    assert changed and canceled.status == CANCELED
+    assert canceled.cancel_reason == "paciente faltou"
 
 
 def test_cancel_already_canceled_is_idempotent_noop():
@@ -799,7 +808,19 @@ def test_COMPLETED_can_be_CORRECTED_but_not_quietly_canceled():
     das tools existia para fechar, reintroduzida por mim do outro lado.
 
     Marcar como realizado voltou a ser reversível, e é isso que mantém a tool honestamente
-    não-destrutiva. Cancelar um COMPLETED segue barrado — para isso existe `cancel_appointment`.
+    não-destrutiva.
+
+    Revisado de novo em 2026-08-19: cancelar um COMPLETED **passou a ser permitido**, e o
+    "quietly" do nome é o que restou da regra. Barrá-lo era a segunda tranca de uma porta que
+    já tem uma — `cancel_appointment` é `destructiveHint=True`, então o Gate B segura a chamada
+    e o host confirma antes de commitar. E como a varredura conclui sozinha toda linha passada,
+    barrar essa aresta obrigava a um desvio de dois passos que CORRIA contra qualquer listagem
+    (ver `test_the_sweep_undoes_the_undo`). O que a regra protegia continua protegido pelo
+    gate; o que ela custava era o profissional não conseguir registrar uma falta.
+
+    O que NÃO afrouxou: o cancelamento grava o motivo, então ele fica legível depois em vez de
+    silencioso — que é o "quietly" — e a linha não pode ser lavada de volta para ativa (ver
+    `test_the_expired_exemption_does_not_compose_into_a_past_revival`).
     """
     svc, clock = _clocked(_TODAY)
     appt = svc.book("dr_silva", "2026-07-01", "09:00", "Maria")
@@ -808,8 +829,9 @@ def test_COMPLETED_can_be_CORRECTED_but_not_quietly_canceled():
     corrigido, changed = svc.update_status(appt.appointment_id, CONFIRMED)
     assert changed and corrigido.status == CONFIRMED      # errou a linha? dá para voltar
     svc.update_status(appt.appointment_id, COMPLETED)
-    with pytest.raises(SchedulerError, match="cannot be canceled"):
-        svc.cancel(appt.appointment_id)
+    cancelado, changed = svc.cancel(appt.appointment_id, reason="não compareceu")
+    assert changed and cancelado.status == CANCELED
+    assert cancelado.cancel_reason == "não compareceu", "sem motivo seria justamente 'quietly'"
 
 
 def test_a_consultation_the_system_expired_can_still_be_billed():
@@ -944,33 +966,16 @@ def _swept_past_row():
     return svc
 
 
-def test_the_cancel_refusal_names_the_way_out():
-    """A refusal with no path forward is a dead end the model has to invent its way out of.
+def test_there_is_no_refusal_left_to_name_a_way_out_of():
+    """O #79 fez a recusa nomear o caminho de volta; este commit tira a recusa.
 
-    Measured 2026-08-19: a professional reporting a no-show hit `is COMPLETED and cannot be
-    canceled` and stopped there — so an appointment nobody attended stayed recorded as
-    attended, and billable. The completion was not even a human decision: the expiry sweep
-    made it. The undo has existed since #78; the message never mentioned it."""
+    Uma mensagem que ensina um desvio é melhor que um beco, e pior que não precisar de
+    desvio: o desvio dela corria contra a varredura. O teste vira o inverso — não pode
+    sobrar recusa aqui, nem a mensagem que a explicava."""
     svc = _swept_past_row()
-    with pytest.raises(SchedulerError) as exc:
-        svc.cancel("a1")
-    msg = str(exc.value)
-    assert "then cancel" in msg, "…and the second step, or the model stops at the first"
-    # Resolved against the REAL surface, not spelled out here. The service module is
-    # MCP-agnostic by its own docstring and this message names an MCP tool — a name that has
-    # already been renamed once (`update_appointment_status` was split on 2026-08-18). Assert
-    # only that the string is present and the tool EXISTS, so a rename turns the message into
-    # a compile-time-ish failure instead of a promise to something that is not there, which is
-    # the exact failure this message was added to prevent.
-    import asyncio
-
-    from cogno_praxis.scheduler.server import build_server
-
-    live = {t.name for t in asyncio.run(build_server(svc).list_tools())}
-    named = [t for t in live if t in msg]
-    assert named, f"the refusal names no live tool; surface is {sorted(live)}"
-    assert "confirm_appointment" in named
-
+    appt, changed = svc.cancel("a1", reason="no-show")
+    assert changed and appt.status == CANCELED
+    assert appt.cancel_reason == "no-show"
 
 def test_a_no_show_can_actually_be_corrected_end_to_end():
     """The promised path, walked — with the two calls BACK TO BACK.
@@ -988,19 +993,17 @@ def test_a_no_show_can_actually_be_corrected_end_to_end():
     assert svc.store.get("a1").status == CANCELED, "CANCELED is terminal — the sweep leaves it"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "OPEN DEFECT, measured 2026-08-19: `_sweep_expired` runs on EVERY listing and re-completes "
-    "the row, so the #78 undo survives only when the cancel comes back to back. Any turn "
-    "boundary, judge retry or correction loop lists — and the professional is back at COMPLETED, "
-    "where the #79 refusal tells them to undo it again. A loop. The fix moves the lifecycle "
-    "matrix (let `cancel` accept a COMPLETED row, which is already held by gate B via "
-    "destructiveHint) and does not ship together with the test that proves it is needed."))
 def test_the_sweep_undoes_the_undo():
-    """The REAL sequence: undo, something lists, and only then cancel.
+    """The REAL sequence: undo, something lists, and only then cancel. Now green.
 
-    The test above walks `confirm → cancel` adjacent, which is the only order that works — and
-    passing it is what let me call the path done. The order below is the one a conversation
-    actually produces, and it refuses."""
+    It shipped as `xfail(strict)` in #80 and is unmarked here in the commit that earns it —
+    which is the whole contract of a strict xfail: the day it passes, it fails, and somebody
+    has to come back and say why. `cancel` accepts a COMPLETED row now, so the detour and its
+    race are gone; the sequence below is one call.
+
+    Kept anyway, because the ORDER is the point: `confirm → cancel` adjacent is the only order
+    the old code survived, and a test that walks only that order is what let me call the path
+    done twice."""
     svc = _swept_past_row()
     svc.update_status("a1", CONFIRMED)                     # the professional undoes it
     svc.list_appointments(host_id="dr_silva")              # …and ANYTHING lists

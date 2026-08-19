@@ -638,28 +638,33 @@ class SchedulerService:
         - already CANCELED → idempotent no-op (``changed=False``), retry-safe like book /
           update_status, but the caller can now SAY "it was already canceled" so the model
           notices it acted on a stale id instead of narrating a fresh cancellation;
-        - COMPLETED → refused: a finished appointment cannot be un-completed by a cancel (the
-          integrity hole the parent closed by blocking terminal rows outright)."""
+        - COMPLETED → ALLOWED, and the reason is recorded. See the note at the guard."""
         appt = self.store.get(appointment_id)
         if appt is None:
             raise SchedulerError(f"unknown appointment: {appointment_id}")
         self._authorize(appt, identity_id, role)
         if appt.status == CANCELED:
             return appt, False
-        if appt.status == COMPLETED:
-            # Name the way OUT, because this refusal is a dead end otherwise — and because the
-            # most common way a row reaches COMPLETED is nobody's decision at all.
-            # `_sweep_expired` terminalizes a past CONFIRMED appointment into COMPLETED on the
-            # next listing, so "a Beatriz não veio" arrives here against a completion the
-            # SYSTEM made. Measured 2026-08-19: the professional had no path — cancel refused
-            # with no alternative, and a no-show stayed permanently recorded as attended (and
-            # billable). The undo exists since #78; a refusal that does not name it leaves the
-            # model to invent one, which is how a tool description becomes a promise it
-            # cannot keep.
-            raise SchedulerError(
-                f"{appointment_id} is COMPLETED and cannot be canceled directly. If it did "
-                f"NOT happen (a no-show, or an automatic completion of a past appointment), "
-                f"first move it back with confirm_appointment, then cancel it.")
+        # COMPLETED is cancellable, and that is a correction of my own three-step detour.
+        #
+        # It was refused as an integrity rule ("a finished appointment cannot be un-completed").
+        # But the dominant way a row REACHES completed is nobody's decision: `_sweep_expired`
+        # terminalizes every past CONFIRMED into COMPLETED on the next listing. So "a Beatriz
+        # não veio" always arrives against a completion the SYSTEM made, and the professional
+        # met a wall. #79 answered by naming a two-step way around it (confirm back, then
+        # cancel) — and #80 measured that the detour is a RACE: the same sweep re-completes the
+        # row on any listing in between, which is what every turn boundary, judge retry and
+        # correction loop produces. The refusal then told them to redo the step that had just
+        # been undone. A loop.
+        #
+        # What actually protected anything here is elsewhere and still holds: `cancel` is
+        # `destructiveHint=True`, so gate B holds the call and the host runs its confirmation
+        # before it commits. Terminal-ness was a second lock on a door that already has one —
+        # and COMPLETED stopped being terminal in #78 anyway, when the undo was restored.
+        # Keeping only this edge shut is what manufactured the race.
+        #
+        # The reason is recorded, so a cancellation of something already marked attended is
+        # legible afterwards rather than silent.
         appt.status = CANCELED
         appt.cancel_reason = reason
         self.store.update(appt)
