@@ -515,7 +515,7 @@ class SchedulerService:
           COMPLETED→CANCELED; ``update_status`` let COMPLETED→CONFIRMED "un-complete" a row;
         - **only a real, already-due appointment may COMPLETE**: not a block (a block is not a
           consultation and must never enter the revenue set — the expiry path says so in
-          ``expire_past``), not a canceled one (it did not happen), and not one in the future;
+          ``_sweep_expired``), not a canceled one (it did not happen), and not one in the future;
         - a **past appointment never goes (back) to PENDING/CONFIRMED** — confirming yesterday
           is meaningless; closing out the past (COMPLETED/CANCELED) stays allowed;
         - **reviving checks the slot HERE**, not in the store. Only the Postgres adapter raises
@@ -530,10 +530,15 @@ class SchedulerService:
             raise SchedulerError(f"invalid status: {new_status}")
         if appt.status == status:
             return appt, False
-        if appt.status == COMPLETED:
+        # COMPLETED→CONFIRMED é CORREÇÃO, e voltou a ser permitida (2026-08-19). Barrar isso
+        # foi over-reach meu: o dano que eu queria fechar era CANCELED→COMPLETED (receita
+        # fantasma), e de quebra eu tornei o COMPLETED irreversível — o que fez
+        # `complete_appointment`, uma tool SEM `destructiveHint`, alcançar um estado sem volta.
+        # Exatamente a forma que o split existia para fechar. Reversível, fica não-destrutiva.
+        if appt.status == COMPLETED and status == CANCELED:
             raise SchedulerError(
-                f"{appt.appointment_id} is COMPLETED — a finished appointment is final and "
-                f"cannot be reopened. Book a new one instead.")
+                f"{appt.appointment_id} is COMPLETED — use cancel_appointment if it needs to "
+                f"be undone, or confirm it back first.")
         try:
             appt_day: "Optional[date]" = date.fromisoformat(appt.date)
         except ValueError:
@@ -543,7 +548,12 @@ class SchedulerService:
                 raise SchedulerError(
                     f"{appt.appointment_id} is a schedule BLOCK, not a consultation — it "
                     f"cannot be marked COMPLETED. Cancel it to free the time.")
-            if appt.status == CANCELED:
+            # …a não ser que quem cancelou tenha sido o SISTEMA. `_sweep_expired` manda um
+            # PENDING vencido para CANCELED(reason='expired') sem ninguém decidir nada, então
+            # uma consulta que ACONTECEU mas ninguém confirmou a tempo ficava presa: não podia
+            # voltar a CONFIRMED (regra do passado) nem ir a COMPLETED (esta regra), e
+            # `book` recusa data passada — as duas mensagens mandavam para caminhos fechados.
+            if appt.status == CANCELED and (appt.cancel_reason or "").strip() != "expired":
                 raise SchedulerError(
                     f"{appt.appointment_id} was CANCELED — it did not happen, so it cannot be "
                     f"marked COMPLETED. Book a new appointment instead.")
@@ -556,7 +566,11 @@ class SchedulerService:
                 raise SchedulerError(
                     f"{appt.appointment_id} was on {appt.date} (past); a past appointment "
                     f"cannot go to {status} — mark it COMPLETED or CANCELED instead")
-            self._refuse_if_slot_retaken(appt)
+            # só na REVIVÊNCIA: uma linha que já está ativa segura o próprio slot, então nada
+            # pode tê-lo tomado. Sem esta condição, todo confirm_appointment comum pagava um
+            # scan da agenda inteira do profissional.
+            if appt.status not in ACTIVE_STATUS:
+                self._refuse_if_slot_retaken(appt)
         appt.status = status
         try:
             self.store.update(appt)

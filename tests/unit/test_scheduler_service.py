@@ -788,19 +788,52 @@ def test_reviving_a_canceled_row_never_double_books_its_old_slot():
     assert [a.with_name for a in live] == ["Bia"]
 
 
-def test_COMPLETED_is_terminal_in_both_directions():
-    """``cancel()`` already refused COMPLETED→CANCELED; ``update_status`` happily
-    "un-completed" a row back to CONFIRMED. One finished appointment, two exits."""
+def test_COMPLETED_can_be_CORRECTED_but_not_quietly_canceled():
+    """Revisado em 2026-08-19: a primeira versão fixava "COMPLETED é terminal nos dois
+    sentidos", e isso era over-reach meu.
+
+    O dano que eu queria fechar era CANCELED→COMPLETED (receita fantasma). Tornar o COMPLETED
+    irreversível de quebra fez `complete_appointment` — tool SEM `destructiveHint`, que o Gate
+    B nunca segura — alcançar um estado sem volta: marcar a linha errada como realizada tirava
+    a consulta da agenda, liberava o horário e não tinha desfazer. É a forma exata que o split
+    das tools existia para fechar, reintroduzida por mim do outro lado.
+
+    Marcar como realizado voltou a ser reversível, e é isso que mantém a tool honestamente
+    não-destrutiva. Cancelar um COMPLETED segue barrado — para isso existe `cancel_appointment`.
+    """
     svc, clock = _clocked(_TODAY)
     appt = svc.book("dr_silva", "2026-07-01", "09:00", "Maria")
     clock["d"] = date(2026, 7, 1)
     svc.update_status(appt.appointment_id, COMPLETED)
-    for target in (CONFIRMED, PENDING):
-        with pytest.raises(SchedulerError, match="final"):
-            svc.update_status(appt.appointment_id, target)
+    corrigido, changed = svc.update_status(appt.appointment_id, CONFIRMED)
+    assert changed and corrigido.status == CONFIRMED      # errou a linha? dá para voltar
+    svc.update_status(appt.appointment_id, COMPLETED)
     with pytest.raises(SchedulerError, match="cannot be canceled"):
         svc.cancel(appt.appointment_id)
 
+
+def test_a_consultation_the_system_expired_can_still_be_billed():
+    """`_sweep_expired` manda um PENDING vencido para CANCELED(reason='expired') sem ninguém
+    decidir nada. A consulta ACONTECEU; só ninguém confirmou a tempo.
+
+    Antes deste conserto ela ficava presa: não podia voltar a CONFIRMED (regra do passado),
+    nem ir a COMPLETED (regra do "foi cancelada, não aconteceu"), e `book` recusa data passada
+    — as duas mensagens mandavam para caminhos fechados. Cancelamento que o SISTEMA fez não é
+    decisão de que a consulta não ocorreu.
+    """
+    svc, clock = _clocked(_TODAY, auto_confirm=False)
+    appt = svc.book("dr_silva", "2026-07-01", "09:00", "Maria")
+    assert appt.status == PENDING
+    clock["d"] = date(2026, 7, 2)
+    svc.list_appointments()                       # dispara o sweep
+    assert svc.store.get(appt.appointment_id).status == CANCELED
+    done, changed = svc.update_status(appt.appointment_id, COMPLETED)
+    assert changed and done.status == COMPLETED
+    # …e um cancelamento de VERDADE (alguém pediu) segue barrado
+    outro = svc.book("dr_silva", "2026-07-03", "09:00", "Bia")
+    svc.cancel(outro.appointment_id, "cliente desistiu")
+    with pytest.raises(SchedulerError, match="did not happen"):
+        svc.update_status(outro.appointment_id, COMPLETED)
 
 def test_the_whole_DOCTOR_flow_still_runs_end_to_end():
     """THE control arm. Every guard above forbids something; this proves they forbid only

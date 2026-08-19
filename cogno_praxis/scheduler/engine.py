@@ -89,7 +89,16 @@ class SchedulerConfig:
 
     @staticmethod
     def _parse_time(value: str) -> time:
+        """'HH:MM' → time. Levanta ValueError em qualquer outra forma.
+
+        Era `time(int(parts[0]), int(parts[1]))` cru: `"9"` (sem os minutos) estourava
+        `IndexError`, que NÃO é subclasse de ValueError e passava direto pelo
+        `except (ValueError, TypeError)` de `set_settings` — crash cru saindo da escrita, que
+        é o modo de falha contra o qual esse commit endureceu o resto do caminho. `""` dava a
+        recusa certa; `"9"` não. Duas entradas malformadas, dois comportamentos."""
         parts = str(value).split(":")
+        if len(parts) != 2:
+            raise ValueError(f"expected HH:MM, got {value!r}")
         return time(int(parts[0]), int(parts[1]))
 
     def to_dict(self) -> dict:
