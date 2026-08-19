@@ -52,8 +52,40 @@ class SchedulerConfig:
         self.booking_delay_days: int = int(raw.get("booking_delay_days", 0))
         self.booking_window_days: int = int(raw.get("booking_window_days", 0))
         self.cooldown_days: int = int(raw.get("cooldown_days", 0))
+        # 0 means DISABLED here too, like every sibling knob above — and that is a fix, not a
+        # preference. The code used to keep 0 as a literal ceiling, which made
+        # `_enforce_policies` evaluate `len([]) >= 0` → True → `mine[0]` on an empty list:
+        # every booking answered `IndexError: list index out of range`, a raw crash instead of
+        # a refusal, until someone suspected the setting. Reachable from the dashboard, which
+        # validates nothing. Reading 0 as "no limit" also picks the non-catastrophic side of an
+        # ambiguous value: a tenant who meant "closed" has `block_schedule` and the working
+        # hours; a tenant who meant "no limit" would otherwise have killed their own agenda.
         _mac = raw.get("max_active_per_client")
-        self.max_active_per_client: Optional[int] = int(_mac) if _mac is not None else None
+        _mac_i = int(_mac) if _mac is not None else None
+        self.max_active_per_client: Optional[int] = _mac_i if _mac_i and _mac_i > 0 else None
+
+    def validate(self) -> None:
+        """Raise on a configuration that would silently darken the agenda.
+
+        Called from the WRITE path (``SchedulerService.set_settings``), not from ``__init__``:
+        a new write must be coherent, but a tenant whose row is already bad must still LOAD —
+        failing closed on read would take their scheduler down entirely, which is worse than
+        the state they are already in.
+
+        Measured: `work_start=17:00, work_end=09:00` was accepted in silence and produced
+        "no free slots ... and none in the next two weeks" — a message that blames availability
+        for what is a configuration mistake, so nobody looks at the setting."""
+        if self.work_end <= self.work_start:
+            raise ValueError(
+                f"work_end ({self.work_end:%H:%M}) must be after work_start "
+                f"({self.work_start:%H:%M}) — as written there is no working day at all")
+        if self.lunch_end < self.lunch_start:
+            raise ValueError(
+                f"lunch_end ({self.lunch_end:%H:%M}) must not be before lunch_start "
+                f"({self.lunch_start:%H:%M})")
+        if self.slot_duration_minutes <= 0:
+            raise ValueError(
+                f"slot_duration_minutes must be positive, got {self.slot_duration_minutes}")
 
     @staticmethod
     def _parse_time(value: str) -> time:

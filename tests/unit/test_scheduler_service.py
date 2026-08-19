@@ -819,3 +819,71 @@ def test_the_whole_DOCTOR_flow_still_runs_end_to_end():
     svc.cancel(other.appointment_id)
     revived, changed = svc.update_status(other.appointment_id, CONFIRMED)
     assert changed and revived.status == CONFIRMED
+
+
+# ── configuração que se volta contra a agenda ────────────────────────────────────────
+# Achados por varredura (2026-08-18): procurando outros pares tool-genérica/tool-destrutiva
+# como o `update_appointment_status`, o que apareceu foi outra classe — config aceita em
+# silêncio que derruba ou apaga a agenda. Nenhum é bypass de gate; os dois são reversíveis.
+# Só o painel escreve aqui (nenhuma RolePolicy concede `set_schedule_settings` ao modelo).
+
+
+def test_max_active_per_client_zero_disables_the_limit_instead_of_crashing():
+    """MEDIDO: 0 fazia toda reserva estourar `IndexError: list index out of range`.
+
+        if not already_here and len(mine) >= cfg.max_active_per_client:
+            ex = mine[0]          # mine == [] e 0 >= 0 é True
+
+    O admin põe 0 no painel (que não valida nada) e a agenda para, com uma mensagem que não
+    diz nada nem para o usuário nem para o modelo — que, recebendo isso, não tem como se
+    corrigir. Crash nunca é a recusa certa.
+
+    0 = DESLIGADO é o que a própria classe promete para os irmãos deste knob ("0/None =
+    disabled"), e é o lado não-catastrófico de um valor ambíguo: quem quis dizer "fechado" tem
+    `block_schedule` e o expediente; quem quis dizer "sem limite" teria matado a própria agenda.
+    """
+    svc = _svc()
+    svc.set_settings(max_active_per_client=0)
+    appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")     # não estoura
+    assert appt.status == CONFIRMED
+    svc.book("dr_silva", "2026-07-02", "09:00", "Ana")            # e não há teto
+    assert svc._config.max_active_per_client is None
+    # …e um limite DE VERDADE continua limitando — senão o conserto teria virado um buraco.
+    svc2 = _svc()
+    svc2.set_settings(max_active_per_client=1)
+    svc2.book("dr_silva", "2026-07-01", "09:00", "Bia")
+    with pytest.raises(SchedulerError, match="already has an active appointment"):
+        svc2.book("dr_silva", "2026-07-02", "09:00", "Bia")
+
+
+def test_an_impossible_working_day_is_refused_at_the_WRITE():
+    """MEDIDO: `work_start=17:00, work_end=09:00` era aceito em silêncio e a agenda apagava,
+    com "no free slots ... and none in the next two weeks" — a mensagem culpa a
+    disponibilidade pelo que é erro de configuração, então ninguém olha para o ajuste.
+    """
+    svc = _svc()
+    with pytest.raises(SchedulerError, match="must be after work_start"):
+        svc.set_settings(work_start="17:00", work_end="09:00")
+    with pytest.raises(SchedulerError, match="must be after work_start"):
+        svc.set_settings(work_start="09:00", work_end="09:00")   # dia de duração zero
+    with pytest.raises(SchedulerError, match="slot_duration_minutes"):
+        svc.set_settings(slot_duration_minutes=0)
+    # a recusa não pode ter deixado a config pela metade
+    assert svc.check_availability("dr_silva", "2026-07-01")
+    # …e um expediente válido passa, incluindo um mais LARGO que o default.
+    svc.set_settings(work_start="08:00", work_end="18:00")
+    assert "08:00" in svc.check_availability("dr_silva", "2026-07-01")
+
+
+def test_a_config_already_persisted_bad_still_LOADS():
+    """A validação mora na escrita, não na leitura, e isso é deliberado.
+
+    Se `SchedulerConfig.__init__` levantasse, um tenant cuja linha já está ruim perderia o
+    scheduler inteiro no boot — pior que o estado em que ele já está. Ele carrega, rende o dia
+    vazio que hoje já rende, e a PRÓXIMA escrita é que precisa ser coerente."""
+    from cogno_praxis.scheduler.engine import SchedulerConfig
+
+    bad = SchedulerConfig({"work_start": "17:00", "work_end": "09:00"})   # não levanta
+    assert bad.work_end < bad.work_start
+    with pytest.raises(ValueError):
+        bad.validate()
