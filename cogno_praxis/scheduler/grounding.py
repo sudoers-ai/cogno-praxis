@@ -56,8 +56,15 @@ _OFFER_RE = re.compile(
     r"qual\s+(?:\w+\s+){0,2}(?:prefere|deseja|funciona|quer)|\bprefere\b|"
     r"op[çc][õo]es\s+(?:de\s+hor[áa]rio|dispon[íi]ve|s[ãa]o|abaixo)",
     re.IGNORECASE)
+# Particípio E primeira pessoa. Só o particípio estava aqui, e em pt-BR/es a persona diz as
+# duas coisas com palavras diferentes: "foi confirmado" e "confirmei" são a MESMA afirmação
+# e só a primeira era pega. Medido — "Confirmei o agendamento da Ana", com uma leitura no
+# trace e zero mutação, passava limpo; o particípio idêntico virava `unverified_status`. Em
+# inglês o buraco não existe porque particípio e pretérito são a mesma palavra
+# ("I confirmed" casa `\bconfirmed\b`), que é justamente por que ele passou despercebido.
 _STATUS_DONE_RE = re.compile(
-    r"confirmad|cancelad|desmarcad|remarcad|reagendad", re.IGNORECASE)
+    r"confirmad|cancelad|desmarcad|remarcad|reagendad|"
+    r"\b(?:confirmei|cancelei|desmarquei|remarquei|reagendei)\b", re.IGNORECASE)
 _CONCLUSION_NOW_RE = re.compile(
     r"prontinho|"
     r"ficou\s+(?:marcad|agendad|reservad|confirmad|para\b)|"
@@ -152,6 +159,40 @@ _STALE_FILTERED_LISTING_CRITIQUE = (
     "again WITHOUT the `status` filter and report ONLY the rows it returns.")
 
 
+# RECALL: a mudança de status é de OUTRO turno. Duas marcas e só as duas juntas — ver
+# `bookkeeper/grounding.py`, onde o par vive por locale desde a regressão do `já`.
+#
+# A primeira pessoa entra nos DOIS lados no mesmo commit. Ela foi adicionada a `status_done`
+# logo acima, e adicionar só lá teria criado o falso positivo espelhado: "confirmei ontem" é
+# recall legítimo e passaria a ser reescrito como fabricação. O par tem que andar junto —
+# ampliar o detector sem ampliar a isenção é a mesma troca errada do `já`, ao contrário.
+_PT_RECALLED = (
+    re.compile(r"\b(?:foi|foram|est[áa]|est[ãa]o|ficou|ficaram)\s+(?:\w+\s+){0,2}"
+               r"(?:confirmad|cancelad|remarcad|agendad|conclu[íi]d|realizad)[oa]s?\b"
+               r"|\b(?:confirmei|cancelei|desmarquei|remarquei|reagendei)\b", re.I),
+    re.compile(r"\b(?:ontem|anteontem|anteriormente|na semana passada|no m[êe]s passado|"
+               r"outro dia|naquele dia)\b", re.I))
+
+# ``recalled`` per locale, like every other reply-side pattern in the bundle. It was ONE
+# tuple — the Portuguese one — applied to all three: a Spanish "fue confirmada AYER" and an
+# English "was confirmed YESTERDAY" matched no stative, so the exclusion never fired and both
+# legitimate recalls were rewritten as fabrications (measured). The sibling vertical already
+# carries it per locale; this one had the fix wired into one language only, which is the same
+# half-connected shape as wiring a shared helper into one vertical.
+_EN_RECALLED = (
+    re.compile(r"\b(?:was|were|is|are|has been|have been|had been)\s+(?:\w+\s+){0,2}"
+               r"(?:confirmed|cancel(?:l)?ed|rescheduled|rebooked|booked|completed)\b", re.I),
+    re.compile(r"\b(?:yesterday|earlier|previously|last (?:week|month)|"
+               r"the other day|back (?:then|on))\b", re.I))
+_ES_RECALLED = (
+    re.compile(r"\b(?:fue|fueron|est[áa]|est[áa]n|ha sido|han sido|hab[íi]a sido)\s+"
+               r"(?:\w+\s+){0,2}"
+               r"(?:confirmad|cancelad|reprogramad|reagendad|agendad|complet)[oa]s?\b"
+               r"|\b(?:confirm[ée]|cancel[ée]|reprogram[ée]|reagend[ée])\b", re.I),
+    re.compile(r"\b(?:ayer|anteayer|anteriormente|la semana pasada|"
+               r"el mes pasado|el otro d[íi]a)\b", re.I))
+
+
 # ── per-locale reply patterns + messages ─────────────────────────────────────────────
 @dataclass(frozen=True)
 class _Bundle:
@@ -163,6 +204,7 @@ class _Bundle:
     booking_noun: re.Pattern[str]
     offer: re.Pattern[str]
     status_done: re.Pattern[str]
+    recalled: "tuple[re.Pattern[str], re.Pattern[str]]"
     conclusion_now: re.Pattern[str]
     confirmed_done: re.Pattern[str]
     occupancy_claim: re.Pattern[str]
@@ -179,6 +221,7 @@ class _Bundle:
 
 _PT_BUNDLE = _Bundle(
     loc=_PT, booking_noun=_BOOKING_NOUN_RE, offer=_OFFER_RE, status_done=_STATUS_DONE_RE,
+    recalled=_PT_RECALLED,
     conclusion_now=_CONCLUSION_NOW_RE, confirmed_done=_CONFIRMED_DONE_RE,
     occupancy_claim=_OCCUPANCY_CLAIM_RE, working_hours_claim=_WORKING_HOURS_CLAIM_RE,
     no_booking=NO_BOOKING_MSG, check_avail=CHECK_AVAIL_MSG,
@@ -187,6 +230,7 @@ _PT_BUNDLE = _Bundle(
     stale_filtered_listing=STALE_FILTERED_LISTING_MSG, unread_settings=UNREAD_SETTINGS_MSG)
 
 _EN_BUNDLE = _Bundle(
+    recalled=_EN_RECALLED,
     loc=_EN,
     booking_noun=re.compile(
         r"\b(?:book(?:ed|ing)?|appointments?|schedul(?:e|ed)|reserv(?:e|ed|ation)|"
@@ -244,6 +288,7 @@ _EN_BUNDLE = _Bundle(
         "you the correct days and times."))
 
 _ES_BUNDLE = _Bundle(
+    recalled=_ES_RECALLED,
     loc=_ES,
     booking_noun=re.compile(
         r"\b(?:agendad[oa]s?|citas?|reservad[oa]s?|reserva|turnos?|programad[oa]s?|"
@@ -252,8 +297,8 @@ _ES_BUNDLE = _Bundle(
         r"horarios?\s+disponibles?|puedo\s+ofrecer|cu[áa]l\s+de\s+estos|"
         r"estos\s+horarios|opciones|alguno\s+de\s+estos|prefiere", re.IGNORECASE),
     status_done=re.compile(
-        r"\b(?:confirmad[oa]s?|cancelad[oa]s?|reprogramad[oa]s?|reagendad[oa]s?)\b",
-        re.IGNORECASE),
+        r"\b(?:confirmad[oa]s?|cancelad[oa]s?|reprogramad[oa]s?|reagendad[oa]s?|"
+        r"confirm[ée]|cancel[ée]|reprogram[ée]|reagend[ée])\b", re.IGNORECASE),
     conclusion_now=re.compile(
         r"\b(?:list[oa])\b|"
         r"\b(?:agend[ée]|reserv[ée]|confirm[ée]|cancel[ée]|reprogram[ée])\b|"
@@ -351,13 +396,6 @@ _MUTATIONS = ("confirm_appointment", "complete_appointment", "update_appointment
 # tool forçada — sobre um `appointment_id` carregado de turno anterior, que é exatamente o
 # dano de linha-errada que o doctor_bench existe para pegar. `já` fica FORA por decisão: em
 # pt-BR "já foi confirmado" confirma o agora (ver a regressão registrada no bookkeeper).
-_PT_RECALLED = (
-    re.compile(r"\b(?:foi|foram|est[áa]|est[ãa]o|ficou|ficaram)\s+(?:\w+\s+){0,2}"
-               r"(?:confirmad|cancelad|remarcad|agendad|conclu[íi]d|realizad)[oa]s?\b", re.I),
-    re.compile(r"\b(?:ontem|anteontem|anteriormente|na semana passada|no m[êe]s passado|"
-               r"outro dia|naquele dia)\b", re.I))
-
-
 def _status_changed(tools: Sequence[ToolCall]) -> bool:
     """A scheduler MUTATION actually succeeded this turn (confirm/complete/cancel/reschedule/
     book)."""
@@ -454,7 +492,7 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
     #     appointment was confirmed/cancelled, but NO scheduler mutation ran. Never on a
     #     read; suppressed when a CONFIRMED result is in hand (grounded stative recall).
     if (not is_read_query and pending_confirmation
-            and affirmed(reply, b.status_done, neg=b.loc.neg, recalled=_PT_RECALLED)
+            and affirmed(reply, b.status_done, neg=b.loc.neg, recalled=b.recalled)
             and not _status_changed(tools) and not _confirmed_in_hand(tools)):
         return GroundingVerdict(rule="unverified_status", message=b.unverified_status,
                                 repairable=True, critique=_UNVERIFIED_STATUS_CRITIQUE)

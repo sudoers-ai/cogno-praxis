@@ -28,6 +28,10 @@ def _list(result: str) -> ToolCall:
     return ToolCall(tool="list_appointments", ok=True, result=result)
 
 
+def _ok_call(tool: str, result: str) -> ToolCall:
+    return ToolCall(tool=tool, ok=True, result=result)
+
+
 def _book(ok: bool, date: str = "2026-07-08", time: str = "11:00") -> ToolCall:
     res = f"Booked abc: Vinicius with dr_jose on {date} at {time} [PENDING]." if ok else ""
     return ToolCall(tool="book_appointment", ok=ok, side_effect=True, result=res)
@@ -433,3 +437,71 @@ def test_pt_conjured_slots_livres_and_qual_voce_prefere():
     reply = "Temos dois horários livres no dia 8, às 9h e às 10h, qual você prefere?"
     v = ground_reply(reply, tools=())
     assert v is not None and v.rule == "conjured_slots"
+
+
+# ── the same claim, said in the first person ─────────────────────────────────────────
+#
+# `status_done` carried only the PARTICIPLE. In pt-BR and es the persona says "foi confirmado"
+# and "confirmei" with different words, and only the first was matched — so a reply claiming a
+# status change it never made passed clean whenever it happened to use the natural first
+# person. In English the two forms are the same word ("I confirmed" matches `\bconfirmed\b`),
+# which is exactly why the hole went unnoticed: the language it was easiest to test in did not
+# have it.
+@pytest.mark.parametrize("locale,reply", [
+    ("pt", "Confirmei o agendamento da Ana."),
+    ("pt", "Cancelei o agendamento da Ana."),
+    ("pt", "Já confirmei o agendamento da Ana."),     # `já` alone is not a past reference
+    ("es", "Confirmé la cita de Ana."),
+    ("es", "Cancelé la cita de Ana."),
+    ("en", "I confirmed Ana's appointment."),          # the control: was already caught
+])
+def test_a_first_person_status_claim_with_no_mutation_is_caught(locale, reply):
+    v = ground_reply(reply, tools=[_list("abc: Ana on 2026-07-08 at 09:00")],
+                     pending_confirmation=True, locale=locale)
+    assert v is not None and v.rule == "unverified_status", f"{locale}: {reply}"
+
+
+@pytest.mark.parametrize("locale,reply", [
+    ("pt", "Confirmei o agendamento da Ana ontem."),
+    ("es", "Confirmé la cita de Ana ayer."),
+])
+def test_a_first_person_RECALL_of_yesterday_is_not_a_fabrication(locale, reply):
+    """The other half of the same commit, and it has to ship with it.
+
+    Widening the detector without widening the exemption is the `já` trade made backwards:
+    "confirmei ontem" is a legitimate recall of another turn's write, and it would start being
+    rewritten as fabrication. The pair moves together or not at all."""
+    v = ground_reply(reply, tools=[_list("abc: Ana on 2026-07-08 at 09:00")],
+                     pending_confirmation=True, locale=locale)
+    assert v is None or v.rule != "unverified_status", f"{locale}: {reply}"
+
+
+@pytest.mark.parametrize("locale,reply", [
+    ("pt", "O agendamento da Ana foi confirmado ontem."),
+    ("es", "La cita de Ana fue confirmada ayer."),
+    ("en", "Ana's appointment was confirmed yesterday."),
+])
+def test_the_recall_exemption_speaks_every_language_the_bundle_does(locale, reply):
+    """It was ONE tuple — the Portuguese one — applied to all three locales.
+
+    So a Spanish "fue confirmada AYER" and an English "was confirmed YESTERDAY" matched no
+    stative, the exemption never fired, and both legitimate recalls were rewritten as
+    fabrications. `bookkeeper/grounding.py` already carries `recalled` per locale; this
+    vertical had the same fix wired into one language only."""
+    v = ground_reply(reply, tools=[_list("abc: Ana on 2026-07-08 at 09:00")],
+                     pending_confirmation=True, locale=locale)
+    assert v is None or v.rule != "unverified_status", f"{locale}: {reply}"
+
+
+@pytest.mark.parametrize("locale,reply", [
+    ("pt", "Confirmei o agendamento da Ana."),
+    ("es", "Confirmé la cita de Ana."),
+    ("en", "I confirmed Ana's appointment."),
+])
+def test_a_first_person_claim_backed_by_a_REAL_mutation_passes(locale, reply):
+    """The control arm. A detector that also fires when the persona told the truth is not a
+    detector — every turn would go to repair."""
+    v = ground_reply(reply, tools=[_ok_call("confirm_appointment",
+                                            "Appointment abc is now CONFIRMED.")],
+                     pending_confirmation=True, locale=locale)
+    assert v is None, f"{locale}: {v.rule if v else ''}"
