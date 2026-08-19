@@ -960,10 +960,39 @@ def test_the_cancel_refusal_names_the_way_out():
 
 
 def test_a_no_show_can_actually_be_corrected_end_to_end():
-    """The path the message promises, walked. A promise nobody performs is how this whole
-    class of defect starts."""
+    """The promised path, walked — with the two calls BACK TO BACK.
+
+    And only so. See `test_the_sweep_undoes_the_undo` below: put a listing between them, which
+    is what any turn boundary produces, and the path comes apart. This test pins the happy
+    ordering and must NOT be read as "the path works" — reading it that way is exactly what let
+    me declare #79 finished."""
     svc = _swept_past_row()
     svc.update_status("a1", CONFIRMED)                     # undo the automatic completion
     appt, changed = svc.cancel("a1", reason="no-show")
     assert appt.status == CANCELED and changed
     assert svc.store.get("a1").cancel_reason == "no-show"
+    svc.list_appointments(host_id="dr_silva")
+    assert svc.store.get("a1").status == CANCELED, "CANCELED is terminal — the sweep leaves it"
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "OPEN DEFECT, measured 2026-08-19: `_sweep_expired` runs on EVERY listing and re-completes "
+    "the row, so the #78 undo survives only when the cancel comes back to back. Any turn "
+    "boundary, judge retry or correction loop lists — and the professional is back at COMPLETED, "
+    "where the #79 refusal tells them to undo it again. A loop. The fix moves the lifecycle "
+    "matrix (let `cancel` accept a COMPLETED row, which is already held by gate B via "
+    "destructiveHint) and does not ship together with the test that proves it is needed."))
+def test_the_sweep_undoes_the_undo():
+    """The REAL sequence: undo, something lists, and only then cancel.
+
+    The test above walks `confirm → cancel` adjacent, which is the only order that works — and
+    passing it is what let me call the path done. The order below is the one a conversation
+    actually produces, and it refuses."""
+    svc = _swept_past_row()
+    svc.update_status("a1", CONFIRMED)                     # the professional undoes it
+    svc.list_appointments(host_id="dr_silva")              # …and ANYTHING lists
+    svc.cancel("a1", reason="no-show")
+    # The OUTCOME, not one route to it: whether the sweep stops re-completing, or `cancel`
+    # learns to accept a COMPLETED row, either fix ends here. Asserting the intermediate
+    # CONFIRMED instead would pin one implementation and reject the other.
+    assert svc.store.get("a1").status == CANCELED, "the no-show never got recorded"
