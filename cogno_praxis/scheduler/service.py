@@ -238,6 +238,7 @@ class SchedulerService:
                **{k: v for k, v in overrides.items() if v is not None}}
         try:
             new_config = SchedulerConfig(raw)
+            new_config.validate()
         except (ValueError, TypeError) as exc:
             raise SchedulerError(f"invalid schedule settings: {exc}") from exc
         self._config = new_config
