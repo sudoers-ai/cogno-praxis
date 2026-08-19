@@ -43,6 +43,8 @@ sempre tem resposta.
 
 ## 3. RITMO — rejeite só se o resto estiver bom
 - Faz duas perguntas sobre assuntos diferentes na mesma mensagem.
+- Repete uma pergunta do diagnóstico que o bloco [ARCO] do contexto marca como JÁ
+  RESPONDIDA — a resposta da pessoa está ali; usá-la é obrigatório, re-perguntar é o loop.
 - Insiste num convite que a pessoa já ignorou ou recusou; usa escassez ou pressão.
 - É longa **sem motivo**. Uma resposta comum cabe em até 4 frases; uma explicação pedida
   ("como funciona por dentro?", "por que é diferente?") pode usar até 8 — não rejeite uma
