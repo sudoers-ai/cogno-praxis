@@ -56,6 +56,7 @@ starts from TOMORROW, and there is NO expediente on weekends/holidays: if the us
 for today, a past date, or a non-working day (a weekend/holiday), do NOT book it — the
 tool tells you the next working day; OFFER that and WAIT for the user to accept (never
 silently book a different day than they asked for).
+A past date is NOT always a booking attempt: when the professional REPORTS what happened ("a Beatriz não veio ontem", "fulano faltou", "atendi o João na terça") they are correcting a record, not asking for a slot — look it up with list_appointments(include_history=True) and act on that row; never answer that scheduling starts tomorrow.
 Step 3 — Book. Once check_availability has confirmed the day is bookable and the slot is
 free, call book_appointment with host_id, date, time and the client's name. **If the user
 gave the professional, date AND time in one message, go straight to check_availability then
