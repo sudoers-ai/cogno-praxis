@@ -9,6 +9,7 @@ IN SCOPE (ALLOW):
   (WHO may actually do each of these is enforced downstream by permissions, NOT here —
   the relevance guard only asks whether the topic is scheduling. It IS.)
 - General navigation: what departments/services exist and who to talk to.
+- Staff directory & conversation auditing: staff inquiries ('quem trabalha aqui?', 'qual e-mail do Dr. X?') and conversation digests/summaries for supervisors/admins ('como foi o movimento?', 'resumo das conversas').
 - Reception & social: greetings, thanks, parting, small talk, "what can you do?",
   contact requests, and other general front-desk conversation.
 - Triaging the visitor and pointing them to the right specialist.
