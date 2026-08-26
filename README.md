@@ -144,10 +144,13 @@ pip install -e ".[dev]"
 pytest tests/unit -q            # service + server (in-process), no network
 pytest tests/integration -q     # scheduler server over stdio via cogno-mcp (the real loop)
                                 # + the Postgres store, against `cogno_praxis_test` on the
-                                # local server (auto-skips if nothing is listening). Those
-                                # tests DROP TABLE, so the database name is chosen for you;
-                                # COGNO_TEST_PG_DSN overrides, and a name without "test" in
-                                # it is refused at collection.
+                                # local server — taken from COGNO_PG_DSN if the shell exports
+                                # one, else libpq's PGHOST/PGPORT/PGUSER/PGPASSWORD (whose
+                                # defaults are what CI's postgres service serves). Auto-skips
+                                # if nothing is listening. Those tests DROP TABLE, so the
+                                # database NAME is never taken from any of them: it is always
+                                # `cogno_praxis_test`. COGNO_TEST_PG_DSN overrides, and a name
+                                # without "test" in it is refused at collection.
 ruff check cogno_praxis tests && mypy cogno_praxis
 python examples/host_min.py     # spawn the server + run a reception flow
 ```
