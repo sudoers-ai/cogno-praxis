@@ -1,21 +1,30 @@
 """Integration: PgBookkeeperStore against a real Postgres.
 
-Set ``COGNO_TEST_PG_DSN`` (e.g. ``postgresql://postgres:test@localhost:55432/cogno``) to run;
-auto-skips otherwise. Proves the financial flow round-trips through Postgres, the transactions
-table is HASH(scope)-partitioned, and scope isolates tenants.
+Needs no DSN: the suite aims at ``cogno_praxis_test`` on the local server by itself and
+auto-skips when nothing is listening there (see ``conftest.resolve_test_dsn``).
+``COGNO_TEST_PG_DSN`` overrides, and a database whose name does not say "test" is refused at
+collection — these tests ``DROP TABLE bookkeeper_transactions`` and ``bookkeeper_clients``.
+
+This docstring used to read ``postgresql://postgres:test@localhost:55432/cogno``: "test" in
+the PASSWORD, the demo box's LIVE database in the path. That is the exact shape the guard's
+``test_refuses_when_only_the_password_says_test`` exists for, and it was being taught here.
+
+Proves the financial flow round-trips through Postgres, the transactions table is
+HASH(scope)-partitioned, and scope isolates tenants.
 """
 
 from __future__ import annotations
 
-import os
 from datetime import date
 
 import pytest
 
 psycopg = pytest.importorskip("psycopg")
 
-DSN = os.environ.get("COGNO_TEST_PG_DSN")
-pytestmark = pytest.mark.skipif(not DSN, reason="set COGNO_TEST_PG_DSN to run")
+from tests.integration.conftest import resolve_test_dsn  # noqa: E402
+
+DSN = resolve_test_dsn()      # COGNO_TEST_PG_DSN, else `cogno_praxis_test` on the local server
+pytestmark = pytest.mark.skipif(not DSN, reason="no Postgres reachable (see tests/integration/conftest.py)")
 
 from cogno_praxis.bookkeeper import BookkeeperService                    # noqa: E402
 from cogno_praxis.bookkeeper.stores.postgres import PgBookkeeperStore    # noqa: E402

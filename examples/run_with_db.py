@@ -68,7 +68,7 @@ class MyAppointmentStore:
 
 
 def build() -> object:
-    store = MyAppointmentStore(dsn="postgresql://localhost/cogno")   # ← from env in real life
+    store = MyAppointmentStore(dsn="postgresql://localhost/myapp")   # ← from env in real life
     return build_server(SchedulerService(store))
 
 

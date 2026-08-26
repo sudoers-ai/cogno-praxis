@@ -1,16 +1,18 @@
 """Integration: the Postgres AppointmentStore against a real Postgres.
 
-Set ``COGNO_TEST_PG_DSN`` (e.g. ``postgresql://postgres:pw@localhost:55432/cogno_praxis_test``)
-to run; auto-skips otherwise. These tests ``DROP TABLE``, so the database name must contain
-"test" or ``conftest.py`` aborts the run — this example used to end in ``/cogno``, which is
-the demo box's LIVE database. Proves the full scheduler flow round-trips through Postgres,
-the ``appointments`` table is HASH(scope)-partitioned, and scope isolates tenants.
+Needs no DSN: the suite aims at ``cogno_praxis_test`` on the local server by itself and
+auto-skips when nothing is listening there (see ``conftest.resolve_test_dsn``).
+``COGNO_TEST_PG_DSN`` overrides. These tests ``DROP TABLE``, so the database name must
+contain "test" or ``conftest.py`` aborts the run at collection — the example this docstring
+used to carry ended in ``/cogno``, the demo box's LIVE database.
+
+Proves the full scheduler flow round-trips through Postgres, the ``appointments`` table is
+HASH(scope)-partitioned, and scope isolates tenants.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from datetime import date
 
@@ -18,8 +20,10 @@ import pytest
 
 psycopg = pytest.importorskip("psycopg")
 
-DSN = os.environ.get("COGNO_TEST_PG_DSN")
-pytestmark = pytest.mark.skipif(not DSN, reason="set COGNO_TEST_PG_DSN to run")
+from tests.integration.conftest import resolve_test_dsn  # noqa: E402
+
+DSN = resolve_test_dsn()      # COGNO_TEST_PG_DSN, else `cogno_praxis_test` on the local server
+pytestmark = pytest.mark.skipif(not DSN, reason="no Postgres reachable (see tests/integration/conftest.py)")
 
 from cogno_praxis.scheduler import Host, SchedulerService            # noqa: E402
 from cogno_praxis.scheduler.service import SchedulerError            # noqa: E402
