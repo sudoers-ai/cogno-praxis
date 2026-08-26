@@ -143,6 +143,11 @@ you can assemble a body of your own.
 pip install -e ".[dev]"
 pytest tests/unit -q            # service + server (in-process), no network
 pytest tests/integration -q     # scheduler server over stdio via cogno-mcp (the real loop)
+                                # + the Postgres store, against `cogno_praxis_test` on the
+                                # local server (auto-skips if nothing is listening). Those
+                                # tests DROP TABLE, so the database name is chosen for you;
+                                # COGNO_TEST_PG_DSN overrides, and a name without "test" in
+                                # it is refused at collection.
 ruff check cogno_praxis tests && mypy cogno_praxis
 python examples/host_min.py     # spawn the server + run a reception flow
 ```
