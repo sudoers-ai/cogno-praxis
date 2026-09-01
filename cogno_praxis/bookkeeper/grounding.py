@@ -102,9 +102,21 @@ _REMOVED_RE = re.compile(
     re.IGNORECASE)
 
 # ── safe rewrites — honest, keep the conversation alive (pt-BR) ───────────────────────
+# NÃO AFIRMA A AUSÊNCIA, E NÃO CONVIDA A RE-DITAR. A guarda sabe uma coisa só: **nenhuma
+# escrita correu NESTE turno.** Daí não se segue que o lançamento não exista — e a frase
+# anterior afirmava-o («esse lançamento ainda não foi registrado no sistema») e pedia ao
+# contacto a descrição e o valor «que eu registro agora».
+#
+# As duas metades erradas, e a segunda é a que custa: um contacto que acredite na primeira
+# re-dita a despesa, o agente regista, **e o tenant fica com o mesmo lançamento duas vezes**.
+# A resposta corrompe o livro pela mão do contacto, que fica a achar que fez bem — e isso
+# acontece mesmo nos turnos em que a reescrita está CERTA, porque a frase é enlatada.
+#
+# A forma segura já existia ao lado: a `CHECK_TOTALS_MSG` não nega os números, propõe
+# consultá-los. Esta passa a fazer o mesmo — o próximo passo é uma LEITURA, não uma escrita.
 NO_ENTRY_MSG = (
-    "Na verdade, esse lançamento ainda não foi registrado no sistema. Me confirma a "
-    "descrição e o valor que eu registro agora e te retorno o comprovante.")
+    "Deixa eu consultar o que está registrado antes de confirmar — me diz a descrição ou o "
+    "valor e eu procuro no sistema e te digo o que encontrei.")
 CHECK_TOTALS_MSG = (
     "Deixa eu consultar os números reais no sistema antes de te passar totais — me diga "
     "o período que você quer ver e eu trago o resumo exato.")
@@ -113,10 +125,16 @@ NO_REMOVAL_MSG = (
     "(descrição ou valor) que eu localizo e removo agora.")
 
 # Critiques feed the EGO correction channel — English, language-agnostic, shared.
+# A METADE VIRADA À MÁQUINA, e ela era a mais perigosa das duas: mandava «record the entry
+# for real». Numa reescrita CORRECTA isso é o conserto; numa reescrita indevida é a duplicata
+# escrita por NÓS, sem o contacto sequer participar. O laço de reparo obedece a esta frase.
+# Passa a mandar LER primeiro, e a escrever só se a leitura mostrar que falta.
 _NO_ENTRY_CRITIQUE = (
     "The previous reply claimed a transaction was recorded, but no add_income/add_outcome "
-    "succeeded this turn. Record the entry for real (confirm description and amount) and "
-    "report only what the tool returned.")
+    "succeeded this turn. Do NOT record it blindly — the entry may already exist and a second "
+    "write would duplicate it in the tenant's books. Call search (or get_summary) first, "
+    "report only what the tool returned, and record it ONLY if the lookup shows it is "
+    "missing.")
 _CHECK_TOTALS_CRITIQUE = (
     "The previous reply quoted financial totals that were never read from the bookkeeper. "
     "Call get_summary (or search) for the requested period and quote ONLY the figures the "
@@ -172,8 +190,8 @@ _EN_BUNDLE = _Bundle(
         r"\b(?:removed|deleted|erased)\b|"
         r"\bi(?:'ve|\s+have|\s+just|)\s+(?:removed|deleted|erased)\b", re.IGNORECASE),
     no_entry=(
-        "Actually, that entry hasn't been recorded in the system yet. Confirm the "
-        "description and the amount and I'll record it now and send you the receipt."),
+        "Let me check what's recorded before I confirm — tell me the description or the "
+        "amount and I'll look it up and tell you what I find."),
     check_totals=(
         "Let me pull the real numbers from the system before I give you any totals — tell "
         "me the period you'd like to see and I'll bring the exact summary."),
@@ -200,8 +218,8 @@ _ES_BUNDLE = _Bundle(
     removed=re.compile(
         r"\b(?:elimin[ée]|borr[ée]|quit[ée])\b|\b(?:eliminad|borrad)[oa]s?\b", re.IGNORECASE),
     no_entry=(
-        "En realidad, ese registro todavía no fue guardado en el sistema. Confírmame la "
-        "descripción y el monto y lo registro ahora y te envío el comprobante."),
+        "Déjame consultar lo que está registrado antes de confirmar — dime la descripción o "
+        "el monto y lo busco en el sistema y te digo qué encuentro."),
     check_totals=(
         "Déjame consultar los números reales en el sistema antes de darte totales — dime "
         "el período que quieres ver y te traigo el resumen exacto."),
