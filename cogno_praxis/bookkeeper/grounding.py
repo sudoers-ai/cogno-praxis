@@ -37,10 +37,38 @@ SUMMARY_HEAD_RE = re.compile(r"^Income:\s")     # get_summary's first line
 
 # ── reply-side patterns (pt-BR) ──────────────────────────────────────────────────────
 # The reply claims an entry was RECORDED this turn (first person or done-participle).
+# A cópula, para separar a ALEGAÇÃO da DESCRIÇÃO. Cada alternativa é de largura fixa e leva
+# `\b`: sem ele, `(?<!e )` casaria a cauda de qualquer palavra terminada em "e" mais espaço —
+# medido e corrigido em `cogno-host#612`, onde essa omissão desarmava a guarda no caso vivo.
+_COPULA_LOOKBEHIND = "".join(
+    f"(?<!\\b{w} )" for w in ("foi", "foram", "é", "são", "sao", "está", "esta", "estão",
+                              "estao", "estava", "estavam", "ficou", "ficaram", "fica"))
+
+# A alegação EXPLÍCITA — primeira pessoa, `acabei de`, ou cópula + particípio. Dispara SEMPRE.
 _RECORDED_RE = re.compile(
     r"\b(?:registrei|lancei|lançei|anotei)\b|"
-    r"\b(?:registrad|lançad|lancad|anotad)[oa]s?\b|"
+    r"\b(?:foi|foram|s[ãa]o|est[áa]|est[ãa]o|estava|estavam|ficou|ficaram|fica)\s+"
+    r"(?:\w+\s+){0,2}(?:registrad|lançad|lancad|anotad)[oa]s?\b|"
     r"acabei\s+de\s+(?:registrar|lançar|lancar|anotar)",
+    re.IGNORECASE)
+
+# O particípio ATRIBUTIVO — sem cópula, a modificar um substantivo: *"os lançamentos
+# registrados hoje"*. **É uma DESCRIÇÃO, não um acto**, e a isenção de lembrança (`recalled`)
+# é estruturalmente incapaz de o ver: ela exige a construção estativa, que é precisamente a
+# cópula que uma frase atributiva não tem. Por isso `ontem` e `na semana passada` também eram
+# reescritos — o marcador temporal nunca chegava a ser consultado.
+#
+# Medido ao vivo 2026-09-01: um supervisor pediu *"liste todos os lançamentos de hoje"*, o
+# `get_summary` devolveu a despesa real, o modelo respondeu a VERDADE — e a rede reescreveu-a
+# para *"esse lançamento ainda não foi registrado"*. Sobre 7 listagens verdadeiras com leitura
+# em mão, **3 eram negadas**, e o discriminador era a GRAMÁTICA e não o conteúdo.
+#
+# Continua a apanhar `"Registrado! R$ 150,00"` — um recibo real, sem cópula — porque fica
+# CONDICIONADO a não ter havido leitura, exactamente como o ramo elíptico de `cogno-host#612`:
+# num turno que não consultou nada as duas leituras da frase são infundadas e não há descrição
+# legítima a proteger; um `get_summary` bem-sucedido devolve-lhe a ambiguidade.
+_RECORDED_ATTRIBUTIVE_RE = re.compile(
+    rf"{_COPULA_LOOKBEHIND}\b(?:registrad|lançad|lancad|anotad)[oa]s?\b",
     re.IGNORECASE)
 # ── RECALL: a escrita é de OUTRO turno, não deste ────────────────────────────────────
 # Duas marcas, e só as duas juntas: construção ESTATIVA (auxiliar + particípio) mais uma
@@ -113,10 +141,15 @@ class _Bundle:
     no_entry: str
     check_totals: str
     no_removal: str
+    # ÚLTIMO porque tem default e os de cima não têm. O particípio atributivo, quando o locale
+    # tem um que valha a pena ler: `None` = locale não coberto, comportamento idêntico ao de
+    # antes (fail-OPEN, como a própria procura do bundle). Só o `pt` foi MEDIDO.
+    recorded_attributive: "Optional[re.Pattern[str]]" = None
 
 
 _PT_BUNDLE = _Bundle(
     loc=_PT, recorded=_RECORDED_RE, totals=_TOTALS_RE, removed=_REMOVED_RE,
+    recorded_attributive=_RECORDED_ATTRIBUTIVE_RE,
     recalled=(_PT_STATIVE, _PT_PAST),
     no_entry=NO_ENTRY_MSG, check_totals=CHECK_TOTALS_MSG, no_removal=NO_REMOVAL_MSG)
 
@@ -240,11 +273,16 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
     # (1) fabricated entry — the reply claims a transaction was recorded (with a money
     #     anchor so book-keeping small talk doesn't trip it), but no write succeeded.
     #     Repairable: record it for real.
-    if (b.loc.money.search(reply)
-            and affirmed(reply, b.recorded, neg=b.loc.neg, recalled=b.recalled)
-            and not _entry_recorded(tools)):
-        return GroundingVerdict(rule="fabricated_entry", message=b.no_entry,
-                                repairable=True, critique=_NO_ENTRY_CRITIQUE)
+    if b.loc.money.search(reply) and not _entry_recorded(tools):
+        # A alegação EXPLÍCITA dispara sempre — é o que a regra foi escrita para apanhar.
+        alega = affirmed(reply, b.recorded, neg=b.loc.neg, recalled=b.recalled)
+        # O particípio ATRIBUTIVO só é alegação num turno que não consultou NADA. Com uma
+        # leitura em mão, *"os lançamentos registrados hoje"* é a listagem que foi pedida.
+        if not alega and b.recorded_attributive is not None and not _summary_read(tools):
+            alega = affirmed(reply, b.recorded_attributive, neg=b.loc.neg, recalled=b.recalled)
+        if alega:
+            return GroundingVerdict(rule="fabricated_entry", message=b.no_entry,
+                                    repairable=True, critique=_NO_ENTRY_CRITIQUE)
 
     # (2) fabricated removal — "removi/excluí" with no successful remove_by_search.
     #     Repairable: perform the removal for real.
