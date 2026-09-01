@@ -270,6 +270,31 @@ def _summary_read(tools: Sequence[ToolCall]) -> bool:
     return any(not r.startswith("ERROR:") for r in ok_results(tools, "math"))
 
 
+# As tools que CONSULTAM o livro — e é uma pergunta diferente de "há números em mão".
+#
+# O `_summary_read` acima responde *"o turno tem FIGURAS fundamentadas?"* e por isso conta o
+# `math`, que calcula sem ler nada. Este responde *"o turno OLHOU para o livro?"* e por isso
+# conta o `remove_by_search`, que procura para remover — **mesmo quando não remove nada.**
+#
+# **Os dois conjuntos não se contêm**, e é essa a prova de que são perguntas distintas:
+#
+#     _summary_read      get_summary · search · math
+#     _consulted_ledger  get_summary · search · remove_by_search
+#
+# Alargar o `_summary_read` para cobrir o caso abaixo enfraqueceria o `conjured_totals`, que é
+# o seu outro consumidor: uma resposta que cita TOTAIS depois de uma remoção continua sem
+# fundamento, porque uma remoção não devolve totais. Dois predicados, dois consumidores.
+#
+# Medido no traço vivo: uma listagem verdadeira num turno cujo única chamada foi
+# `remove_by_search` era reescrita — o `#86` cobria 1 dos 2 casos reais, e este é o outro.
+_LEDGER_READS = ("get_summary", "search", "remove_by_search")
+
+
+def _consulted_ledger(tools: Sequence[ToolCall]) -> bool:
+    """O turno olhou para o livro — por leitura ou por uma remoção que procurou primeiro."""
+    return any(ok_results(tools, name) for name in _LEDGER_READS)
+
+
 def _removed_ok(tools: Sequence[ToolCall]) -> bool:
     return any(r.startswith(REMOVED_PREFIX) for r in ok_results(tools, "remove_by_search"))
 
@@ -296,7 +321,7 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
         alega = affirmed(reply, b.recorded, neg=b.loc.neg, recalled=b.recalled)
         # O particípio ATRIBUTIVO só é alegação num turno que não consultou NADA. Com uma
         # leitura em mão, *"os lançamentos registrados hoje"* é a listagem que foi pedida.
-        if not alega and b.recorded_attributive is not None and not _summary_read(tools):
+        if not alega and b.recorded_attributive is not None and not _consulted_ledger(tools):
             alega = affirmed(reply, b.recorded_attributive, neg=b.loc.neg, recalled=b.recalled)
         if alega:
             return GroundingVerdict(rule="fabricated_entry", message=b.no_entry,
