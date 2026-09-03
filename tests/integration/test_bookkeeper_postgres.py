@@ -51,8 +51,13 @@ def test_full_bookkeeper_flow_through_postgres():
     assert s["total_income"] == 80.0 and s["total_outcome"] == 80.0 and s["net"] == 0.0
     assert [c["name"] for c in svc.list_clients()] == ["João"]     # upsert, not duplicated
 
-    # remove the most recent income matching "barba"
-    removed = svc.remove_by_search("barba", "emp-1")
+    # remove the most recent income matching "barba" — two calls, and the FIRST one must leave
+    # the real table untouched (the in-memory store cannot prove that about SQL)
+    proposal = svc.remove_by_search("barba", "emp-1").proposal
+    assert proposal is not None and proposal.entry["amount"] == 30.0
+    assert svc.get_summary("emp-1", "EMPLOYEE")["total_income"] == 80.0   # nothing deleted yet
+    removed = svc.remove_by_search("barba", "emp-1",
+                                   confirm_tx_id=proposal.confirm_tx_id).removed
     assert removed is not None and removed["amount"] == 30.0
     assert svc.get_summary("emp-1", "EMPLOYEE")["total_income"] == 50.0
 
