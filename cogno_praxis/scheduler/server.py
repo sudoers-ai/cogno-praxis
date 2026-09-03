@@ -122,13 +122,17 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     def book_appointment(host_id: str, date: str, time: str, with_name: str,
-                         notes: str = "", guest_id: str = "", host_name: str = "") -> str:
+                         notes: str = "", guest_id: str = "", host_name: str = "",
+                         persona_id: str = "") -> str:
         """Book an appointment with a host at a date/time for a client (status PENDING).
 
         ``guest_id`` is the client's STABLE id (host-injected) so the professional sees the
-        booking in their own agenda; ``with_name``/``host_name`` are display names."""
+        booking in their own agenda; ``with_name``/``host_name`` are display names.
+
+        ``persona_id`` is HOST-INJECTED and is not yours to choose: it records WHICH PERSONA
+        booked, which is a fact about the turn and not about the request. Leave it out."""
         appt = svc.book(host_id, date, time, with_name, notes,
-                        guest_id=guest_id, host_name=host_name)
+                        guest_id=guest_id, host_name=host_name, persona_id=persona_id)
         return (f"Booked {appt.appointment_id}: {with_name} with {appt.host_name or host_id} "
                 f"on {date} at {time} [{appt.status}].")
 
