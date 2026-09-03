@@ -111,7 +111,9 @@ def test_server_result_markers_match_the_rules():
     mcp = build_server()
 
     def _text(res):
-        return "\n".join(b.text for b in res[0] if getattr(b, "type", None) == "text")
+        # both FastMCP shapes — see tests/unit/test_bookkeeper_server.py::_text
+        blocks = res[0] if isinstance(res, tuple) else res
+        return "\n".join(b.text for b in blocks if getattr(b, "type", None) == "text")
 
     async def run():
         inc = _text(await mcp.call_tool("add_income", {"description": "Consulta",

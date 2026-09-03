@@ -30,14 +30,15 @@ opaque strings the host resolves/authorizes.
 | `get_summary` | read-only | Totals + breakdown by period (day/week/month or date range). |
 | `list_clients` | read-only | Known clients with revenue totals. |
 | `search` | read-only | Keyword/date search across transactions. |
-| `remove_by_search` | **destructive** | **Two calls.** The first READS and answers with the exact entry it would remove (date, description, amount, id) plus the siblings the same query matched — nothing is deleted. The second, carrying `confirm_tx_id`, deletes that one row. The host's Gate-B holds the tool by name on top of this. |
+| `remove_by_search` | mutating, **asks by itself** | **Two calls.** The first READS and answers with the exact entry it would remove (date, description, amount, id) plus the siblings the same query matched — nothing is deleted, and the reply carries the gate-C flag so the EGO holds the turn there. The second, carrying `confirm_tx_id`, deletes that one row. It carries **no `destructiveHint`**: Gate-B would hold it by name *before* it ran, and the grounded question would never be asked. |
 | `get_usage` | read-only | AI token/usage — **delegated to the host's metering** (see decision #4). |
 | `help` | read-only | Scope guardrail: what the bookkeeper does / redirect off-topic. |
 
 Mutation/destructiveness travels as MCP `ToolAnnotations` → the host EGO's read-only mask +
 confirmation gate. Recording (`add_*`) is *mutating but not destructive*: confirmation is
-**prompt-driven** (like `book_appointment`), not the core Gate-B. Only `remove_by_search` is
-destructive → Gate-B.
+**prompt-driven** (like `book_appointment`), not the core Gate-B. `remove_by_search` uses neither:
+it raises **Gate-C** from inside the call, which is why it must NOT declare `destructiveHint` —
+the two gates cannot both hold, because B stops the call before C could speak.
 
 ### Why `remove_by_search` asks a second question
 
@@ -47,6 +48,16 @@ which row an accent-folded substring query selects (`matches_query`), of what va
 and whether it selected three siblings alongside it, is knowable only **after** the read. So
 `remove_by_search` reads first and proposes the row, quoting it; a second call naming that row's
 `confirm_tx_id` commits it.
+
+That is also why the tool drops `destructiveHint`. Gate B holds by name and **before** the call, so
+a tool it holds never runs and the grounded question is never asked — measured in
+`tests/integration/test_o_portao_C_dispara_sobre_a_cadeia.py` against a byte-identical twin that
+differs only in the annotation. What replaces the hold is not a promise but a shape: the write path
+is unreachable without `confirm_tx_id`, an id the caller can only have learned from the proposal,
+so it does not fit in the same step — and the moment the proposal arrives the EGO's loop stops.
+The proposal's reply carries `_meta["cogno-mcp/needs_confirmation"]` (and the argument name in
+`cogno-mcp/confirm_arguments`); **without that flag the proposal would be recorded as a write**,
+because the bridge reports `side_effect = mutating and not asks`.
 
 Two things this buys beyond the wording of the question:
 

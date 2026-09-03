@@ -1,12 +1,28 @@
-"""A mutating tool is either GATED or UNDOABLE — swept across every vertical.
+"""A mutating tool is GATED, UNDOABLE, or it ASKS BY ITSELF — swept across every vertical.
 
 The host's confirmation gate (cogno-anima gate B) decides by tool NAME, with no arguments, and
 it is opt-in: a tool that does not declare ``destructiveHint`` is simply never held. So every
-mutating tool the model can reach is one of two things, and the file that ships it has to say
+mutating tool the model can reach is one of three things, and the file that ships it has to say
 which:
 
-  * ``destructiveHint=True`` — the gate holds it, the host runs its confirm UX;
-  * on ``_UNDOABLE`` below — reachable damage can be walked back, and the entry names HOW.
+  * ``destructiveHint=True`` — gate B holds it, the host runs its confirm UX;
+  * on ``_UNDOABLE`` below — reachable damage can be walked back, and the entry names HOW;
+  * on ``_ASKS_ITSELF`` below — the call RUNS, READS, and refuses to commit until a second call
+    carries an argument it can only have learned from the first. That is cogno-anima's gate C.
+
+The third arrived on 2026-09-03 with one member, and it is a WIDENING of this sweep, so it is
+worth saying exactly what it does and does not buy. Gate B is a claim about a NAME, resolved
+before anything runs: it can say a deletion is coming and never say WHICH row. Gate C is a fact
+about a CALL, and only a call that RAN can state it. The two cannot be held at once — B
+pre-empts C by construction, because a tool it holds never executes — so a tool whose danger is
+per-call has to give up the first in order to reach the second.
+
+What keeps that from being a hole is that the third category is not a promise about behaviour,
+it is a claim about REACHABILITY: the tool's write path must be unreachable without the
+argument. ``test_every_asking_tool_really_refuses_to_commit_unasked`` performs it, in the same
+spirit as its ``_UNDOABLE`` neighbour and for the same reason — measured 2026-09-03, reverting
+``remove_by_search`` to its one-shot ancestor turns 10 tests red, and a gate C leaning on an
+UNMEASURED promise would be the ``complete_appointment`` failure a third time.
 
 `update_appointment_status` was neither, and that is the whole story of 2026-08-18: a single
 tool taking a free-text status spanned opposite risks, so cancelling was reachable through the
@@ -50,6 +66,14 @@ _UNDOABLE: "dict[str, str]" = {
     "add_outcome": "remove_by_search",
 }
 
+# tool → the argument it requires in order to commit, which a caller can only have learned from
+# the tool's own first answer. Being here is a CLAIM — that the write path is UNREACHABLE
+# without that argument — and it is performed by
+# ``test_every_asking_tool_really_refuses_to_commit_unasked`` below.
+_ASKS_ITSELF: "dict[str, str]" = {
+    "remove_by_search": "confirm_tx_id — the id of the row it proposed after reading the ledger",
+}
+
 _BUILDERS = {"scheduler": build_scheduler, "bookkeeper": build_bookkeeper,
              "coordinator": build_coordinator}
 
@@ -76,14 +100,17 @@ async def test_every_mutating_tool_is_gated_or_declared_undoable(vertical):
             continue
         if getattr(a, "destructiveHint", None) is True:
             continue                                    # gate B holds it
+        if name in _ASKS_ITSELF:
+            continue                                    # gate C: it runs, reads, and asks
         if name not in _UNDOABLE:
             ungoverned.append(name)
     assert not ungoverned, (
-        f"{vertical}: {ungoverned} mutate, carry no destructiveHint, and claim no undo. The "
-        f"confirmation gate decides by NAME and is opt-in, so these are reachable damage "
-        f"nothing holds. Either annotate destructiveHint=True or add the tool to _UNDOABLE "
-        f"saying how it is walked back — and add its case to "
-        f"test_every_undoable_tool_really_undoes, because an undo nobody performs is how "
+        f"{vertical}: {ungoverned} mutate, carry no destructiveHint, claim no undo and do not "
+        f"ask by themselves. The confirmation gate decides by NAME and is opt-in, so these are "
+        f"reachable damage nothing holds. Say which of the THREE they are: annotate "
+        f"destructiveHint=True; or add the tool to _UNDOABLE saying how it is walked back; or "
+        f"add it to _ASKS_ITSELF naming the argument it requires in order to commit — and add "
+        f"its case to the matching performed test, because a claim nobody performs is how "
         f"`complete_appointment` spent a day being 'reversible' in one direction only.")
 
 
@@ -101,6 +128,77 @@ async def test_the_undoable_list_has_no_stale_or_contradictory_entries():
     reads = sorted(n for n in _UNDOABLE
                    if getattr(live[n], "readOnlyHint", None) is not False)
     assert not reads, f"_UNDOABLE lists a read-only tool: {reads}"
+    # the third list, held to the same standard
+    unknown = sorted(set(_ASKS_ITSELF) - set(live))
+    assert not unknown, f"_ASKS_ITSELF names tools that do not exist: {unknown}"
+    gated = sorted(n for n in _ASKS_ITSELF
+                   if getattr(live[n], "destructiveHint", None) is True)
+    assert not gated, (
+        f"gate B AND gate C claimed for the same tool: {gated}. They cannot both hold — B "
+        f"stops the call by NAME before it runs, so the question C exists to ask is never "
+        f"asked. Pick one, and if it is C, drop the destructiveHint.")
+    reads = sorted(n for n in _ASKS_ITSELF
+                   if getattr(live[n], "readOnlyHint", None) is not False)
+    assert not reads, f"_ASKS_ITSELF lists a read-only tool: {reads}"
+
+
+async def test_exactly_these_tools_are_gated_by_name():
+    """The blast radius of 2026-09-03, pinned: ONE tool changed annotation, and these did not.
+
+    ``remove_by_search`` moved from gate B to gate C. Nothing else moved, and this is the
+    assertion that says so — a reviewer reading "they removed a destructiveHint" needs to see
+    the boundary of it, and a future edit that quietly widens the exemption is red here.
+
+    The three that remain are gate B's proper shape: each commits on its FIRST call, so none of
+    them has anything to base a grounded question on. Deferring gate B for them — executing and
+    only then deciding to hold — would run the cancellation and record the hold afterwards,
+    which is why the pre-emption is not a defect to be fixed generically."""
+    live = {}
+    for vertical in _BUILDERS:
+        live.update(await _annotations(vertical))
+    gated = sorted(n for n, a in live.items()
+                   if getattr(a, "destructiveHint", None) is True)
+    assert gated == ["cancel_appointment", "confirm_swap", "reschedule_appointment"]
+
+
+def test_every_asking_tool_really_refuses_to_commit_unasked():
+    """Each claim in ``_ASKS_ITSELF``, performed rather than believed.
+
+    The claim is REACHABILITY, so the test is an attempt: call the tool the way a model that
+    never got a proposal would, and show the row is still there. Then show the second call —
+    carrying the argument the tool itself named — does commit, because a gate that also blocked
+    the confirmed path would protect the ledger by breaking it.
+
+    A stale or guessed id must not degrade into "the most recent match": that fallback is what
+    would make the id decorative, and it is the difference between an argument that carries
+    consent and one that merely accompanies it."""
+    from cogno_praxis.bookkeeper.service import BookkeeperService
+    from cogno_praxis.bookkeeper.store import InMemoryBookkeeperStore
+
+    assert set(_ASKS_ITSELF) == {"remove_by_search"}, "a new entry needs its own arm here"
+
+    bk = BookkeeperService(InMemoryBookkeeperStore())
+    bk.add_outcome("internet janeiro", 100, "e1", tx_date="2026-01-10")
+    bk.add_outcome("internet marco", 149.90, "e1", tx_date="2026-03-10")
+
+    def _rows() -> int:
+        return int(bk.get_summary("e1", "EMPLOYEE")["outcome_count"])
+
+    # 1. unasked → nothing leaves the store, and the answer is the question
+    out = bk.remove_by_search("internet", "e1")
+    assert out.needs_confirmation is True and out.removed is None and _rows() == 2
+
+    # 2. a guessed id is not a shortcut into the write path
+    assert bk.remove_by_search("internet", "e1", confirm_tx_id="deadbeefcafe").removed is None
+    assert _rows() == 2
+
+    # 3. the argument the tool named DOES commit — exactly one row, the one proposed
+    proposed = out.proposal
+    assert proposed is not None
+    removed = bk.remove_by_search("internet", "e1",
+                                  confirm_tx_id=proposed.confirm_tx_id).removed
+    assert removed is not None and removed["tx_id"] == proposed.entry["tx_id"]
+    assert _rows() == 1
 
 
 # ── the claims, performed ─────────────────────────────────────────────────────────────

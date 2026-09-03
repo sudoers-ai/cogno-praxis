@@ -3,12 +3,24 @@
 A thin MCP wrapper over :class:`BookkeeperService`. The host connects via ``cogno-mcp``
 (``MCPDispatcher``), so the EGO sees these as ordinary tools. Tool ``annotations``
 (readOnlyHint / destructiveHint) flow through cogno-mcp into the EGO's read-only mask +
-confirmation gate — ``remove_by_search`` is destructive and the EGO holds it for confirmation.
+confirmation gate.
 
-``remove_by_search`` asks a SECOND question that the annotation cannot: which entry. The
-annotation is read per tool NAME before anything runs, so it can say a deletion is coming and
-never say what would be deleted; the tool itself reads the ledger and proposes the row it
-selected, committing only when the caller names that row back. See ``service.RemovalOutcome``.
+``remove_by_search`` is mutating and deliberately carries NO ``destructiveHint`` — the one tool
+here that does not, and the reason is the whole distinction between the EGO's second and third
+confirmation gates:
+
+    gate B  ``destructiveHint`` → ``requires_confirmation``, decided per tool NAME, BEFORE the
+            call runs. It can say a deletion is coming; it can never say WHICH row.
+    gate C  the call RAN, READ, and says about THIS call "I did not commit — ask first", with
+            the date, the description and the amount it selected, plus the siblings the same
+            accent-folded substring query also caught.
+
+Gate B PRE-EMPTS gate C by construction: a tool it holds never executes, so the grounded
+question is never asked. Under the old annotation this tool's gate-C proposal — shipped in #89 —
+could not fire at all. The annotation is not a protection this drops but a protection it moves
+to the channel that can carry the per-CALL fact; the write path here is unreachable without
+``confirm_tx_id``, an id the caller can only have learned from a proposal (``service`` pins that
+structurally, and ``tests/unit/test_tool_annotations.py`` measures it rather than believing it).
 
 ``build_server(service)`` is the only injection seam (the host builds a service over its own
 store adapter). The module-level ``mcp`` is an in-memory demo for standalone runs and tests.
@@ -23,12 +35,28 @@ from datetime import date
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
-from mcp.types import ToolAnnotations
+from mcp.types import TextContent, ToolAnnotations
 
 from cogno_praxis.bookkeeper.arithmetic import MathError, evaluate, format_number
 from cogno_praxis.bookkeeper.engine import BookkeeperError
 from cogno_praxis.bookkeeper.service import BookkeeperService, RemovalProposal
 from cogno_praxis.bookkeeper.store import BookkeeperStore, InMemoryBookkeeperStore
+
+
+# ── The gate-C channel: how this server tells cogno-anima "I ran, I read, I did not commit" ──
+#
+# These two keys are cogno-mcp's (``cogno_mcp.META_NEEDS_CONFIRMATION`` /
+# ``META_CONFIRM_ARGUMENTS``) and they are DUPLICATED here rather than imported: this vertical
+# has no runtime dependency on the bridge — a host may reach these tools in-process, or over a
+# transport that is not MCP — and a skill that could only speak gate C by importing its client
+# would have the dependency arrow backwards.
+#
+# A duplicated contract needs a pin in BOTH directions, which is what
+# ``tests/integration/test_bookkeeper_via_mcp.py`` does: it asserts these literals ARE the
+# constants cogno-mcp reads, so renaming a key on either side is red rather than silent. Silent
+# is the direction that matters here — a key nobody reads makes the proposal look like a commit.
+_META_NEEDS_CONFIRMATION = "cogno-mcp/needs_confirmation"
+_META_CONFIRM_ARGUMENTS = "cogno-mcp/confirm_arguments"
 
 
 def _brl(v: float) -> str:
@@ -119,8 +147,21 @@ def build_server(service: Optional[BookkeeperService] = None, *,
         return "\n".join(f"{t['date']} [{t['kind']}] {t['description']}: {_brl(t['amount'])}"
                          for t in hits)
 
-    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
-    def remove_by_search(query: str, identity_id: str = "", confirm_tx_id: str = "") -> str:
+    # Mutating, and NOT declared destructive — see the module docstring. ``destructiveHint``
+    # would make gate B hold this tool by NAME and it would never run, so the grounded question
+    # below could never be asked. The hold it gives up is not lost: the call itself raises gate
+    # C, per CALL, with what it read.
+    #
+    # No return annotation, deliberately, and it is a real constraint rather than a style
+    # choice: FastMCP builds ``outputSchema`` from the return type and then VALIDATES against
+    # it, so a ``-> str`` here makes returning a ``TextContent`` raise (measured on mcp 1.16.0:
+    # "Input should be a valid string"). Annotating the union instead would keep the schema, but
+    # it would advertise an MCP transport type as this tool's business payload and dump the
+    # envelope into ``structuredContent``. The proposal's PROSE is the point; the schema for it
+    # was ``{result: string}``, which said nothing. Same choice, same reason, as cogno-mcp's own
+    # reference server. ``call_tool`` therefore returns a bare block list for this ONE tool.
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
+    def remove_by_search(query: str, identity_id: str = "", confirm_tx_id: str = ""):
         """Remove YOUR most recent transaction matching the query. TWO STEPS — destructive.
 
         Called with the query alone it deletes NOTHING: it searches your entries and answers with
@@ -133,7 +174,16 @@ def build_server(service: Optional[BookkeeperService] = None, *,
             return f"Removed: {_entry_line(outcome.removed)}."
         if outcome.proposal is None:
             return f"No transaction of yours matches {query!r} — nothing removed."
-        return _removal_proposal_text(outcome.proposal, query)
+        # The prose stays the text; the machine-readable half rides in the block's ``_meta``
+        # beside it. ``confirm_arguments`` names the argument THIS tool needs in order to
+        # commit — the vertical's own business, never invented by the layer above.
+        return TextContent(
+            type="text",
+            text=_removal_proposal_text(outcome.proposal, query),
+            _meta={_META_NEEDS_CONFIRMATION: True,
+                   _META_CONFIRM_ARGUMENTS: {
+                       "confirm_tx_id": outcome.proposal.confirm_tx_id}},
+        )
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_usage() -> str:
