@@ -48,9 +48,16 @@ jobs:
         run: ruff check cogno_praxis tests examples
       - name: Type-check (mypy)
         run: mypy cogno_praxis
-      - name: Unit tests
-        run: pytest tests/unit -q --cov=cogno_praxis --cov-report=term-missing --cov-fail-under=90
-      - name: Integration tests (scheduler server over stdio via cogno-mcp; + Postgres store)
+      # ONE step, and it names no CHILD of `tests/`. Naming them by name is how a suite
+      # goes missing: `tests/test_closer_prompts.py` sat at the root of `tests/` until #90,
+      # merged and reviewed and collected by nothing, and the day someone adds a third
+      # child directory the same thing happens again with this workflow still green.
+      # `tests` is an ancestor of every test file, so nothing can fall out of it;
+      # `tests/unit/test_ci_runs_every_test_file.py` is the assertion that keeps it that way.
+      # The `|| [ $? -eq 5 ]` the integration step used to carry is gone with the split: it
+      # allowed pytest's "no tests collected" exit code, which a run over the whole tree
+      # cannot produce.
+      - name: Tests (unit + integration — scheduler/bookkeeper over stdio via cogno-mcp; + Postgres)
         env:
           COGNO_TEST_PG_DSN: postgresql://postgres:postgres@localhost:5432/cogno_praxis_test
-        run: pytest tests/integration -q || [ $? -eq 5 ]
+        run: pytest tests -q --cov=cogno_praxis --cov-report=term-missing --cov-fail-under=90
