@@ -71,8 +71,16 @@ async def test_remove_by_search_destructive():
     mcp = _server()
     await mcp.call_tool("add_outcome", {"description": "internet", "amount": "100",
                                         "identity_id": "emp-1"})
+    # step 1 PROPOSES and deletes nothing (the grounded question — see
+    # tests/unit/test_a_removal_asks_with_what_it_read.py)
+    proposed = _text(await mcp.call_tool("remove_by_search", {"query": "internet",
+                                                              "identity_id": "emp-1"}))
+    assert "NOT REMOVED" in proposed and "internet" in proposed
+    tx_id = proposed.split("confirm_tx_id='")[1].split("'")[0]
+    # step 2 commits the row that was proposed
     removed = _text(await mcp.call_tool("remove_by_search", {"query": "internet",
-                                                             "identity_id": "emp-1"}))
+                                                             "identity_id": "emp-1",
+                                                             "confirm_tx_id": tx_id}))
     assert "Removed" in removed and "internet" in removed
     # nothing left → the "nothing removed" branch
     again = _text(await mcp.call_tool("remove_by_search", {"query": "internet",

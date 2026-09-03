@@ -123,8 +123,14 @@ def test_server_result_markers_match_the_rules():
         summ = _text(await mcp.call_tool("get_summary", {"identity_id": "u1",
                                                          "role": "ADMIN"}))
         assert SUMMARY_HEAD_RE.match(summ)
-        rem = _text(await mcp.call_tool("remove_by_search", {"query": "Luz",
-                                                             "identity_id": "u1"}))
+        # A removal PROPOSES first (two calls), and the proposal must NOT wear the marker —
+        # it is exactly how the rules tell a real deletion from a claimed one.
+        proposed = _text(await mcp.call_tool("remove_by_search", {"query": "Luz",
+                                                                  "identity_id": "u1"}))
+        assert not proposed.startswith(REMOVED_PREFIX)
+        rem = _text(await mcp.call_tool(
+            "remove_by_search", {"query": "Luz", "identity_id": "u1",
+                                 "confirm_tx_id": proposed.split("confirm_tx_id='")[1].split("'")[0]}))
         assert rem.startswith(REMOVED_PREFIX)
     asyncio.run(run())
 

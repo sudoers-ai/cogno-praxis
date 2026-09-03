@@ -61,17 +61,23 @@ def test_search_is_role_scoped():
 
 
 def test_remove_by_search_removes_own_most_recent_only():
+    """Removal takes two calls now (see test_a_removal_asks_with_what_it_read.py); WHICH row it
+    picks, and whose rows it may pick from, are unchanged and still measured here."""
     svc = _svc()
     svc.add_outcome("internet março", 100, "emp-1")
     svc.add_outcome("internet abril", 120, "emp-1")
     svc.add_outcome("internet", 999, "emp-2")   # a different identity's record (isolation check)
 
-    removed = svc.remove_by_search("internet", "emp-1")
-    assert removed is not None and removed["amount"] == 120.0   # most recent of emp-1
+    proposal = svc.remove_by_search("internet", "emp-1").proposal
+    assert proposal is not None and proposal.entry["amount"] == 120.0   # most recent of emp-1
+    removed = svc.remove_by_search("internet", "emp-1",
+                                   confirm_tx_id=proposal.confirm_tx_id).removed
+    assert removed is not None and removed["amount"] == 120.0
     # emp-1 still has the older one; emp-2's is untouched (no cross-identity deletion)
     assert svc.get_summary("emp-1", "EMPLOYEE")["outcome_count"] == 1
     assert svc.get_summary("emp-2", "EMPLOYEE")["outcome_count"] == 1
-    assert svc.remove_by_search("nao-existe", "emp-1") is None
+    nada = svc.remove_by_search("nao-existe", "emp-1")
+    assert nada.removed is None and nada.needs_confirmation is False
 
 
 def test_usage_and_help_notes_are_scoped_messages():

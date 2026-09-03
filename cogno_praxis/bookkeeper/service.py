@@ -8,12 +8,17 @@ violation; the server maps that to a recoverable tool error (fed back to the mod
 only the transactions they recorded; an oversight role (SUPERVISOR/ADMIN/OWNER) sees the whole
 scope. Recording is always attributed to the caller's ``identity_id``; ``remove_by_search`` only
 removes the caller's OWN entries (a guardrail — no cross-identity deletion).
+
+**Removal proposes before it commits** (:class:`RemovalOutcome`): ``remove_by_search`` READS the
+ledger first, and a call that does not name a row writes nothing — it answers with the entry it
+would remove. See the class docstrings below for why that read is the whole point.
 """
 
 from __future__ import annotations
 
 import itertools
 import uuid
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Callable, Optional
 
@@ -46,6 +51,75 @@ def _now() -> str:
     """A strictly-increasing creation stamp (wall clock + a process ordinal tiebreaker) — sorts
     chronologically as a plain string, so "most recent" is deterministic even within a tx_date."""
     return f"{datetime.now(timezone.utc).isoformat()}-{next(_ORDINAL):09d}"
+
+
+@dataclass
+class RemovalProposal:
+    """What a removal READ and deliberately did NOT delete.
+
+    The entry the query selected, plus every other entry it also matched. Both halves are facts
+    that only a call which already RAN can state, and that is the whole reason this type exists:
+    the tool NAME is the same for every removal, so a rule written per name — "``remove_by_search``
+    is destructive, hold it" — can say *that* something will be deleted and never *what*. Which
+    row an accent-folded substring query selects, of what value, of what date, and whether it
+    selected three siblings alongside it, is knowable only after the read.
+
+    ``entry`` is the row this call would remove (the caller's most recent match, the same one the
+    one-shot version deleted outright). ``others`` are the rest, in the same order — an ambiguity
+    the query did not resolve, and which nobody downstream can see.
+    """
+
+    entry: dict
+    others: list[dict] = field(default_factory=list)
+
+    @property
+    def confirm_tx_id(self) -> str:
+        """The token that commits THIS row, and only it.
+
+        A row id rather than a bare yes/no on purpose: between the proposal and the confirmation
+        the caller may record a NEWER matching entry, and "the most recent match" would then be a
+        different row than the one the user was shown. Pinning the id means what is deleted is
+        what was proposed, or nothing at all.
+        """
+        return str(self.entry.get("tx_id", ""))
+
+
+@dataclass
+class RemovalOutcome:
+    """The result of one :meth:`BookkeeperService.remove_by_search` call — three states, one true.
+
+    ``removed``    the caller named a row (``confirm_tx_id``) and it is gone.
+    ``proposal``   a row matched and was NOT deleted; the call is asking about THAT row.
+    neither one    nothing matched — there is nothing to ask about (unchanged behaviour).
+
+    :attr:`needs_confirmation` is the vertical half of the EGO's THIRD confirmation gate: the one
+    where the skill itself, having read, says "I did not commit — ask first", and hands over a
+    proposal grounded in real data instead of a generic "are you sure?".
+    """
+
+    removed: "Optional[dict]" = None
+    proposal: "Optional[RemovalProposal]" = None
+
+    @property
+    def needs_confirmation(self) -> bool:
+        """The call RAN, read the ledger, and decided it must not commit without asking.
+
+        Maps onto ``cogno_anima.types.ToolResult.needs_confirmation`` (and, for an in-process
+        skill, ``cogno_cortex.types.SkillResult.needs_confirmation``): the field an adapter sets
+        so the EGO records the call as pending and stops to propose.
+
+        ``True`` is a PROMISE that nothing was committed, and here that promise is structural
+        rather than remembered — the proposal branch is the branch that never calls
+        ``store.remove``, so ``removed`` is ``None`` whenever this is ``True``. A test pins the
+        pair, because the EGO's contract (``ok`` AND ``side_effect`` for a write) is only worth
+        anything if the producer keeps its end.
+        """
+        return self.proposal is not None
+
+    @property
+    def committed(self) -> bool:
+        """A row was actually deleted by this call."""
+        return self.removed is not None
 
 
 class BookkeeperService:
@@ -109,15 +183,40 @@ class BookkeeperService:
         hits = [t for t in rows if matches_query(f"{t.description} {t.client_name}", query)]
         return [self._row(t) for t in hits]
 
-    # ── removing (destructive — own entries only) ──────────────────────
-    def remove_by_search(self, query: str, identity_id: str) -> Optional[dict]:
-        """Remove the caller's most recent transaction matching ``query`` (None if no match)."""
+    # ── removing (destructive — own entries only, and it PROPOSES first) ───
+    def remove_by_search(self, query: str, identity_id: str, *,
+                         confirm_tx_id: str = "") -> RemovalOutcome:
+        """Find the caller's most recent transaction matching ``query`` — and ask before deleting.
+
+        TWO STEPS, and the first one writes nothing:
+
+        1. ``remove_by_search(query, identity_id)`` reads the ledger and returns a
+           :class:`RemovalProposal` — the entry it would remove and the siblings the same query
+           also matched. The store is untouched.
+        2. ``remove_by_search(query, identity_id, confirm_tx_id=<the entry's id>)`` deletes that
+           exact row.
+
+        No match at all → an empty :class:`RemovalOutcome`: nothing was found, so there is nothing
+        to ask about and no question is raised.
+
+        The confirmation rides an argument this method OWNS, because what a removal needs in order
+        to commit is this vertical's business — nothing above it invents the name. A
+        ``confirm_tx_id`` that is not among the caller's current matches (already deleted, someone
+        else's, or stale) does NOT fall back to "the most recent one": it proposes again over what
+        is actually there. Guessing which row a stale id meant is exactly the mistake the two
+        steps exist to prevent.
+        """
         rows = self._store.list(identity_id=identity_id)   # own only, most-recent first
-        for t in rows:
-            if matches_query(f"{t.description} {t.client_name}", query):
+        hits = [t for t in rows if matches_query(f"{t.description} {t.client_name}", query)]
+        if not hits:
+            return RemovalOutcome()
+        pinned = (confirm_tx_id or "").strip()
+        for t in hits:
+            if pinned and t.tx_id == pinned:
                 self._store.remove(t.tx_id)
-                return self._row(t)
-        return None
+                return RemovalOutcome(removed=self._row(t))
+        return RemovalOutcome(proposal=RemovalProposal(
+            entry=self._row(hits[0]), others=[self._row(t) for t in hits[1:]]))
 
     # ── usage / help ───────────────────────────────────────────────────
     @staticmethod
