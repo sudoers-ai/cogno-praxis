@@ -40,7 +40,10 @@ async def test_bookkeeper_loop_over_mcp():
         # policy flows from the server's annotations through cogno-mcp
         assert disp.is_mutating("get_summary") is False
         assert disp.is_mutating("add_income") is True
-        assert disp.requires_confirmation("remove_by_search") is True   # destructiveHint
+        # remove_by_search is mutating and NOT gate-B-held: it raises gate C instead, per CALL,
+        # after reading. See tests/integration/test_o_portao_C_dispara_sobre_a_cadeia.py.
+        assert disp.is_mutating("remove_by_search") is True
+        assert disp.requires_confirmation("remove_by_search") is False
         assert disp.requires_confirmation("add_income") is False        # prompt-driven confirm
 
         # record → ToolResult(ok=True, side_effect=True)
@@ -67,9 +70,41 @@ async def test_bookkeeper_loop_over_mcp():
                                                       "confirm_tx_id": tx_id})
         assert rem.ok and "Removed" in rem.output
 
-        # THE GAP, measured rather than assumed: cogno-mcp has no `needs_confirmation` anywhere
-        # (`grep -rn needs_confirmation` in that repo: zero hits), so the EGO's third gate is
-        # unreachable over this bridge — the proposal arrives as ordinary tool text and the
-        # `ToolResult` flag stays False. The vertical's two-step is what protects the ledger
-        # today; the flag is the half a bridge would have to carry.
-        assert proposed.needs_confirmation is False
+        # THE GAP, CLOSED on 2026-09-03 — and it took both halves, in two repositories.
+        #
+        # It was written here as an assertion of absence: cogno-mcp carried no
+        # `needs_confirmation` at all (`grep -rn` in that repo: zero hits), so the EGO's third
+        # gate was unreachable over this bridge and the proposal arrived as ordinary tool text.
+        # cogno-mcp#12 landed the transport (a content block's `_meta`, the one placement the
+        # Python SDK's server side can actually fill), and this vertical now SETS that key —
+        # which is the half a bridge cannot supply, because only the tool knows it did not
+        # commit.
+        #
+        # The flag had one more precondition that was invisible from here: the annotation.
+        # `destructiveHint` made gate B hold the tool by NAME, so it never ran and the question
+        # was never asked. Dropping it is what lets this line be True at all.
+        assert proposed.needs_confirmation is True
+        # and the tool NAMES what it needs in order to commit — the host holds the consent,
+        # never the argument name
+        assert proposed.confirm_arguments == {"confirm_tx_id": tx_id}
+        # a PROPOSAL is not a write: `side_effect` is per CALL, and stamping it here is how a
+        # turn comes to declare a commit that never happened
+        assert proposed.side_effect is False
+
+
+async def test_the_meta_keys_are_the_ones_cogno_mcp_actually_reads():
+    """Um contrato DUPLICADO precisa de um pino nos dois sentidos.
+
+    `server.py` escreve estas chaves à mão em vez de as importar — esta vertical não depende da
+    ponte em runtime, e uma skill que só soubesse falar o portão C importando o cliente dele
+    teria a seta da dependência ao contrário. O preço é que uma renomeação de qualquer dos lados
+    passaria em silêncio, e o silêncio é a direcção que interessa: uma chave que ninguém lê faz
+    a proposta parecer um commit.
+    """
+    from cogno_mcp import META_CONFIRM_ARGUMENTS, META_NEEDS_CONFIRMATION
+
+    from cogno_praxis.bookkeeper.server import (_META_CONFIRM_ARGUMENTS,
+                                                _META_NEEDS_CONFIRMATION)
+
+    assert _META_NEEDS_CONFIRMATION == META_NEEDS_CONFIRMATION
+    assert _META_CONFIRM_ARGUMENTS == META_CONFIRM_ARGUMENTS

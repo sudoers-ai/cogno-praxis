@@ -4,6 +4,45 @@
 
 ### Changed
 
+- **O portão C consegue perguntar: `remove_by_search` larga o `destructiveHint`.**
+  O produtor do portão C entregue no #89 estava **entregue, servido, e não dispararia**. A causa
+  não estava nele, estava numa palavra da anotação: o **portão B pre-empte o portão C por
+  construção** — `cogno_anima/stages/ego.py` retém e faz `continue` *antes* de
+  `dispatcher.execute`, portanto uma tool que ele segura **nunca corre**, e a pergunta
+  fundamentada nunca chega a existir. Medido: com a anotação de ontem o traço recebia
+  `"[PENDING CONFIRMATION] … is destructive and was NOT executed"` — sem data, sem valor, sem as
+  irmãs. Nenhuma dessas três coisas o *nome* de uma ferramenta pode saber.
+
+  **Isto não tira uma protecção, tira uma protecção REDUNDANTE**, e a redundância foi medida e não
+  argumentada. O caminho de escrita é **inalcançável** sem `confirm_tx_id`: o `store.remove` vive
+  no único ramo que exige o id, e um id que não esteja entre as linhas do próprio chamador volta a
+  propor em vez de cair para "a mais recente". Quebrar essa forma (regressão ao apagar de um passo,
+  pré-#89) põe **10 testes a vermelho** — a promessa é estrutural e é *medida*, não recordada.
+  E o mesmo turno não se pode auto-confirmar: o id só existe depois da primeira resposta, portanto
+  não cabe no mesmo passo, e mal a proposta chega o portão C levanta-se e o **laço pára**.
+
+  **As duas metades tinham de aterrar juntas.** Tirar a anotação sem emitir o `_meta` deixa a
+  proposta chegar ao EGO como `ok=True, side_effect=True` — o dispatcher calcula
+  `side_effect = mutating and not asks` — e o turno passa a **declarar uma escrita que não houve**
+  sobre uma chamada cujo próprio texto diz *"NOT REMOVED — nothing was deleted"*. Medido, e é a
+  razão de o `_meta` não ser um extra.
+
+  **O que muda no fio:** a proposta volta como um `TextContent` cujo `_meta` leva
+  `cogno-mcp/needs_confirmation: true` e `cogno-mcp/confirm_arguments: {"confirm_tx_id": …}` — a
+  ponte que o cogno-mcp#12 abriu ontem. O texto continua a ser a **prosa** fundamentada; o
+  `outputSchema` desaparece para esta tool (o FastMCP valida o retorno contra ele, e um `-> str`
+  faz devolver um `TextContent` rebentar — medido no mcp 1.16.0), o que era `{result: string}` e
+  não dizia nada.
+
+  **A varredura `test_tool_annotations.py` passou de binária a ternária:** uma tool mutante é
+  *gated* (B), *undoable*, ou **ASKS BY ITSELF** (C) — e, como as vizinhas, a nova lista é
+  **executada** e não acreditada. O raio de acção fica pinado num teste próprio: continuam com
+  `destructiveHint` exactamente `cancel_appointment`, `confirm_swap` e `reschedule_appointment`,
+  que **comitam à primeira chamada** e portanto não têm sobre o que fundamentar pergunta nenhuma.
+
+  Fecha a lacuna que `test_bookkeeper_via_mcp.py` afirmava no verde (`needs_confirmation is False`),
+  agora invertida.
+
 - **`remove_by_search` PROPÕE antes de comitar — e a proposta cita a linha que ela leu.**
   O EGO tem três portões de confirmação e o terceiro (`cogno_anima/stages/ego.py`, "Fonte C" —
   *a skill correu, leu, e pergunta sobre ESTA chamada*) nunca tinha tido um produtor. Esta é a

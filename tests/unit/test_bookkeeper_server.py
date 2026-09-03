@@ -15,8 +15,13 @@ def _server():
 
 
 def _text(call_result):
-    # FastMCP call_tool returns (content_blocks, structured)
-    content = call_result[0]
+    # FastMCP returns ``(content_blocks, structured)`` for a tool that HAS an outputSchema and a
+    # bare block list for one that does not. ``remove_by_search`` is the second kind on purpose —
+    # it returns a ``TextContent`` so its proposal can carry the gate-C ``_meta``, and FastMCP
+    # builds no schema without a return annotation. Indexing ``[0]`` blindly would take the first
+    # BLOCK, iterate a pydantic model into (field, value) pairs, match no ``type == "text"`` and
+    # join nothing — an empty string where the assertion wanted prose.
+    content = call_result[0] if isinstance(call_result, tuple) else call_result
     return "\n".join(b.text for b in content if getattr(b, "type", None) == "text")
 
 
@@ -27,12 +32,18 @@ async def test_tools_and_annotations():
     # quotes — reajuste/markup/rateio). Read-only, so no mask and no confirmation gate.
     assert set(ann) == {"add_income", "add_outcome", "get_summary", "list_clients",
                         "search", "remove_by_search", "get_usage", "help", "math"}
-    # reads are read-only; writes are not; remove is destructive (EGO gate B holds it)
+    # reads are read-only; writes are not
     for ro in ("get_summary", "list_clients", "search", "get_usage", "help"):
         assert ann[ro].readOnlyHint is True
     for rw in ("add_income", "add_outcome", "remove_by_search"):
         assert ann[rw].readOnlyHint is False
-    assert ann["remove_by_search"].destructiveHint is True
+    # NOT destructiveHint, and this line is the one a reviewer will stop on. It is not a
+    # protection dropped, it is a protection MOVED: gate B holds by NAME and BEFORE the call, so
+    # it pre-empts the grounded question gate C exists to ask — measured in
+    # tests/integration/test_o_portao_C_dispara_sobre_a_cadeia.py, where the byte-identical twin
+    # under the old annotation never runs at all. The write path stays unreachable without
+    # ``confirm_tx_id``; test_tool_annotations.py performs that rather than asserting it.
+    assert ann["remove_by_search"].destructiveHint is None
 
 
 async def test_add_income_outcome_and_summary_flow():

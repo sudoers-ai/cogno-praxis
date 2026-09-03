@@ -81,7 +81,13 @@ Each tool's `annotations` drive the EGO via cogno-mcp:
 - `readOnlyHint=True` (reads) → never masked, never gated.
 - writes (`book_appointment`) → `is_mutating` true → masked under `ego_readonly`.
 - `destructiveHint=True` (`cancel_appointment`) → `requires_confirmation` → the EGO
-  holds the call until the host confirms.
+  holds the call until the host confirms (gate B — by NAME, **before** it runs).
+- no `destructiveHint`, but the reply carries `_meta["cogno-mcp/needs_confirmation"]`
+  (`remove_by_search`) → gate C: the call RAN, READ, and asks about THIS row. The two are
+  exclusive — B pre-empts C, since a tool it holds never executes — so a tool whose danger is
+  per-call declares the second and not the first. `_meta["cogno-mcp/confirm_arguments"]` names
+  what the host must add to the call once the user agrees; the host holds the consent, the tool
+  names the argument.
 
 ## 6. Adding a vertical
 
