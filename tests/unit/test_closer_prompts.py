@@ -2,7 +2,12 @@
 
 The host loads exactly `{system,scope,limits,voice}.txt` from the package's prompts dir and a
 MISSING slot does not raise: it loads as an empty string and the persona quietly runs without
-its judge criteria or its voice. So the presence and the shape are worth asserting."""
+its judge criteria or its voice. So the presence and the shape are worth asserting.
+
+Lives in `tests/unit/` because that is what CI RUNS: `.github/workflows/ci.yml` invokes
+`pytest tests/unit` and `pytest tests/integration` by name, never a bare `pytest`. At the
+`tests/` root this file was collected only by a local run — 18 tests about the persona's whole
+contract, every one of them dark on every PR. A guard nobody runs is not a guard."""
 
 from __future__ import annotations
 
@@ -127,6 +132,34 @@ def test_the_voice_slot_carries_the_arc_because_short_answers_never_reach_the_ex
     # the specific turn that failed live
     assert "claro" in voice.lower()
     assert "nunca como pergunta nova" in voice
+
+
+def test_the_voice_defers_to_the_configured_checklist_without_losing_its_questions():
+    """The next diagnosis question has TWO sources now, and the order between them matters.
+
+    The host injects the persona's configured intake list into the VOICE slot only — a block
+    headed "Onboarding — ainda falta descobrir" with the items still pending
+    (`cogno_host/persona.py`: the append is gated on `slot == "voice"`; the EGO system slot is
+    deliberately denied it). So the voice slot must DEFER to that block when it arrives.
+
+    But it does not arrive on every turn: it is skipped on a proactive opening and for
+    SUPERVISOR/ADMIN roles, it stops after the intake ride budget, and a tenant whose persona
+    row carries no items gets nothing — the turn path reads the DB row and never falls back to
+    the spec default. On each of those turns the voice slot is the ONLY thing the voicer has,
+    which is the same reason the arc lives here at all (see the test above). So the written
+    chain STAYS, as the fallback, and both halves are asserted: a pointer with no fallback
+    would be a prompt that names a mechanism the turn may not have.
+    """
+    voice = (PROMPTS / "voice.txt").read_text()
+    flat = " ".join(voice.split())
+    # the pointer, in the words the injected block itself uses
+    assert "ainda falta descobrir" in flat
+    assert "checklist de primeiro" in flat
+    # ...and the precedence between the two sources, stated
+    assert "manda mais que a ordem abaixo" in flat
+    # ...and the fallback the test above pins, reachable WITHOUT the block
+    assert "SEM esse bloco" in flat
+    assert flat.index("SEM esse bloco") < flat.index("canais de entrada")
 
 
 def test_the_voice_knows_how_to_open_a_conversation_it_started():
