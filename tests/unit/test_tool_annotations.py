@@ -160,8 +160,16 @@ def test_every_undoable_tool_really_undoes():
     bk = BookkeeperService(InMemoryBookkeeperStore())
     bk.add_income("consulta Ana", 150.0, identity_id="e1")
     bk.add_outcome("material Ana", 20.0, identity_id="e1")
-    assert bk.remove_by_search("consulta Ana", identity_id="e1") is not None
-    assert bk.remove_by_search("material Ana", identity_id="e1") is not None
+    # The undo is TWO calls (propose → confirm) and the claim is that the row LEAVES. Asserting
+    # the first call is "not None" would now pass over a removal that never happened — the
+    # proposal is also not None.
+    for q in ("consulta Ana", "material Ana"):
+        proposal = bk.remove_by_search(q, identity_id="e1").proposal
+        assert proposal is not None, q
+        assert bk.remove_by_search(q, identity_id="e1",
+                                   confirm_tx_id=proposal.confirm_tx_id).removed is not None, q
+    summary = bk.get_summary("e1", "ADMIN")
+    assert summary["income_count"] == 0 and summary["outcome_count"] == 0
 
 
 @pytest.mark.parametrize("days_back", [0, 1, 7])

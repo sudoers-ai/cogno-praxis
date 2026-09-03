@@ -5,6 +5,11 @@ A thin MCP wrapper over :class:`BookkeeperService`. The host connects via ``cogn
 (readOnlyHint / destructiveHint) flow through cogno-mcp into the EGO's read-only mask +
 confirmation gate — ``remove_by_search`` is destructive and the EGO holds it for confirmation.
 
+``remove_by_search`` asks a SECOND question that the annotation cannot: which entry. The
+annotation is read per tool NAME before anything runs, so it can say a deletion is coming and
+never say what would be deleted; the tool itself reads the ledger and proposes the row it
+selected, committing only when the caller names that row back. See ``service.RemovalOutcome``.
+
 ``build_server(service)`` is the only injection seam (the host builds a service over its own
 store adapter). The module-level ``mcp`` is an in-memory demo for standalone runs and tests.
 
@@ -22,12 +27,38 @@ from mcp.types import ToolAnnotations
 
 from cogno_praxis.bookkeeper.arithmetic import MathError, evaluate, format_number
 from cogno_praxis.bookkeeper.engine import BookkeeperError
-from cogno_praxis.bookkeeper.service import BookkeeperService
+from cogno_praxis.bookkeeper.service import BookkeeperService, RemovalProposal
 from cogno_praxis.bookkeeper.store import BookkeeperStore, InMemoryBookkeeperStore
 
 
 def _brl(v: float) -> str:
     return f"R$ {v:,.2f}"
+
+
+def _entry_line(t: dict) -> str:
+    return f"{t['date']} [{t['kind']}] {t['description']} = {_brl(t['amount'])}"
+
+
+def _removal_proposal_text(p: RemovalProposal, query: str) -> str:
+    """Render a proposal that QUOTES the ledger it just read.
+
+    The grounding of this text is the point, not a nicety: a question phrased per tool name can
+    only say "this deletes something", while this one names the date, the description and the
+    amount that the query actually selected — and says how many siblings it also matched, which
+    is the ambiguity a bare "confirma?" hides. It deliberately does NOT start with the
+    ``Removed: `` marker the grounding backstop reads (``bookkeeper/grounding.py``): nothing was
+    removed, and the marker is how the rest of the system knows the difference.
+    """
+    lines = [f"NOT REMOVED — nothing was deleted. Searching {query!r} in YOUR entries selected:",
+             f"  {_entry_line(p.entry)}"]
+    if p.others:
+        lines.append(f"{len(p.others)} other entry(ies) also match {query!r} and were left alone:")
+        lines.extend(f"  {_entry_line(o)}" for o in p.others)
+    lines.append(
+        "Tell the user EXACTLY which entry (date, description, amount) you are about to remove "
+        "and get their agreement. Only then call remove_by_search again with the SAME query and "
+        f"confirm_tx_id={p.confirm_tx_id!r} to delete that one entry.")
+    return "\n".join(lines)
 
 
 def build_server(service: Optional[BookkeeperService] = None, *,
@@ -89,13 +120,20 @@ def build_server(service: Optional[BookkeeperService] = None, *,
                          for t in hits)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
-    def remove_by_search(query: str, identity_id: str = "") -> str:
-        """Remove YOUR most recent transaction matching the query (destructive — confirm first)."""
-        removed = svc.remove_by_search(query, identity_id)
-        if removed is None:
+    def remove_by_search(query: str, identity_id: str = "", confirm_tx_id: str = "") -> str:
+        """Remove YOUR most recent transaction matching the query. TWO STEPS — destructive.
+
+        Called with the query alone it deletes NOTHING: it searches your entries and answers with
+        the exact entry it would remove (date, description, amount) plus that entry's id, and
+        lists any other entry the same query also matched. Relay that entry to the user, get
+        their agreement, then call this again with confirm_tx_id=<that id> to delete it.
+        """
+        outcome = svc.remove_by_search(query, identity_id, confirm_tx_id=confirm_tx_id)
+        if outcome.removed is not None:
+            return f"Removed: {_entry_line(outcome.removed)}."
+        if outcome.proposal is None:
             return f"No transaction of yours matches {query!r} — nothing removed."
-        return (f"Removed: {removed['date']} [{removed['kind']}] {removed['description']} = "
-                f"{_brl(removed['amount'])}.")
+        return _removal_proposal_text(outcome.proposal, query)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_usage() -> str:

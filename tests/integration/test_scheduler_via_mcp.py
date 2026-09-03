@@ -7,6 +7,7 @@ annotations, and execute (book → list → cancel) mapped to ToolResult. Requir
 mcp SDK + cogno-mcp (auto-skips otherwise); no network.
 """
 
+import os
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -18,7 +19,14 @@ pytest.importorskip("cogno_mcp", reason="cogno-mcp not installed")
 
 from cogno_mcp import MCPDispatcher, stdio_session  # noqa: E402
 
-SERVER = str(Path(__file__).resolve().parents[2] / "cogno_praxis" / "scheduler" / "server.py")
+_ROOT = Path(__file__).resolve().parents[2]
+SERVER = str(_ROOT / "cogno_praxis" / "scheduler" / "server.py")
+# Point the spawned subprocess at THIS checkout so it imports our scheduler even when an
+# editable install of cogno_praxis would otherwise shadow it (worktree/CI parity). Without it
+# this file measures whichever checkout happens to be installed — a green that belongs to
+# somebody else's tree. Same block, same reason, as test_coordinator_via_mcp.py.
+_ENV = {**os.environ, "PYTHONPATH": os.pathsep.join(
+    [str(_ROOT), os.environ.get("PYTHONPATH", "")]).rstrip(os.pathsep)}
 
 
 def _future_weekday(days: int = 30) -> str:
@@ -37,7 +45,7 @@ FUTURE = _future_weekday()
 
 @pytest.mark.asyncio
 async def test_scheduler_loop_over_mcp():
-    async with stdio_session(sys.executable, args=[SERVER]) as session:
+    async with stdio_session(sys.executable, args=[SERVER], env=_ENV) as session:
         disp = await MCPDispatcher.create(session)
 
         # the EGO sees the scheduling tools as ordinary tools

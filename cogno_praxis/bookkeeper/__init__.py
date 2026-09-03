@@ -7,7 +7,11 @@ See ``docs/BOOKKEEPER.md``.
 
 from cogno_praxis.bookkeeper.durability import is_perishable_edge
 from cogno_praxis.bookkeeper.engine import INCOME, OUTCOME, BookkeeperError
-from cogno_praxis.bookkeeper.service import BookkeeperService
+from cogno_praxis.bookkeeper.service import (
+    BookkeeperService,
+    RemovalOutcome,
+    RemovalProposal,
+)
 from cogno_praxis.bookkeeper.store import (
     BookkeeperStore,
     Client,
@@ -18,5 +22,6 @@ from cogno_praxis.bookkeeper.store import (
 
 __all__ = [
     "BookkeeperError", "BookkeeperService", "BookkeeperStore", "InMemoryBookkeeperStore",
-    "Client", "Transaction", "is_oversight", "is_perishable_edge", "INCOME", "OUTCOME",
+    "Client", "RemovalOutcome", "RemovalProposal", "Transaction", "is_oversight",
+    "is_perishable_edge", "INCOME", "OUTCOME",
 ]

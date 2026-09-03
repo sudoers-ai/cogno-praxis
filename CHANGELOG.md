@@ -4,6 +4,41 @@
 
 ### Changed
 
+- **`remove_by_search` PROPÕE antes de comitar — e a proposta cita a linha que ela leu.**
+  O EGO tem três portões de confirmação e o terceiro (`cogno_anima/stages/ego.py`, "Fonte C" —
+  *a skill correu, leu, e pergunta sobre ESTA chamada*) nunca tinha tido um produtor. Esta é a
+  primeira, e a escolha não é arbitrária: `remove_by_search` **já lia antes de escrever**, e uma
+  ferramenta que só escreve não tem sobre o que basear a pergunta — nasceria a adivinhar, que é
+  exactamente o que o portão B faz.
+
+  **O que o portão B não pode saber:** ele decide por NOME, antes de correr. Diz *"vai apagar
+  alguma coisa"* e nunca *"vai apagar ESTA"*. Qual linha uma busca de substring dobrada em acento
+  (`matches_query`) apanhou, de que valor e de que data — só depois de ler.
+
+  **Antes:** `remove_by_search(query)` apagava a mais recente que casasse, à primeira, e devolvia
+  `Removed: …`. **Agora:** a primeira chamada não apaga nada — devolve a linha que apagaria (data,
+  descrição, valor) e as irmãs que a mesma busca apanhou; a segunda, com `confirm_tx_id=<id>`,
+  apaga essa linha. Sem correspondência nenhuma → a frase de hoje, inalterada, e pergunta nenhuma.
+
+  Dois defeitos que isto fecha, e nenhum deles é de fraseado: (1) `"internet"` casa a conta de
+  Janeiro, a de Fevereiro e a de Março — a versão de um passo apagava a mais recente **em
+  silêncio** e ninguém ficava a saber que existiam outras duas; (2) a confirmação é um **id**, não
+  um sim/não, portanto um lançamento novo que entre entre a proposta e o "pode apagar" já não
+  desloca o alvo. Um `confirm_tx_id` que já não esteja entre as linhas do chamador não recai em
+  "a mais recente": propõe outra vez sobre o que HÁ.
+
+  **O que ficou por fechar, e onde:** o campo `ToolResult.needs_confirmation` não é transportado
+  pelo `cogno-mcp` (`grep -rn needs_confirmation` nesse repositório: zero ocorrências), portanto
+  sobre a ponte MCP a proposta chega ao EGO como texto de ferramenta e o portão C do núcleo não
+  chega a levantar-se. É o texto que protege o livro hoje; o campo é a metade que uma ponte teria
+  de carregar.
+
+- **Os testes MCP-sobre-stdio do bookkeeper e do scheduler passaram a medir ESTA árvore.** Ambos
+  lançavam o servidor por caminho, e o subprocesso importava `cogno_praxis` do *editable install*
+  — noutra worktree, um verde que pertence ao checkout de outra pessoa. O
+  `test_coordinator_via_mcp.py` já tinha o `PYTHONPATH` e a razão escrita; os outros dois não.
+  Encontrado por este PR ficar vermelho no sítio errado.
+
 - **A base descartável passou a ser o DESTINO por omissão das suítes que fazem `DROP TABLE`.**
   Dono, 2026-08-26: *"Já temos um test só para os testes de integração, isso deveria ser
   padrão."* A guarda de 2026-08-04 transformou o engano numa recusa, mas continuava a deixar a
