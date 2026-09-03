@@ -1012,3 +1012,63 @@ def test_the_sweep_undoes_the_undo():
     # learns to accept a COMPLETED row, either fix ends here. Asserting the intermediate
     # CONFIRMED instead would pin one implementation and reject the other.
     assert svc.store.get("a1").status == CANCELED, "the no-show never got recorded"
+
+
+# ── quem marcou ──────────────────────────────────────────────────────────────────────────
+#
+# A tabela irmã já sabia: `reminders` carrega `persona_id` e `appointments` não carregava, logo
+# a pergunta "quem agendou?" tinha resposta sobre o lembrete e não sobre o agendamento que o
+# gerou. É a pergunta do dono, palavra por palavra: *"quando eu ativar reminder em alguma
+# persona, eu saber quem agendou"*.
+
+def test_a_marcacao_guarda_a_persona_que_a_fez():
+    svc = _svc()
+    appt = svc.book("dr_silva", "2026-07-01", "09:00", "Ana", persona_id="SECRETARY")
+    assert appt.persona_id == "SECRETARY"
+    assert svc.store.get(appt.appointment_id).persona_id == "SECRETARY"
+
+
+def test_sem_persona_fica_VAZIO_e_nao_um_palpite():
+    """Vazio significa NÃO SE SABE. A tentação é pôr aqui a persona base do tenant, e seria
+    responder à pergunta do dono com um valor que ninguém mediu: com várias personas a servir
+    um tenant, "a base" é um palpite e só o turno sabe a verdade. Quem preenche é o host, com a
+    persona ACTIVA; o recurso à base é decisão dele, onde o turno não pode dizer."""
+    svc = _svc()
+    assert svc.book("dr_silva", "2026-07-01", "10:00", "Ana").persona_id == ""
+
+
+def test_a_persona_NAO_e_escolhida_pelo_modelo():
+    """Parâmetro só-por-nome, como o `guest_id`/`host_name`: quem o passa é o host. Se fosse
+    posicional, uma chamada do modelo com um argumento a mais escorregava para cá."""
+    import inspect
+    p = inspect.signature(SchedulerService.book).parameters["persona_id"]
+    assert p.kind is inspect.Parameter.KEYWORD_ONLY and p.default == ""
+
+
+def test_a_linha_do_postgres_le_a_persona_na_posicao_certa():
+    """`_appt` mapeia por ÍNDICE. Acrescentar uma coluna ao `_APPT_COLS` sem a acrescentar aqui,
+    no mesmo lugar, lê-la-ia para o campo seguinte — e o guarda `len(row) >` faz uma linha curta
+    degradar (uma leitura contra uma base ainda por migrar), não torna a ORDEM segura."""
+    from cogno_praxis.scheduler.stores.postgres import _APPT_COLS, _appt
+
+    colunas = [c.strip() for c in _APPT_COLS.split(",")]
+    assert colunas[-1] == "persona_id", "a coluna nova tem de ser a última, como o mapeador lê"
+
+    linha = ("a1", "dr_silva", "2026-07-01", "09:00", "Ana", CONFIRMED, "", "nota",
+             "g1", "Dr. Silva", "CLOSER")
+    a = _appt(linha)
+    assert a.persona_id == "CLOSER" and a.host_name == "Dr. Silva" and a.guest_id == "g1"
+
+    # uma base ainda por migrar devolve a linha curta: degrada, não rebenta
+    assert _appt(linha[:10]).persona_id == ""
+
+
+def test_a_coluna_e_acrescentada_com_ALTER_e_nao_so_no_CREATE():
+    """A tabela EXISTE em cada caixa implantada, logo o `CREATE TABLE IF NOT EXISTS` é lá um
+    no-op e uma coluna declarada só dentro dele nunca apareceria em produção. O ficheiro já
+    fazia isto para as duas colunas de identidade; esta segue-as."""
+    from pathlib import Path
+    fonte = (Path(__file__).resolve().parents[2] / "cogno_praxis" / "scheduler" / "stores"
+             / "postgres.py").read_text(encoding="utf-8")
+    assert ("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS persona_id" in fonte), (
+        "sem o ALTER, a coluna existe nos testes e não na caixa")

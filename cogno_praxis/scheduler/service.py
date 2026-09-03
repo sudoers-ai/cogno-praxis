@@ -405,7 +405,8 @@ class SchedulerService:
 
     # ── writes ─────────────────────────────────────────────────────────
     def book(self, host_id: str, date: str, time: str, with_name: str,
-             notes: str = "", *, guest_id: str = "", host_name: str = "") -> Appointment:
+             notes: str = "", *, guest_id: str = "", host_name: str = "",
+             persona_id: str = "") -> Appointment:
         host_id = self._resolve_host_id(host_id)
         host = self.store.get_host(host_id)
         if host is None:
@@ -424,7 +425,11 @@ class SchedulerService:
         appt = Appointment(
             appointment_id=uuid.uuid4().hex[:8], host_id=host_id, date=date,
             time=time, with_name=with_name, status=status, notes=notes,
-            guest_id=guest_id, host_name=host_name or host.name)
+            guest_id=guest_id, host_name=host_name or host.name,
+            # Quem marcou. Chega do HOST, nunca do modelo — e vazio significa «nao se sabe»,
+            # nao «a persona base»: um valor que ninguem mediu responderia a pergunta do dono
+            # com um palpite.
+            persona_id=persona_id)
         try:
             self.store.add(appt)
         except SlotTakenError:

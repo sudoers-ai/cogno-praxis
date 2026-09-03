@@ -43,11 +43,16 @@ def _ensure_schema(conn: "psycopg.Connection", partitions: int) -> None:
                status text NOT NULL, cancel_reason text NOT NULL DEFAULT '',
                notes text NOT NULL DEFAULT '',
                guest_id text NOT NULL DEFAULT '', host_name text NOT NULL DEFAULT '',
+               persona_id text NOT NULL DEFAULT '',
                PRIMARY KEY (appointment_id, scope)
            ) PARTITION BY HASH (scope)""")
     # Migration-safe: add the two-sided-identity columns to a pre-existing table.
     conn.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS guest_id text NOT NULL DEFAULT ''")
     conn.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS host_name text NOT NULL DEFAULT ''")
+    # The same migration-safety, and it is not a formality: `appointments` EXISTS on every
+    # deployed box, so the `CREATE TABLE IF NOT EXISTS` above is a no-op there and a column
+    # added only inside it would never appear in production.
+    conn.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS persona_id text NOT NULL DEFAULT ''")
     for k in range(partitions):
         conn.execute(
             f"CREATE TABLE IF NOT EXISTS appointments_p{k} PARTITION OF appointments "
@@ -68,7 +73,7 @@ def _host(row: tuple) -> Host:
 
 # The canonical column order for an appointment SELECT (kept in sync with ``_appt``).
 _APPT_COLS = ("appointment_id, host_id, date, time, with_name, status, cancel_reason, "
-              "notes, guest_id, host_name")
+              "notes, guest_id, host_name, persona_id")
 
 
 def _ensure_slot_uniqueness(conn: "psycopg.Connection") -> None:
@@ -127,7 +132,12 @@ def _slot_taken(exc: "psycopg.errors.UniqueViolation", a: Appointment) -> Except
 def _appt(row: tuple) -> Appointment:
     return Appointment(appointment_id=row[0], host_id=row[1], date=row[2], time=row[3],
                        with_name=row[4], status=row[5], cancel_reason=row[6], notes=row[7],
-                       guest_id=row[8], host_name=row[9])
+                       guest_id=row[8], host_name=row[9],
+                       # POSICIONAL: uma coluna nova em `_APPT_COLS` tem de entrar aqui no mesmo
+                       # lugar, ou e lida para o campo seguinte. O `len(row) >` deixa uma linha
+                       # curta degradar (uma leitura contra uma base ainda por migrar); nao
+                       # torna a ORDEM segura.
+                       persona_id=(row[10] or "") if len(row) > 10 else "")
 
 
 class PgAppointmentStore:
@@ -216,10 +226,11 @@ class PgAppointmentStore:
         try:
             self._conn.execute(
                 """INSERT INTO appointments (appointment_id, scope, host_id, date, time,
-                       with_name, status, cancel_reason, notes, guest_id, host_name)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                       with_name, status, cancel_reason, notes, guest_id, host_name,
+                       persona_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (a.appointment_id, self._scope, a.host_id, a.date, a.time, a.with_name,
-                 a.status, a.cancel_reason, a.notes, a.guest_id, a.host_name))
+                 a.status, a.cancel_reason, a.notes, a.guest_id, a.host_name, a.persona_id))
         except psycopg.errors.UniqueViolation as exc:
             raise _slot_taken(exc, a) from exc
 

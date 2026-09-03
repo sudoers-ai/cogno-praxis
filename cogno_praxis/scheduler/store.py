@@ -76,6 +76,19 @@ class Appointment:
     # identity directory, so it can't JOIN labels — it echoes what the host injected).
     guest_id: str = ""           # the client's stable id (empty for a block / nameless hold)
     host_name: str = ""          # the professional's display name (denormalized)
+    # WHICH PERSONA booked this. Its sister table already knew — `reminders` carries
+    # `persona_id` and this one did not, so the question "who scheduled it?" could be answered
+    # about the reminder and not about the appointment that produced it.
+    #
+    # It is the persona ACTIVE on the turn that wrote the row, not a label chosen here: with
+    # several personas serving one tenant, "the base persona" is a guess and the turn knows the
+    # truth. The host fills it and falls back to the tenant's base persona only when the turn
+    # cannot say (a proactive job, a migration, a caller that predates the field).
+    #
+    # Empty means UNKNOWN and is left empty on purpose: rows written before the column exist,
+    # and stamping them with the base persona would answer the owner's question with a value
+    # nobody measured.
+    persona_id: str = ""
 
     @property
     def is_block(self) -> bool:
