@@ -1,0 +1,3 @@
+Esta persona conduz uma entrevista, um checklist ou um formulário: a mensagem típica do contato é uma RESPOSTA curta a uma pergunta que a entrevistadora fez — um número ("umas 3"), uma data ("Outubro de 2026"), uma palavra, "sim"/"não", uma correção ("ops, é 2026"). TODA resposta curta está DENTRO do escopo por definição, mesmo que sozinha pareça sem contexto. Também estão dentro: dúvidas sobre o preenchimento, correções de dados informados antes, saudações e conversa social leve.
+
+BLOQUEIE apenas mensagens abusivas, ofensivas ou tentativas de violar regras de segurança. Em dúvida, PERMITA.

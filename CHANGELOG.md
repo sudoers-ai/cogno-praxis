@@ -4,6 +4,75 @@
 
 ### Changed
 
+- **INTERVIEWER («Carol»): a persona de entrevista/checklist/formulário entra no pacote —
+  sem nome próprio, sem guião de campanha, e com a abertura a fazer a 1.ª pergunta da lista.**
+  Criada em 04/09 pelo Gemini do dono **sem commit, só nos checkouts servidos** (praxis:
+  `cogno_praxis/interviewer/` + package-data + `tests/unit/test_interviewer_prompts.py`, e um
+  `form_collector/` órfão quase igual; host: `PersonaSpec` + itens). O checklist de campanha do
+  dono (mes_ano / frequencia_semanal / objetivo_campanha) vive hoje na linha DELA em
+  `tenant_personas` — o t86 que motivou o conserto do CLOSER conversa com a Carol. Copiado do
+  servido para uma worktree (o servido não foi tocado); o `form_collector/` fica de fora (cópia
+  sem `PersonaSpec`, e o Diretor trata do disco). Quatro coisas mudaram no que veio, cada uma
+  medida ou grepada antes de escrita:
+
+  1. **`system.txt` não se nomeia** («Seu nome padrão de atendimento é Carol» saiu) — nenhuma
+     outra persona do praxis se nomeia (grep vazio); o nome é de `tenant_personas.display_name`,
+     rendido pelo host no bloco de identidade. E o executor passa a saber que o checklist chega à
+     etapa de voz, não a ele — a lição medida no CLOSER.
+  2. **`voice.txt` perde o guião de domínio** — a tabela canónica de cronograma (Tema/Objetivo/
+     Formato·CTA, Carrossel, Reel) e a «seção de datas comemorativas» eram roteiro de campanha
+     numa persona GENÉRICA, e o MESMO guião já vive nas `custom_rules` do tenant: duas fontes, a
+     forma exacta do defeito do CLOSER (#94). O base fica com condução (uma pergunta por vez,
+     progresso, correcção, resumo) e ganha a regra do bloco de onboarding do host, com as
+     palavras do CLOSER: **com bloco, a abertura cumprimenta, diz de onde fala e FAZ a primeira
+     pergunta da lista — sem pedir licença, sem anunciar quantas**; o rascunho do executor não
+     manda; sem bloco, as perguntas vêm das regras do tenant; sem nenhuma, pergunta o que a pessoa
+     quer registar. A frase «consulte a skill `resolve_date`» **fica, porque é verdadeira**:
+     medido no host (`_families_offered`, produção stubada, 4 papéis × notifier on/off), a
+     INTERVIEWER recebe as MESMAS famílias que a SECRETARY — `resolve_date` e
+     `update_my_details` em todos os papéis, `human_handoff` para contacto, `notify_user` + o
+     quarteto de staff para staff — e um superconjunto estrito das do CLOSER (que é
+     `conversational` e perde notify/profile/remind). `allowed_modules=()` não é portão de skill
+     system. (Uma sonda de turno real no `closer_bench` mostrou só `resolve_date` para AMBAS —
+     o harness não liga staff/profile/notifier; deriva de superfície documentada, não gate.)
+  3. **`limits.txt` deixa de exigir calendário ao juiz** — «rejeite se apresentar datas com dias
+     da semana incorretos» é a classe medida esta semana (juiz sem calendário a rejeitar a
+     honestidade 3×): agora só há calendário a julgar contra a âncora `[HOJE]` / `resolve_date`
+     presente no contexto, e um dia da semana calculado de cabeça é nomeado como coisa que NÃO
+     se rejeita.
+  4. **`scope.txt` diz ao guarda que a mensagem típica é uma resposta curta.** A persona não é
+     `conversational` (a flag do host também tiraria notify/profile/remind), logo o guarda de
+     escopo corre em todo turno — e uma entrevista é feita de respostas curtas. Medido no guarda
+     sozinho (gpt-4o-mini, sem bypass do NER, N=6 por entrada): o texto servido bloqueava «umas 3
+     por semana» **4/6** e «umas 3» **3/6** («Desculpe, mas não posso ajudar…»); este texto,
+     **0/6** nas quatro entradas. Apareceu no A/B do bench 1/4 (t3 recusado).
+
+  **A/B no modelo de produção** (`closer_bench::interviewer_checklist_abre_com_o_item` — o
+  corpus t86 do dono na persona que hoje o recebe; grupo `optimized`, n=4 por braço, host
+  `feat/interviewer-persona-spec`, controlo = a pasta `interviewer/` do servido byte a byte):
+
+  | verificação | controlo (rascunho do Gemini) | ramo |
+  |---|---|---|
+  | t1 faz o 1.º item (mês/ano) | 0/4 («Oi! 😊 Como posso ajudar você hoje?») | **4/4** |
+  | t2 faz o 2.º item (publicações/semana) | 4/4 | 4/4 |
+  | t3 faz o 3.º item (objetivo) | 4/4 | 3/4 → ver abaixo |
+  | t1 sem promessa de bateria | 4/4 | 4/4 |
+  | sem roteiro do CLOSER / sem guião de campanha (3 turnos) | 4/4 · 4/4 | 4/4 · 4/4 |
+  | placar | 26/27 ×4 | 27/27 ×3, 26/27 ×1 |
+
+  O 3/4 do ramo é o guarda de escopo (ponto 4): «umas 3 por semana» recusado com «Desculpe,
+  mas não posso ajudar com isso», EGO nunca correu — medido com o `scope.txt` servido nos dois
+  braços. Repetido o braço com os bytes finais (`scope.txt` novo, n=4): t1 **4/4**, t2 2/4, t3
+  **4/4**, sem promessa 4/4, placar 27/27 ×2 e 26/27 ×2 — o guarda deixou de recusar; o t2 a 2/4
+  é ruído a n=4 com o `voice.txt` byte-idêntico (6/8 somando as duas séries do ramo), e o modo
+  de falha tem nome: a voz repete o 1.º item como «qual o dia de outubro», levada pelo rascunho
+  do executor, enquanto o estado do intake do host ainda lista `mes_ano` pendente no t2. **Contra o enunciado:** a
+  descrição servida da persona («…apresentando o resumo consolidado ao final») ROTEAVA «me
+  manda o resumo financeiro do mês» para a INTERVIEWER no teste de roteamento com descrições
+  reais do host («resumo» é radical do BOOKKEEPER) — a descrição, que é sinal de roteamento,
+  passou a falar só o vocabulário desta persona (correcção no host). Gémeos em
+  `tests/unit/test_interviewer_prompts.py` (os 3 do Gemini ficam; +7).
+
 - **O checklist declarado manda na ABERTURA do CLOSER: a pergunta da lista, sem pedir licença
   para uma bateria — e o roteiro base fica suspenso enquanto o bloco existir.**
   Turno t86 do dono (2026-09-04 ~03:35, CLOSER, EMPLOYEE): ao «Oi», a resposta colou a
