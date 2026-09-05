@@ -27,6 +27,18 @@ Two layers of "business rules" stay separate: **orchestration** rules live in th
 
 More verticals (restaurant, veterinary, …) follow the same shape.
 
+**Prompt-only personas.** Two personas ship here with **no tools of their own** — just the
+four prompt slots (`system`, `voice`, `scope`, `limits`) as package data, loaded by the host's
+`PersonaSpec`: **`closer/`** (a commercial diagnostic that runs the tenant's declared
+checklist) and **`interviewer/`** (interviews, forms and checklists, one question per turn,
+a consolidated summary at the end). They get the host's *system* skills like every persona
+(the date anchor and `resolve_date`, staff notify/directory) and nothing else. The persona's
+display name is never in these files — `system.txt` says `{identity_label}`/`{tenant_name}`
+and the host overlays the tenant's `display_name` — so one prompt serves every tenant's
+"Carol" or "Tony". Any domain script (a content calendar, a campaign table) belongs in the
+tenant's `custom_rules`, not in the base prompt: a base prompt that carries a domain script
+competes with the tenant's own and the model obeys both (measured on the CLOSER, 2026-09-05).
+
 **Capability vs persona.** `scheduler` is the *capability* (the agenda machine); the
 **SECRETARY** is the default *persona* that ships with it (prompt slots in
 `scheduler/prompts/`) — the out-of-the-box front door that works for any company with
