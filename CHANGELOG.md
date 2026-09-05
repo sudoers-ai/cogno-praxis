@@ -4,6 +4,48 @@
 
 ### Changed
 
+- **O checklist declarado manda na ABERTURA do CLOSER: a pergunta da lista, sem pedir licença
+  para uma bateria — e o roteiro base fica suspenso enquanto o bloco existir.**
+  Turno t86 do dono (2026-09-04 ~03:35, CLOSER, EMPLOYEE): ao «Oi», a resposta colou a
+  apresentação, «posso te fazer três perguntas rápidas sobre como funciona o atendimento?» e uma
+  pergunta do checklist; dois turnos depois perguntou o «volume diário», que não está na lista do
+  tenant. O host já tinha posto uma linha de escopo no próprio bloco (`intake._SCOPE_LINE`,
+  cogno-host #705) e mediu-a **inócua no modelo de produção** — a instrução nasce aqui.
+
+  **Onde nasce, medido** (grupo `optimized`: nano/4o-mini/luna, caso
+  `closer_bench::checklist_manda_no_escopo`, n=4, controlo = este `voice.txt` na main byte a
+  byte, host fixo em `18fa870`): o host roteia TODO turno de uma persona sem tools pelo executor
+  (`_route_to_ego`), o `system.txt` diz-lhe na ABERTURA «posso te fazer três perguntas rápidas…»,
+  e o rascunho do executor trouxe essa promessa em **4/4** aberturas («May I ask you three quick
+  questions…») e uma pergunta do roteiro em **4/4** terceiros turnos — a voz transmitiu-os. O
+  executor nunca recebe o bloco (o host anexa-o só ao slot de voz), portanto a voz é o único
+  estágio que o pode recusar. A frase nova em `voice.txt`, condicionada ao bloco «Onboarding —
+  ainda falta descobrir» do host: com o bloco, a abertura cumprimenta, diz de onde fala e FAZ a
+  pergunta do bloco — sem pedir licença nem anunciar quantas perguntas virão; o que o executor
+  tiver rascunhado de pedido de licença ou de roteiro NÃO se transmite; o roteiro fica SUSPENSO
+  enquanto o bloco existir; sem bloco, tudo como estava.
+
+  | verificação | controlo (main) | ramo (`voice.txt`) |
+  |---|---|---|
+  | t1 cita um item da lista | 0/4 | **4/4** |
+  | t1 não diz «três perguntas rápidas» | 0/4 | **4/4** |
+  | t3 não diz o roteiro base (instrumento) | 3/4 | **4/4** |
+  | placar do caso | 22–23/25 | **25/25** |
+
+  Três coisas medidas que contrariam o enunciado: (1) a promessa não vem do «peça licença» do
+  `voice.txt` — vem do `system.txt:13` pelo rascunho do executor, e a voz é quem a larga (o
+  rascunho continua a trazê-la 4/4 no ramo); (2) o «3/4» do controlo no t3 é do instrumento — a
+  olho o roteiro fugiu **4/4** («quem costuma responder», «por qual canal», «o que mais costuma
+  tomar seu tempo» passam ao lado de `_ROTEIRO_DA_PERSONA`), e no ramo 0/4 a olho também; (3) o
+  `system.txt` **não mudou**: uma regra no executor (condicionada ao rasto do checklist no
+  histórico, já que ele não vê o bloco) foi medida no mesmo A/B — 4/4 idêntico — e não
+  acrescentou nada, porque com a abertura certa o próprio executor segue o questionário que o
+  histórico mostra (rascunho do t3 sem roteiro 0/4). Alcance: condicionado ao bloco; sob uma
+  trava de delegação segura o host rende o slot de voz do HUB com `onboarding_checklist=""` e o
+  bloco não chega a prompt nenhum (defeito do host, fora daqui). Gémeos em
+  `tests/unit/test_closer_prompts.py`: sem bloco o roteiro corre (toda frase que suspende nomeia o
+  bloco); com bloco a abertura faz o item e continua a desta persona.
+
 - **O portão C consegue perguntar: `remove_by_search` larga o `destructiveHint`.**
   O produtor do portão C entregue no #89 estava **entregue, servido, e não dispararia**. A causa
   não estava nele, estava numa palavra da anotação: o **portão B pre-empte o portão C por

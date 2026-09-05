@@ -11,6 +11,7 @@ contract, every one of them dark on every PR. A guard nobody runs is not a guard
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -232,3 +233,85 @@ def test_the_seller_sells_whoever_hired_it_not_only_cogno():
     # neither source present → still diagnoses, just does not pitch
     assert "Sem nenhuma das duas" in system
     assert "Diagnóstico não depende de catálogo" in system
+
+
+# ── the checklist block owns the opening (2026-09-05) ──────────────────────────────────
+#
+# The host renders the VOICE slot as this file with two placeholders filled
+# (`cogno_host/persona.py: render_slot`) and, when the tenant declared a checklist, its own
+# block appended at the tail (`_assemble`: voice ONLY — the executor never sees it). A
+# prompts-only persona has no renderer, so these twins render the way the host does — once
+# without the block, once with it — instead of reading the file as one string.
+#
+# The header is the HOST's (`cogno_host/intake.py: render_block`, pinned there by
+# `test_intake.py`). It is quoted here because it is the one thing this persona knows about
+# the block — the prompt points at it by its words, never at the list, which stays the host's:
+# a source is one. If the host renames the header, the prompt's pointer dies silently and this
+# constant is where the drift becomes visible.
+_HOST_BLOCK_HEADER = "# Onboarding — ainda falta descobrir (REGRA DURA desta resposta)"
+
+
+def _render_voice(block: str = "") -> str:
+    text = ((PROMPTS / "voice.txt").read_text()
+            .replace("{identity_label}", "Marina").replace("{tenant_name}", "Acme"))
+    return f"{text}\n\n{block}" if block else text
+
+
+def test_without_the_checklist_block_the_base_script_still_runs():
+    """Gémeo 1: a persona with nothing declared renders NO block, and for it the written
+    script must keep running — the opening asks permission, the chain is the next-question
+    rule. Every sentence that suspends the script has to be CONDITIONED on the block: an
+    unconditional suspension would silence a tenant that has no list.
+
+    Mutation: drop "enquanto o bloco existir" from the suspension sentence and this dies."""
+    rendered = _render_voice(block="")
+    flat = " ".join(rendered.split())
+    assert "ainda falta descobrir (REGRA DURA" not in rendered       # no block on this turn
+    assert "peça licença para perguntar" in flat                      # the opening, as before
+    assert "canais de entrada → volume por dia → quem responde" in flat
+    for sentence in re.split(r"(?<=[.!?])\s+", flat):
+        if "SUSPENSO" in sentence:
+            assert "bloco" in sentence, f"unconditional suspension: {sentence!r}"
+    # the fallback is stated as the no-block path and precedes the chain it introduces
+    assert "SEM esse bloco" in flat
+    assert flat.index("SEM esse bloco") < flat.index("canais de entrada")
+
+
+def test_with_the_checklist_block_the_opening_asks_the_item_not_permission():
+    """The owner's t86 (2026-09-04 ~03:35, CLOSER, EMPLOYEE): to "Oi" the reply welded the
+    presentation, a promise of "três perguntas rápidas" and one checklist item; two turns later
+    it asked the "volume diário", which is not on that tenant's list. Measured on the
+    production group (n=4, control = this file on main): the EXECUTOR's draft carried the
+    promise in 4/4 openings ("May I ask you three quick questions…") and a base-script
+    question in 4/4 third turns, and the voice conveyed them — the executor never receives the
+    block, so the voice is the only stage that can refuse them.
+
+    And refusing them at the opening is enough: with this rule and `system.txt` untouched,
+    the same executor's third-turn draft carried NO script question (0/4) — it followed the
+    questionnaire the transcript now shows. An executor-side rule was measured (4/4 too) and
+    added nothing, so nothing in `system.txt` changed. The script leak at t3 was downstream of
+    the opening, not a second cause.
+
+    So, with the block present: the opening asks the block's item directly (no permission for
+    a battery, no announcement of one), a permission/script question in the draft is NOT
+    conveyed, and the written script is suspended while the block exists. Gémeo 2: the
+    opening stays THIS persona's — greet by name, say where you speak from."""
+    rendered = _render_voice(block=_HOST_BLOCK_HEADER + "\n- (the tenant's item)")
+    flat = " ".join(rendered.split())
+    rule = flat[flat.index("Se o contexto trouxer um bloco de onboarding"):
+                flat.index("SEM esse bloco")]
+    assert "FAÇA a pergunta do bloco" in rule
+    assert "sem pedir licença para perguntar" in rule
+    assert "sem anunciar quantas perguntas" in rule
+    assert "SUSPENSO" in rule and "enquanto o bloco existir" in rule
+    assert "NÃO transmita" in rule and "pedido de licença" in rule       # the draft override
+    assert "responder ao que a pessoa perguntou continua normal" in rule  # never gags a reply
+    assert "cumprimente pelo nome" in rule and "de onde você fala" in rule  # gémeo 2
+    # the pointer uses the host header's words, and the list itself never enters this file
+    assert "ainda falta descobrir" in rule
+    assert "mês e ano" not in (PROMPTS / "voice.txt").read_text()
+    # the rule precedes the arc it overrides, and the opening bullet carries the exception at
+    # the exact spot that instructs the habit
+    assert flat.index("Se o contexto trouxer um bloco") < flat.index("[ABERTURA]")
+    assert "a pergunta do bloco entra no lugar do pedido de licença" in flat
+
