@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+### Added
+
+- **`companies` — o cadastro de empresas passa a ser um vertical MCP, com política por papel.**
+  Estava no host como skill nativa cogno-cortex (`cogno_host/company_registration.py` +
+  `company_adapter.py`); vem para cá inteiro, com store port + adaptador Postgres, e liga-se a
+  uma persona por `allowed_modules` como o `scheduler`. É **transversal**: não é o domínio de
+  nenhuma persona — a SECRETARY carrega-o ao lado da agenda.
+
+  **Cinco ferramentas**, uma por linha da política do dono: `company_registration` (o nome NÃO
+  muda — ver abaixo), `company_search`, `list_companies`, `company_update`, `company_delete`.
+
+  Quatro coisas foram **medidas antes de escritas**, e cada uma mudou o desenho:
+
+  1. **O NOME da ferramenta de registo é um contrato, não um rótulo.** O host decide de que
+     empresa se está a falar procurando execuções chamadas exactamente `company_registration` e
+     lendo `company_id`/`company_name` da resposta. Um rename não parte nada: o foco pára de se
+     mover, e o turno seguinte planeia para a empresa errada com um texto que continua
+     plausível. O nome e as chaves da resposta ficam byte a byte, e o pino vive **deste lado**
+     também, porque a mudança que o parte acontece aqui.
+  2. **A resposta é um `repr`, e a tool é `-> str`.** O host lê-a com `ast.literal_eval`. Anotar
+     `-> dict` faria o FastMCP serializar em JSON: passa hoje (todos os valores são strings) e
+     **falha fechado** no dia em que um valor for `bool` ou `None`, sem um único vermelho.
+  3. **Uma recusa de ESCRITA levanta; um limite de LEITURA é dito em palavras.** Medido pela
+     cadeia real: uma string devolvida é um retorno normal, logo o cogno-mcp constrói
+     `ToolResult(ok=True, side_effect=True)` — que registaria um cadastro recusado como escrita
+     comitada. Mas uma recusa de leitura que sai como ERRO chega ao contacto como «não consegui
+     acessar»: a voz lê uma avaria e pede desculpa pelo sistema em vez de dizer a fronteira. Por
+     isso as leituras respondem normalmente e **dizem o limite**, e só as escritas levantam.
+  4. **A CONTAGEM decide a FORMA da resposta da busca.** A regra do dono é «pesquisou por um
+     específico, usa ele». Exactamente um resultado responde com um mapping; zero, vários e
+     **toda** listagem respondem em prosa, que o parser do host rejeita sozinho. Assim nenhuma
+     contagem tem de concordar entre dois repositórios — e uma LEITURA nunca ganha o efeito de
+     uma escrita sobre o estado da sessão. Quatro gémeos, um por ramo.
+
+  **Escopo por identidade:** staff (`EMPLOYEE`/`SUPERVISOR`/`ADMIN`/`OWNER`) vê as empresas do
+  negócio; qualquer outro papel — incluindo um desconhecido — vê só as que registou
+  (`created_by_user_id`). A verificação repete-se à ENTRADA das escritas porque o `company_id`
+  é derivado do nome e portanto **adivinhável**.
+
+  `company_delete` é **gate C** (`_meta`, a ponte já provada no bookkeeper), não gate B: o B
+  decide pelo NOME antes de correr e nunca poderia dizer QUAL empresa; este lê primeiro e
+  pergunta com o que leu. `company_registration` e `company_update` entram em `_UNDOABLE`.
+
+  A tabela é a **mesma** `tenant_companies` do host, com as mesmas colunas e a mesma chave
+  primária: o host continua a LER dali para montar o bloco «empresa em foco».
+
 ### Fixed
 
 - **COORDINATOR: a TURMA passa a viajar em toda a linha — e «outras turmas» deixa de ser lido

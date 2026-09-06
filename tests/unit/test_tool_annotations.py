@@ -46,6 +46,7 @@ from datetime import date, timedelta
 import pytest
 
 from cogno_praxis.bookkeeper.server import build_server as build_bookkeeper
+from cogno_praxis.companies.server import build_server as build_companies
 from cogno_praxis.coordinator.server import build_server as build_coordinator
 from cogno_praxis.scheduler.server import build_server as build_scheduler
 
@@ -64,6 +65,15 @@ _UNDOABLE: "dict[str, str]" = {
     "set_schedule_settings": "write the previous values back",
     "add_income": "remove_by_search",
     "add_outcome": "remove_by_search",
+    # The row's key is DERIVED from the accent-folded name, so this is the `set_auto_confirm`
+    # shape of undo: the correction IS the same call. The residual is named rather than
+    # implied — a typo in the NAME keys a DIFFERENT row, and the stray registration stays; no
+    # tool removes it (the store port carries `delete` and deliberately does not expose it,
+    # because a delete tool here is a new destructive capability, not part of a move).
+    "company_registration": "register the same company again — the folded name is the key, so "
+                            "the corrected values UPDATE that row",
+    "company_update": "call it again with the previous values — every field is optional and an "
+                      "omitted one is left as it is, so the correction is the same call",
 }
 
 # tool → the argument it requires in order to commit, which a caller can only have learned from
@@ -72,10 +82,11 @@ _UNDOABLE: "dict[str, str]" = {
 # ``test_every_asking_tool_really_refuses_to_commit_unasked`` below.
 _ASKS_ITSELF: "dict[str, str]" = {
     "remove_by_search": "confirm_tx_id — the id of the row it proposed after reading the ledger",
+    "company_delete": "confirm_company_id — the id of the company it proposed after reading it",
 }
 
 _BUILDERS = {"scheduler": build_scheduler, "bookkeeper": build_bookkeeper,
-             "coordinator": build_coordinator}
+             "coordinator": build_coordinator, "companies": build_companies}
 
 
 async def _annotations(vertical: str) -> "dict[str, object]":
@@ -182,7 +193,8 @@ def test_every_asking_tool_really_refuses_to_commit_unasked():
     from cogno_praxis.bookkeeper.service import BookkeeperService
     from cogno_praxis.bookkeeper.store import InMemoryBookkeeperStore
 
-    assert set(_ASKS_ITSELF) == {"remove_by_search"}, "a new entry needs its own arm here"
+    assert set(_ASKS_ITSELF) == {"remove_by_search", "company_delete"}, (
+        "a new entry needs its own arm here")
 
     bk = BookkeeperService(InMemoryBookkeeperStore())
     bk.add_outcome("internet janeiro", 100, "e1", tx_date="2026-01-10")
@@ -206,6 +218,36 @@ def test_every_asking_tool_really_refuses_to_commit_unasked():
                                   confirm_tx_id=proposed.confirm_tx_id).removed
     assert removed is not None and removed["tx_id"] == proposed.entry["tx_id"]
     assert _rows() == 1
+
+    # ── company_delete: the same three steps, on a store whose key is GUESSABLE ──────────
+    #
+    # The middle step matters more here than it does for the ledger. A transaction id is a
+    # uuid, so "a guessed id is not a shortcut" is nearly true by accident; a company id is
+    # DERIVED from the accent-folded name, so anyone who knows a company is called "Acme" can
+    # write down `acme` without ever having seen a proposal. If a guess reached the write path
+    # the gate would be decorative for exactly this vertical.
+    from cogno_praxis.companies import CompanyService, InMemoryCompanyStore
+
+    co = CompanyService(InMemoryCompanyStore())
+    co.register("Acme", identity_id="e1")
+    co.register("Initech", identity_id="e1")
+
+    # 1. unasked → nothing leaves the store, and the answer is the question
+    out_c = co.delete("acme", identity_id="e1", role="ADMIN")
+    assert out_c.proposal is not None and out_c.removed is None
+    assert len(co.list_companies()) == 2
+
+    # 2. a guessed/wrong id is not a shortcut into the write path — and it must not silently
+    #    delete the company it was ASKED about either
+    assert co.delete("acme", identity_id="e1", role="ADMIN",
+                     confirm_company_id="initech").removed is None
+    assert len(co.list_companies()) == 2
+
+    # 3. the argument the tool named DOES commit — exactly the company proposed
+    gone = co.delete("acme", identity_id="e1", role="ADMIN",
+                     confirm_company_id=out_c.proposal.confirm_company_id).removed
+    assert gone is not None and gone.company_id == "acme"
+    assert [c.company_id for c in co.list_companies()] == ["initech"]
 
 
 # ── the claims, performed ─────────────────────────────────────────────────────────────
@@ -275,6 +317,26 @@ def test_every_undoable_tool_really_undoes():
                                    confirm_tx_id=proposal.confirm_tx_id).removed is not None, q
     summary = bk.get_summary("e1", "ADMIN")
     assert summary["income_count"] == 0 and summary["outcome_count"] == 0
+
+    from cogno_praxis.companies import CompanyService, InMemoryCompanyStore  # register → register
+    co = CompanyService(InMemoryCompanyStore())
+    co.register("Padaria São João", visual_identity="azul")
+    co.register("padaria sao joao", visual_identity="verde")   # the correction, same call
+    rows = co.list_companies()
+    # The claim is that the wrong value LEAVES and no second row appears. Asserting only the
+    # new value would pass over an undo that added a row beside the mistake instead of
+    # replacing it — which is exactly the failure mode a name-derived key exists to prevent.
+    assert len(rows) == 1 and rows[0].visual_identity == {"visual_identity": "verde"}
+
+    co.update("padaria-sao-joao", segment="padaria", identity_id="e1", role="ADMIN")  # → back
+    back = co.update("padaria-sao-joao", segment="confeitaria", identity_id="e1", role="ADMIN")
+    assert back.segment == "confeitaria"
+    assert co.update("padaria-sao-joao", segment="padaria",
+                     identity_id="e1", role="ADMIN").segment == "padaria"
+    # and the undo did not quietly take the neighbours with it: an omitted field is left alone,
+    # which is the property that makes "call it again with the previous values" a real undo
+    # rather than a second, wider write.
+    assert co.get("padaria-sao-joao").visual_identity == {"visual_identity": "verde"}
 
 
 @pytest.mark.parametrize("days_back", [0, 1, 7])
