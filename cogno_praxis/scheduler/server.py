@@ -24,7 +24,13 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from cogno_praxis.scheduler.engine import SchedulerConfig
-from cogno_praxis.scheduler.service import SchedulerService, format_date
+from cogno_praxis.scheduler.service import (
+    RESOLVE_DATE_DESCRIPTION,
+    RESOLVE_DATE_SCHEDULER_SUFFIX,
+    SchedulerService,
+    format_date,
+    resolve_date_answer,
+)
 from cogno_praxis.scheduler.store import (
     COMPLETED,
     CONFIRMED,
@@ -77,30 +83,24 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         return "\n".join(f"{h.host_id}: {h.name}" + (f" ({h.role})" if h.role else "")
                          for h in hosts)
 
-    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    # `description=` and not a docstring, because the docstring WAS the second copy. This is
+    # one tool as far as a model is concerned — the host publishes the same name to every
+    # other persona — and it was described twice, in words that had already drifted. FastMCP
+    # reads this parameter in preference to the docstring, so the shared core reaches the
+    # model verbatim and the scheduler-only tail is appended, declared, from the same module.
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True),
+              description=RESOLVE_DATE_DESCRIPTION + RESOLVE_DATE_SCHEDULER_SUFFIX)
     def resolve_date(expression: str) -> str:
-        """Resolve a date phrase to YYYY-MM-DD.
-
-        Handles 'hoje', 'amanhã', 'depois de amanhã', counted relatives ('daqui a 3 dias',
-        'em 2 semanas'), weekday names ('sexta', 'próxima sexta'), numeric ('09/07'), written
-        ('9 de julho') and ISO ('2026-07-09') dates.
-
-        Always call this for a relative or weekday phrase instead of computing the date
-        yourself, then use the returned YYYY-MM-DD in check_availability / book_appointment.
-
-        A vague SPAN ('semana que vem', 'esse mês', 'de manhã') is not a date: ask the user
-        which day instead of calling this.
-        """
+        # Deliberately no docstring: see the description= above. The SECRETARY sees THIS
+        # tool (a module owns its domain, so the module's copy wins the CompositeDispatcher's
+        # first-wins name collision), the other personas see the host's builtin, and both now
+        # read one text. The spoken form is the point — the live incident behind it is a
+        # persona reading "2026-07-25 (Saturday)" and still voicing "sexta-feira". Handing it
+        # the words removes the arithmetic.
         iso = svc.resolve_date(expression)
-        # Same payload shape as the host's `resolve_date` builtin, deliberately: the two are
-        # one tool as far as a model is concerned, and the SECRETARY sees THIS one (a module
-        # owns its domain, so the module's copy wins the name). The spoken form is the point
-        # — the live incident behind it is a persona reading "2026-07-25 (Saturday)" and
-        # still voicing "sexta-feira". Handing it the words removes the arithmetic.
         spoken = format_date(date.fromisoformat(iso),
                              os.environ.get("COGNO_SCHEDULER_LANG", "pt"))
-        return (f"{iso} ({spoken}). Use the ISO date in tool calls; the written form when "
-                f"speaking to the user.")
+        return resolve_date_answer(iso, spoken)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def check_availability(host_id: str, date: str) -> str:
