@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Changed
+
+- **O guarda de escopo da SECRETARY dizia que a PERGUNTA de domínio está fora de escopo; o que
+  está fora é ela ser RESPONDIDA aqui.** A linha lia *«answering the medical/financial/legal
+  QUESTION itself»*, e o substantivo que ela põe fora de escopo é a PERGUNTA — numa recepção de
+  um negócio que TEM contabilista, perguntar pelo livro é o sítio certo: a assistente ENTREGA,
+  não responde. A linha passa a dizê-lo: *«when the business has a specialist for it, the
+  question is IN SCOPE: hand it over, never answer it»*.
+
+  **MEDIDO, e não é um conserto — diz-se qual é.** `openai:gpt-4o-mini` (o modelo do slot na
+  caixa), n=5, 17 frases, prompt antigo contra novo: **12/17 → 12/17, ZERO vereditos mudados**.
+  As quatro frases para que a mudança foi escrita continuam BLOCK 5/5 nas duas — e continuam
+  BLOCK 5/5 sob uma terceira redacção deliberadamente MÁXIMA, que nomeia «qual o saldo do mês?»
+  à letra na lista IN SCOPE com um ALWAYS ALLOW. É a terceira reprodução independente da regra
+  da casa (as duas primeiras estão no `scope_lexicon.py` do host, 2026-08-11): **uma guarda
+  fail-closed não se move com palavras.** O conserto daquelas frases é determinístico e vive no
+  host, e não consulta esta guarda de todo.
+
+  O que a medição sustenta é que a correcção é **de graça**: as oito frases de BLOQUEIO da mesma
+  corrida — conselho médico, jurídico, fiscal, trivia, código, injecção — ficam BLOCK 5/5, e as
+  quatro de ALLOW ficam ALLOW 5/5. A frase passa a ser verdadeira sem abrir nada.
+
 ### Added
 
 - **`companies` — o cadastro de empresas passa a ser um vertical MCP, com política por papel.**
