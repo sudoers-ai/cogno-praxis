@@ -330,9 +330,14 @@ def test_every_undoable_tool_really_undoes():
 
     co.update("padaria-sao-joao", segment="padaria", identity_id="e1", role="ADMIN")  # → back
     back = co.update("padaria-sao-joao", segment="confeitaria", identity_id="e1", role="ADMIN")
-    assert back.segment == "confeitaria"
-    assert co.update("padaria-sao-joao", segment="padaria",
-                     identity_id="e1", role="ADMIN").segment == "padaria"
+    assert back.company.segment == "confeitaria"
+    # The undo NAMES itself: the answer says which field went back and to what value, so a
+    # "call it again with the previous value" that landed on a neighbour is visible instead of
+    # reading like any other successful write.
+    undone = co.update("padaria-sao-joao", segment="padaria", identity_id="e1", role="ADMIN")
+    assert undone.company.segment == "padaria"
+    assert [(c.field, c.before, c.after) for c in undone.changes] == [
+        ("segment", "confeitaria", "padaria")]
     # and the undo did not quietly take the neighbours with it: an omitted field is left alone,
     # which is the property that makes "call it again with the previous values" a real undo
     # rather than a second, wider write.

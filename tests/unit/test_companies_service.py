@@ -278,7 +278,8 @@ def test_a_refusal_is_worded_as_a_LIMIT_even_though_it_raises():
 @pytest.mark.parametrize("role", ["EMPLOYEE", "SUPERVISOR", "ADMIN"])
 def test_staff_may_update_a_company_they_did_not_register(role):
     svc = _peopled()
-    assert svc.update("acme", segment="varejo", identity_id="staff-1", role=role).segment == "varejo"
+    assert svc.update("acme", segment="varejo",
+                      identity_id="staff-1", role=role).company.segment == "varejo"
 
 
 def test_update_applies_only_what_was_GIVEN():
@@ -287,7 +288,7 @@ def test_update_applies_only_what_was_GIVEN():
     svc = _svc()
     svc.register("Acme", cnpj=_CNPJ_OK, visual_identity="azul", guidelines="tom formal",
                  identity_id="u1")
-    row = svc.update("acme", segment="varejo", identity_id="u1", role="GUEST")
+    row = svc.update("acme", segment="varejo", identity_id="u1", role="GUEST").company
     assert row.cnpj == "11222333000181"
     assert row.visual_identity == {"visual_identity": "azul", "guidelines": "tom formal"}
     assert row.name == "Acme" and row.segment == "varejo"
@@ -297,7 +298,7 @@ def test_a_rename_keeps_the_KEY_and_the_history():
     """Re-keying on a rename would mean an insert plus an orphan — the same company twice."""
     svc = _svc()
     svc.register("Acme", identity_id="u1")
-    row = svc.update("acme", name="Acme Tecnologia", identity_id="u1", role="GUEST")
+    row = svc.update("acme", name="Acme Tecnologia", identity_id="u1", role="GUEST").company
     assert row.company_id == "acme" and row.name == "Acme Tecnologia"
     assert len(svc.list_companies()) == 1
 
@@ -400,7 +401,12 @@ def test_update_replaces_one_brand_field_and_leaves_its_twin_alone():
     mention, which is the same erasure the "only what was GIVEN" rule exists to stop."""
     svc = _svc()
     svc.register("Acme", visual_identity="azul", guidelines="tom formal", identity_id="u1")
-    row = svc.update("acme", visual_identity="verde", identity_id="u1", role="ADMIN")
-    assert row.visual_identity == {"visual_identity": "verde", "guidelines": "tom formal"}
-    row = svc.update("acme", guidelines="tom informal", identity_id="u1", role="ADMIN")
-    assert row.visual_identity == {"visual_identity": "verde", "guidelines": "tom informal"}
+    out = svc.update("acme", visual_identity="verde", identity_id="u1", role="ADMIN")
+    assert out.company.visual_identity == {"visual_identity": "verde", "guidelines": "tom formal"}
+    # and it SAYS which of the twins moved — the jsonb they share renders identically either way
+    assert [(c.field, c.after) for c in out.changes] == [("visual_identity", "verde")]
+    out = svc.update("acme", guidelines="tom informal", identity_id="u1", role="ADMIN")
+    assert out.company.visual_identity == {"visual_identity": "verde",
+                                           "guidelines": "tom informal"}
+    assert [(c.field, c.before, c.after) for c in out.changes] == [
+        ("guidelines", "tom formal", "tom informal")]

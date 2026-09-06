@@ -65,12 +65,17 @@ Run the demo standalone (stdio):  ``python -m cogno_praxis.companies.server``
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Optional, Sequence
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import TextContent, ToolAnnotations
 
-from cogno_praxis.companies.service import CompanyError, CompanyService, DeletionProposal
+from cogno_praxis.companies.service import (
+    CompanyError,
+    CompanyService,
+    DeletionProposal,
+    FieldChange,
+)
 from cogno_praxis.companies.store import Company, CompanyStore, InMemoryCompanyStore
 
 # ── The gate-C channel: how this server tells cogno-anima "I ran, I read, I did not commit" ──
@@ -98,6 +103,22 @@ def _line(c: Company) -> str:
         if value:
             bits.append(f"{label}: {value}")
     return " — ".join(bits)
+
+
+def _change_lines(changes: "Sequence[FieldChange]") -> str:
+    """The fields that MOVED, one per line, each naming the argument and both values.
+
+    The company line beside this one renders the row as it now stands, and a row cannot be
+    checked against a request: «corrige o segmento» answered with a correct-looking company
+    line reads as success whether the segment changed or the brand guidelines were replaced.
+    So the ARGUMENT name is what is printed — the model chose one, and this is the one thing
+    it can compare against what the user said.
+
+    Both values are ``repr``'d so an empty ``before`` shows as ``''`` instead of vanishing:
+    "the guidelines went from nothing to X" and "the guidelines were replaced" are different
+    facts, and the second is the one worth relaying.
+    """
+    return "\n".join(f"CHANGED {c.field}: {c.before!r} → {c.after!r}" for c in changes)
 
 
 def _deletion_proposal_text(p: DeletionProposal) -> str:
@@ -139,7 +160,8 @@ def build_server(service: Optional[CompanyService] = None, *,
     # same answer, a different source.
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     def company_registration(company_name: str, cnpj: str = "", visual_identity: str = "",
-                             guidelines: str = "", identity_id: str = "") -> str:
+                             guidelines: str = "", segment: str = "",
+                             identity_id: str = "") -> str:
         """Registers company brand parameters, visual identity, and artistic guidelines.
 
         company_name: the registered company or brand name (required).
@@ -147,16 +169,22 @@ def build_server(service: Optional[CompanyService] = None, *,
             '11.222.333/0001-81' or '11222333000181'. Send it ONLY as the user stated it —
             never invent or complete a number; an invalid CNPJ is refused and the whole
             registration fails.
-        visual_identity: visual identity guidelines or design tokens (optional).
-        guidelines: tone of voice or brand communication guidelines (optional).
+        segment: WHAT THE COMPANY DOES — its line of business ('padaria artesanal',
+            'clínica odontológica', 'varejo de moda'). This is the field for "segmento",
+            "ramo", "área de atuação", "nicho".
+        visual_identity: how the brand LOOKS — colours, logo, typography, design tokens.
+        guidelines: how the brand SPEAKS — tone of voice, wording, what to avoid. This is
+            the field for "diretrizes", "tom de voz", "comunicação".
+
+        segment, visual_identity and guidelines are THREE separate records: a segment sent as
+        guidelines replaces the brand's tone of voice and leaves the segment wrong.
 
         Registering a company that is already on file UPDATES its record — it does not create
-        a second one.
+        a second one — and a field you do not send is left exactly as it was.
         """
         row = svc.register(company_name, cnpj=cnpj, visual_identity=visual_identity,
-                           guidelines=guidelines, identity_id=identity_id)
-        return repr(svc.registration_payload(row, visual_identity=visual_identity,
-                                             guidelines=guidelines))
+                           guidelines=guidelines, segment=segment, identity_id=identity_id)
+        return repr(svc.registration_payload(row))
 
     # ── reads ────────────────────────────────────────────────────────────────────────────
     #
@@ -207,16 +235,39 @@ def build_server(service: Optional[CompanyService] = None, *,
     def company_update(company_id: str, name: str = "", cnpj: str = "",
                        visual_identity: str = "", guidelines: str = "", segment: str = "",
                        identity_id: str = "", role: str = "") -> str:
-        """Change a registered company's details. Send ONLY the fields that change.
+        """Change a registered company's details. Send ONLY the field the user named.
 
         company_id: from company_search — never guessed.
+        name: the registered company or brand name.
+        cnpj: the Brazilian CNPJ, any format; an invalid one refuses the whole call.
+        segment: WHAT THE COMPANY DOES — its line of business ('padaria artesanal',
+            'clínica odontológica', 'varejo de moda'). This is the field for "segmento",
+            "ramo", "área de atuação", "nicho".
+        visual_identity: how the brand LOOKS — colours, logo, typography, design tokens.
+        guidelines: how the brand SPEAKS — tone of voice, wording, what to avoid. This is
+            the field for "diretrizes", "tom de voz", "comunicação".
+
+        These three are SEPARATE records and writing the wrong one REPLACES it: a segment
+        sent as guidelines wipes the brand's tone of voice and leaves the segment wrong.
+        Read the company back with company_search first, then send only that one field.
+
+        BEFORE calling this, tell the user WHICH field you are about to change, its current
+        value and the new one ("o segmento passa de 'padaria' para 'padaria artesanal'; as
+        diretrizes ficam como estão") and get their agreement. The confirmation the system
+        asks for you cannot name the field — it stops the call before anything is read.
+
         An omitted field is LEFT AS IT IS; there is no way to blank a field here, so a
         correction can never wipe the brand guidelines you did not mention.
         """
-        row = svc.update(company_id, name=name, cnpj=cnpj, visual_identity=visual_identity,
-                         guidelines=guidelines, segment=segment,
-                         identity_id=identity_id, role=role)
-        return f"Updated: {_line(row)}."
+        outcome = svc.update(company_id, name=name, cnpj=cnpj,
+                             visual_identity=visual_identity, guidelines=guidelines,
+                             segment=segment, identity_id=identity_id, role=role)
+        return "\n".join([
+            f"Updated: {_line(outcome.company)}.",
+            _change_lines(outcome.changes),
+            "No other field was touched. Tell the user WHICH field changed and to WHAT "
+            "value — if it is not the field they named, say so and correct it.",
+        ])
 
     # Mutating and NOT declared destructive, which for a DELETE needs saying: `destructiveHint`
     # would make gate B hold this by NAME, before it runs — and a tool gate B holds never

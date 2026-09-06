@@ -29,6 +29,8 @@ from cogno_praxis.companies.service import (
     CompanyService,
     DeletionOutcome,
     DeletionProposal,
+    FieldChange,
+    UpdateOutcome,
 )
 from cogno_praxis.companies.store import (
     Company,
@@ -40,5 +42,7 @@ from cogno_praxis.companies.store import (
 __all__ = [
     "build_server", "CompanyError", "CompanyService", "CompanyStore",
     "InMemoryCompanyStore", "Company", "DeletionOutcome", "DeletionProposal", "is_oversight",
+    # what an update WROTE — the row and the fields that moved, named
+    "UpdateOutcome", "FieldChange",
     "cnpj_is_acceptable", "cnpj_valid", "company_id_for", "fold", "normalize_cnpj",
 ]
