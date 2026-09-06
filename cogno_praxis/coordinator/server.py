@@ -21,10 +21,16 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from datetime import date
+
 from cogno_praxis.coordinator.config import CoordinatorConfig
-from cogno_praxis.coordinator.service import CoordinatorError, CoordinatorService
+from cogno_praxis.coordinator.service import (
+    CoordinatorAccessError,
+    CoordinatorError,
+    CoordinatorService,
+)
 from cogno_praxis.coordinator.store import InMemorySpreadsheetStore
-from cogno_praxis.coordinator.types import ClassEntry
+from cogno_praxis.coordinator.types import ClassEntry, ReadReport
 
 
 def _fmt_entry(e: ClassEntry) -> str:
@@ -34,18 +40,39 @@ def _fmt_entry(e: ClassEntry) -> str:
     return " | ".join(parts) if parts else e.date_str
 
 
-def _fmt_list(entries: list[ClassEntry], *, empty: str) -> str:
-    if not entries:
-        return empty
-    return "\n".join(f"- {_fmt_entry(e)}" for e in entries)
+def _fmt_report(report: ReadReport) -> str:
+    """The footer lines a read owes the reader: what was HIDDEN, and what could not be READ.
+
+    Both are conditional, and that is the whole design. A permanent "showing from today onward"
+    would train the reader to believe things are being withheld on every turn, including the
+    turns where nothing was; a permanent "all spreadsheets read" is noise. They appear when they
+    are TRUE and are silent otherwise."""
+    lines: list[str] = []
+    if report.hidden_past:
+        lines.append(
+            f"(Showing from today onward. {report.hidden_past} earlier class(es) matching this "
+            f"request were not listed — say so explicitly to see past classes.)")
+    if report.errors:
+        detail = "; ".join(f"{e.sheet_key}: {e.message}" for e in report.errors)
+        lines.append(
+            f"PARTIAL RESULT — {len(report.errors)} spreadsheet(s) could not be read: {detail}. "
+            f"Everything above was read normally; say which spreadsheet is unavailable.")
+    return "\n".join(lines)
 
 
-def _fmt_professors(rows: list[dict[str, str]]) -> str:
+def _fmt_list(entries: list[ClassEntry], *, empty: str,
+              report: Optional[ReadReport] = None) -> str:
+    body = "\n".join(f"- {_fmt_entry(e)}" for e in entries) if entries else empty
+    footer = _fmt_report(report) if report else ""
+    return f"{body}\n\n{footer}" if footer else body
+
+
+def _fmt_professors(rows: list[dict[str, str]], *, report: Optional[ReadReport] = None) -> str:
     """Faculty records as compact verbatim lines (every non-empty field:value)."""
-    if not rows:
-        return "No faculty records found."
-    return "\n".join("- " + " | ".join(f"{k}: {v}" for k, v in r.items() if v.strip())
-                     for r in rows)
+    body = ("\n".join("- " + " | ".join(f"{k}: {v}" for k, v in r.items() if v.strip())
+                      for r in rows) if rows else "No faculty records found.")
+    footer = _fmt_report(report) if report else ""
+    return f"{body}\n\n{footer}" if footer else body
 
 
 def build_server(service: Optional[CoordinatorService] = None, *,
@@ -55,62 +82,88 @@ def build_server(service: Optional[CoordinatorService] = None, *,
     mcp = FastMCP(name)
 
     def _guard(fn):
+        """Run a domain call, turning its two failure KINDS into two different sentences.
+
+        An access refusal is a RULE that worked, not a malfunction — labelling it ``ERROR`` is
+        how "you may only see your own schedule" came back to a professor as "I could not access
+        the schedule". The word the model reads is the word the contact eventually hears."""
         try:
             return fn()
+        except CoordinatorAccessError as exc:
+            return (f"NOT PERMITTED: {exc} This is an access rule working as intended, not a "
+                    f"failure — state the limit plainly and offer what IS allowed.")
         except CoordinatorError as exc:
             return f"ERROR: {exc}"
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_professor_schedule(professor: str = "", month: str = "", discipline: str = "",
+                               include_past: bool = False,
                                identity_label: str = "", role: str = "") -> str:
         """List a professor's class schedule (aggregated across all course spreadsheets, sorted
-        by date). ``month`` filters by YYYY-MM, a bare number, or a PT-BR month name ("março").
-        ``discipline`` filters by subject and is typo-tolerant ("machne learning" still matches).
-        A professor sees only their own classes; a supervisor may name any professor or omit it
-        for the whole master schedule."""
+        by date). Returns UPCOMING classes only — from today onward — unless ``include_past``.
+        ``month`` filters by YYYY-MM, a bare number, or a month name in Portuguese or English
+        ("março", "September"). ``discipline`` filters by subject and is typo-tolerant ("machne
+        learning" still matches). Set ``include_past=True`` ONLY when the user explicitly asks
+        about the past ("what I already taught", "my August classes", "the history") — naming a
+        month that is already over counts as asking, and needs no flag. A professor sees only
+        their own classes; a supervisor may name any professor or omit it for the whole master
+        schedule."""
+        report = ReadReport()
         return _guard(lambda: _fmt_list(
             svc.get_professor_schedule(professor=professor, month=month, discipline=discipline,
+                                       include_past=include_past, report=report,
                                        identity_label=identity_label, role=role),
-            empty="No classes found."))
+            empty="No classes found.", report=report))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_professor_info(professor: str = "", identity_label: str = "", role: str = "") -> str:
         """Faculty contact/detail lookup from the professors tab (e.g. discipline, workload,
         e-mail, degree). A professor sees only their own record; a supervisor may name anyone or
         omit ``professor`` to list the whole faculty."""
+        report = ReadReport()
         return _guard(lambda: _fmt_professors(
-            svc.get_professor_info(professor=professor, identity_label=identity_label, role=role)))
+            svc.get_professor_info(professor=professor, identity_label=identity_label,
+                                   role=role, report=report), report=report))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def check_deadlines(professor: str = "", identity_label: str = "", role: str = "") -> str:
         """Disciplines whose LAST class already happened and are still within the 14-day grade/
         attendance grace window (submission still due)."""
+        report = ReadReport()
         return _guard(lambda: _fmt_list(
-            svc.check_deadlines(professor=professor, identity_label=identity_label, role=role),
-            empty="No disciplines within the grade/attendance deadline window."))
+            svc.check_deadlines(professor=professor, identity_label=identity_label, role=role,
+                                report=report),
+            empty="No disciplines within the grade/attendance deadline window.", report=report))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_weekly_briefing(professor: str = "", identity_label: str = "", role: str = "") -> str:
-        """Classes in the next 7 days (a coordinator's weekly heads-up)."""
+        """Classes in the next 7 days (a coordinator's weekly heads-up) — today onward, never
+        the past."""
+        report = ReadReport()
         return _guard(lambda: _fmt_list(
-            svc.weekly_briefing(professor=professor, identity_label=identity_label, role=role),
-            empty="No classes in the next 7 days."))
+            svc.weekly_briefing(professor=professor, identity_label=identity_label, role=role,
+                                report=report),
+            empty="No classes in the next 7 days.", report=report))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def check_ibope_status(professor: str = "", identity_label: str = "", role: str = "") -> str:
         """Last classes of a discipline happening TODAY — these need the end-of-course survey
         (IBOPE) reminder to the professor."""
+        report = ReadReport()
         return _guard(lambda: _fmt_list(
-            svc.ibope_status(professor=professor, identity_label=identity_label, role=role),
-            empty="No last classes today — no survey reminders needed."))
+            svc.ibope_status(professor=professor, identity_label=identity_label, role=role,
+                             report=report),
+            empty="No last classes today — no survey reminders needed.", report=report))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def find_replacement_slot(professor: str = "", identity_label: str = "", role: str = "") -> str:
         """Open slots (free-slot labels) in the next 21 days — candidates for rescheduling a
         class into via confirm_swap."""
+        report = ReadReport()
         return _guard(lambda: _fmt_list(
-            svc.find_replacement_slot(professor=professor, identity_label=identity_label, role=role),
-            empty="No open slots in the next 21 days."))
+            svc.find_replacement_slot(professor=professor, identity_label=identity_label,
+                                      role=role, report=report),
+            empty="No open slots in the next 21 days.", report=report))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
     def confirm_swap(professor: str, original_date: str, new_date: str, reason: str = "",
@@ -133,14 +186,24 @@ def _demo_service() -> CoordinatorService:
     adapter when the host passes an OAuth token (COGNO_COORDINATOR_GOOGLE_TOKEN), else an empty
     in-memory fake (dev/demo). The host mints/refreshes the token and injects it per turn."""
     cfg = CoordinatorConfig(os.environ.get("COGNO_COORDINATOR_RULES", ""))
+    # WHERE "today" COMES FROM. Not the process clock: this server runs as a stdio subprocess of
+    # the host, and the host's container boots in UTC on purpose — so between 21:00 and midnight
+    # in São Paulo the process would already believe it is tomorrow, and a class happening TODAY
+    # would silently drop out of a list that is now cut at "today onward". The host stamps its
+    # OWN anchor (the same date it renders as [HOJE] in the prompt) into COGNO_COORDINATOR_TODAY;
+    # reading it is what makes the tool and the prompt incapable of disagreeing. The host has
+    # been setting it since the vertical shipped — nothing here read it. Unset (a standalone run)
+    # → the real date, exactly like the scheduler and bookkeeper servers.
+    iso = os.environ.get("COGNO_COORDINATOR_TODAY")
+    clock = (lambda: date.fromisoformat(iso)) if iso else None
     token = os.environ.get("COGNO_COORDINATOR_GOOGLE_TOKEN", "")
     if token:
         from cogno_praxis.coordinator.stores.google_sheets import GoogleSheetsStore
-        return CoordinatorService(GoogleSheetsStore(token), cfg)
+        return CoordinatorService(GoogleSheetsStore(token), cfg, today=clock)
     store = InMemorySpreadsheetStore()
     for _, sid in cfg.spreadsheets.items():
         store.put(sid, cfg.tab_schedule, [["Data", "Dia", "Professor", "Disciplina", "Sala"]])
-    return CoordinatorService(store, cfg)
+    return CoordinatorService(store, cfg, today=clock)
 
 
 mcp = build_server()

@@ -12,6 +12,13 @@ Approve the response if:
   date) and asked the user to confirm — this confirmation is REQUIRED and correct.
 - Out-of-scope questions (appointments, finance, general trivia) were redirected rather than
   answered.
+- An ACCESS LIMIT stated plainly ("só posso mostrar as suas aulas") is a COMPLETE and CORRECT
+  answer — the rule worked. So is "não encontrei aulas em nome de X" when the tool ran and came
+  back empty, and so is a partial answer that names the spreadsheet it could not read. None of
+  those is a failure to reject; rejecting them only sends the turn round a retry loop that ends
+  in a handoff over a correct reply.
+- The schedule tools return classes from TODAY onward unless the past was explicitly asked for.
+  A reply that shows no past classes is CORRECT, not incomplete.
 
 Raw tool output (the formatted class/slot lines) IS the expected response format — do NOT penalize
 a reply that consists primarily of tool-formatted schedule data.
