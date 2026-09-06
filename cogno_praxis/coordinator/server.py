@@ -23,9 +23,10 @@ from mcp.types import ToolAnnotations
 
 from datetime import date
 
-from cogno_praxis.coordinator.ics import CalendarSender
+from cogno_praxis.coordinator.ics import CalendarEvent, CalendarSender
 from cogno_praxis.coordinator.config import CoordinatorConfig
 from cogno_praxis.coordinator.service import (
+    CalendarProposal,
     CoordinatorAccessError,
     CoordinatorError,
     CoordinatorService,
@@ -136,6 +137,53 @@ def _fmt_list(entries: list[ClassEntry], *, empty: str,
     body = "\n".join(f"- {_fmt_entry(e)}" for e in entries) if entries else empty
     footer = _fmt_report(report) if report else ""
     return f"{body}\n\n{footer}" if footer else body
+
+
+def _calendar_proposal_text(p: CalendarProposal,
+                            report: Optional[ReadReport] = None) -> str:
+    """The question a calendar send owes the professor, GROUNDED in what was just read.
+
+    Every number in it came out of the read: the COUNT is the events that were built, the
+    ADDRESS is the one the send would resolve, the PERIOD is the filter that was actually
+    applied. Nothing is passed through from the caller's arguments, and nothing is filled in
+    when the read did not produce it — a proposal that names a month nobody filtered by, or
+    rounds a count, gets an agreement to something other than what arrives.
+
+    **The period clause is CONDITIONAL for exactly that reason.** A request with no month, or
+    with a word the resolver could not read as one, filtered by no period at all; the sentence
+    then says how many classes and where, and claims no period. The alternative — echoing the
+    caller's string — is how "as aulas de outubro" would be proposed as October over a read
+    that never filtered.
+
+    It deliberately does NOT start with the ``SENT:`` marker the rest of the system reads as
+    proof an e-mail left (``prompts/limits.txt``, ``prompts/voice.txt``): nothing was sent, and
+    that marker is how every layer downstream tells the two apart.
+    """
+    period = f" of {p.period}" if p.period else ""
+    head = (f"NOT SENT — no e-mail has left. Sending would put {p.count} class(es){period} "
+            f"into ONE calendar file, e-mailed to {p.recipient}:")
+    lines = [head] + [f"  - {_fmt_event(e)}" for e in p.events]
+    if p.dropped:
+        lines.append(f"({p.dropped} class(es) carry a date this system could not read and would "
+                     f"be left out of that count.)")
+    lines.append(
+        "Tell the user EXACTLY how many classes, which period and which address, and get their "
+        "agreement. Only then call send_schedule_to_calendar with the SAME professor/month/"
+        "turma. NOTHING has been sent by this call.")
+    footer = _fmt_report(report) if report else ""
+    body = "\n".join(lines)
+    return f"{body}\n\n{footer}" if footer else body
+
+
+def _fmt_event(e: CalendarEvent) -> str:
+    """One entry a proposal lists, read off the calendar EVENT rather than the sheet row.
+
+    The event is what would actually be created, and it already carries the line a schedule
+    read writes (``describe`` renders ``_fmt_entry`` into its description), so the proposal and
+    the listing the professor saw a turn earlier read alike instead of being two formats for
+    one fact. With no ``describe`` there is still a summary and a day — never nothing, because
+    a proposal that lists blank rows is a proposal a person cannot check."""
+    return e.description.strip() or f"{e.summary} — {e.day.strftime('%d/%m/%Y')}"
 
 
 def _fmt_professors(rows: list[dict[str, str]], *, report: Optional[ReadReport] = None) -> str:
@@ -257,6 +305,34 @@ def build_server(service: Optional[CoordinatorService] = None, *,
                                       role=role, report=report),
             empty="No open slots in the next 21 days.", report=report))
 
+    # READ-ONLY, and that annotation is the point rather than a detail. ``send_schedule_to_
+    # calendar`` is held before it runs — by its own ``destructiveHint`` and, on a host that
+    # gates every write, by name regardless — so the skill never reads and therefore has
+    # nothing to base a question on; the contact is asked about a raw argument. A read is held
+    # by nobody, so this one RUNS, reads the same rows the send would, and hands back the
+    # sentence the send cannot produce for itself. It is the same relationship
+    # ``find_replacement_slot`` has with ``confirm_swap``: the read that grounds the write.
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    def preview_schedule_to_calendar(professor: str = "", month: str = "", turma: str = "",
+                                     identity_label: str = "", role: str = "",
+                                     identity_email: str = "") -> str:
+        """What send_schedule_to_calendar WOULD mail — how many classes, for which period, and
+        to which address — WITHOUT sending anything. Call this FIRST, every time, before
+        send_schedule_to_calendar: it reads the same schedule the send would and answers with
+        the exact count, period and recipient, so you can put those numbers to the user and get
+        a yes about the real thing. Take the same ``professor``/``month``/``turma`` you intend
+        to send with, and then send with EXACTLY those. Its answer starts with "NOT SENT" —
+        nothing left, and you must not say anything did. If it comes back as an ERROR, the send
+        would fail the same way: relay that instead of proposing.
+        """
+        report = ReadReport()
+        return _guard(lambda: _calendar_proposal_text(
+            svc.preview_schedule_to_calendar(
+                sender=snd, professor=professor, month=month, turma=turma,
+                identity_label=identity_label, role=role, identity_email=identity_email,
+                describe=_fmt_entry, report=report),
+            report))
+
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
     async def send_schedule_to_calendar(professor: str = "", month: str = "", turma: str = "",
                                         identity_label: str = "", role: str = "",
@@ -264,22 +340,20 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         """E-mail the professor's UPCOMING classes as ONE calendar file (.ics) they import in a
         single action — "manda minhas aulas pro meu calendário", "envia meu calendário de
         setembro". ``month`` and ``turma`` narrow it exactly like get_professor_schedule; leave
-        ``professor`` EMPTY for the caller's own classes. THIS SENDS AN E-MAIL: present what
-        will go (how many classes, which month/turma) and get an explicit yes BEFORE calling —
+        ``professor`` EMPTY for the caller's own classes. THIS SENDS AN E-MAIL: call
+        preview_schedule_to_calendar FIRST with the same arguments, put ITS count, period and
+        address to the user, and get an explicit yes BEFORE calling this —
         the system also holds the call and asks. The recipient is resolved by the system from
         the professor's own records and can NOT be chosen here. A professor may only send their
         own calendar; a coordinator/supervisor may send another professor's.
         On success the answer starts with SENT: — and ONLY then did an e-mail leave. Any error
         means NOTHING was sent: say what it says and never claim otherwise."""
-        def _describe(e: ClassEntry) -> str:
-            return _fmt_entry(e)
-
         report = ReadReport()
         try:
             count, to, dropped = await svc.send_schedule_to_calendar(
                 sender=snd, professor=professor, month=month, turma=turma,
                 identity_label=identity_label, role=role, identity_email=identity_email,
-                tz_name=tz, describe=_describe, report=report)
+                tz_name=tz, describe=_fmt_entry, report=report)
         except CoordinatorAccessError as exc:
             # RAISED, not returned as text, and the two halves of that are separate.
             # RAISING is the accounting: a FastMCP tool that RETURNS is a successful call, and
