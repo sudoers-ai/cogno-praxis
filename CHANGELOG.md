@@ -4,6 +4,44 @@
 
 ### Fixed
 
+- **COORDINATOR: a TURMA passa a viajar em toda a linha — e «outras turmas» deixa de ser lido
+  como «outros professores».** Medido em 06/09 nos turnos t56–t57 do dono.
+
+  1. **A turma não estava a faltar nos DADOS, estava a faltar na FORMATAÇÃO.** `sheet_key` —
+     o rótulo que o próprio tenant deu à planilha, que neste vertical *é* a turma — carrega-se
+     em cada `ClassEntry` desde que o vertical existe e só chegava a um humano dentro de uma
+     mensagem de erro. Um professor com quatro turmas recebia quatro listas de datas
+     indistinguíveis. Agora toda a linha abre com `Turma: <o nome do tenant>`, em **todas** as
+     ferramentas de leitura, porque a formatação é partilhada.
+  2. **A mesma data era dita TRÊS vezes.** O layout do tenant gasta três colunas num dia
+     (`Mês | Dia | Data`, o mesmo valor nas três, no formato cru da folha) e a linha chegava ao
+     modelo como `Mês: 2026-09-08 00:00:00 | Dia: 2026-09-08 00:00:00 | Data: 2026-09-08
+     00:00:00 | …`. Agora a data é dita **uma vez**, normalizada `DD/MM/AAAA` como no resto do
+     sistema. O critério é a **DATA, não o nome da coluna**: só se dobra uma célula que resolve
+     para o MESMO dia — um `Dia` com «Terça» é outro facto e sobrevive.
+  3. **Filtro por turma (`turma`), com casamento tolerante.** Um prefixo nu leva a família
+     («DSA» → DSA_33 e DSA_34); separador, caixa e espaçamento não decidem nada («DE_09»,
+     «de 09», «DE09»; uma das chaves vivas tem **dois espaços**). Um `turma` que não designa
+     nada devolve **vazio e diz porquê**, nomeando as turmas configuradas — largar o filtro em
+     silêncio responde a uma pergunta que ninguém fez, e adivinhar a turma manda um professor
+     para a sala errada.
+  4. **«DE» é uma PREPOSIÇÃO, e foi isso que decidiu o normalizador.** Um prefixo de turma pode
+     ser a palavra mais comum de uma frase de agenda («as aulas **de** outubro»). Duas regras
+     foram **medidas uma contra a outra antes de qualquer uma ser escrita**: esmagar tudo e
+     fazer substring transforma a conjunção «e» — a primeira palavra do turno t57 — num filtro
+     que devolve as duas turmas `DE`; a regra embarcada (corrida contígua de tokens) não
+     responde nada. A sonda de sobre-aperto está **embarcada como teste parametrizado**. O
+     normalizador aplica-se **ao ARGUMENTO**, nunca a texto livre: a ferramenta não procura
+     turmas na frase.
+  5. **«Outras turmas» dito por um professor são AS AULAS DELE nas outras turmas.** O âmbito
+     não mudou nada — um EMPLOYEE continua a ver só as próprias aulas — mas a persona lia o
+     pedido como sendo sobre *outros professores* e recusava-o por âmbito. O `system.txt` passa
+     a distingui-los explicitamente («there is nothing to refuse»), e a dizer que perguntar por
+     outra turma **não é** perguntar pelo passado (o modelo tinha ligado `include_past=true`
+     sem ninguém pedir passado). Os nomes das turmas **não** são injectados: medido no host,
+     o `custom_rules` já é anexado ao prompt do EGO e as quatro chegam lá — o que faltava era o
+     significado, não a lista.
+
 - **COORDINATOR: quatro consertos de uma só conversa — o horário que a persona disse não
   conseguir aceder, e o que a fez dizê-lo.** Medido em 06/09 nos turnos t50–t55 do dono.
 

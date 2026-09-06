@@ -79,6 +79,43 @@ def _fuzzy_match_discipline(query: str, candidate: str,
     return True
 
 
+# One class-group designator, split into the pieces a human varies: letters and digits, with
+# every separator, accent and capital thrown away. "DE_09", "de 09", "DE09" and "Turma  DE_09"
+# all become the same token list, so the tenant's spacing (one of the live keys carries a DOUBLE
+# space) can never decide whether a filter matches.
+_TURMA_TOKENS = re.compile(r"[a-z]+|[0-9]+")
+
+
+def _turma_tokens(text: str) -> list[str]:
+    """``'Turma  DE_09'`` → ``['turma', 'de', '09']``; ``'DE09'`` → ``['de', '09']``."""
+    return _TURMA_TOKENS.findall(_norm(text))
+
+
+def _turma_matches(query: list[str], key: str) -> bool:
+    """Does a ``turma`` argument designate the class group ``key``?
+
+    The rule is a CONTIGUOUS RUN of whole tokens: the query's tokens must appear side by side,
+    in order, inside the key's tokens. So a bare prefix selects a family (``DSA`` → ``DSA_33``
+    and ``DSA_34``), a full designator selects one group however it was typed, and a bare number
+    still works (``33``).
+
+    **Why a token run and not a substring.** A class-group prefix can also be an ordinary
+    Portuguese word: ``DE_09``/``DE_10`` are perfectly ordinary group names and ``de`` is the
+    commonest preposition in any sentence about a schedule ("as aulas DE outubro"). The cheap rule
+    (strip every separator, then substring) was measured against this one before either was
+    written, and it turns the single conjunction ``e`` — the first word of the very turn that
+    provoked this change — into a filter selecting both ``DE`` groups, because "e" sits inside
+    "turmade09". A token run answers nothing to it. Neither rule can save a model that fills the
+    argument with exactly ``"de"``, and that is the prompt's job (the tool NEVER goes looking for
+    a class group in free text; it only ever reads the argument it was handed).
+    """
+    if not query:
+        return False
+    k = _turma_tokens(key)
+    n = len(query)
+    return any(k[i:i + n] == query for i in range(len(k) - n + 1))
+
+
 def _resolve_month(raw: str) -> Optional[tuple[int, int]]:
     """Parse a user month filter into ``(month, year)`` where year may be 0 (any year).
     Accepts ``'2026-03'``, ``'03'``, ``'3'``, or a PT-BR name/abbrev ``'março'``/``'mar'``.
@@ -264,14 +301,32 @@ class CoordinatorService:
         return [e for e in entries if n in _norm(e.professor)], None
 
     # ── read tools ───────────────────────────────────────────────────────────────────
+    def resolve_turmas(self, turma: str) -> list[str]:
+        """The configured class-group keys a ``turma`` argument designates (``[]`` = none).
+
+        An empty argument returns ``[]`` too — the caller reads that as "no filter", never as
+        "no group matched"; only a NON-empty argument that resolves to nothing is a miss."""
+        query = _turma_tokens(turma)
+        if not query:
+            return []
+        return [k for k in self.cfg.spreadsheets if _turma_matches(query, k)]
+
     def get_professor_schedule(self, *, professor: str = "", role: str = "",
                                identity_label: str = "", month: str = "",
-                               discipline: str = "", include_past: bool = False,
+                               discipline: str = "", turma: str = "",
+                               include_past: bool = False,
                                report: Optional[ReadReport] = None) -> list[ClassEntry]:
         """A professor's (or, for oversight, anyone's) classes, optionally narrowed by ``month``
         (``'2026-03'``, ``'03'``, or a month name in Portuguese or English — ``'março'``,
         ``'September'``) and/or ``discipline`` (fuzzy, typo-tolerant — 'machne learning' still
-        matches 'Machine Learning').
+        matches 'Machine Learning') and/or ``turma`` (the class group — a bare prefix selects the
+        whole family, ``'DSA'`` → ``DSA_33`` and ``DSA_34``).
+
+        **A ``turma`` that designates nothing returns nothing, loudly.** It is recorded on
+        ``report.unmatched_turma`` together with the configured names, because the alternative —
+        quietly dropping the filter — answers a question nobody asked, and the alternative to
+        THAT (guessing which group was meant) is how a wrong list of dates gets a professor to
+        the wrong classroom.
 
         **The window is ``[today, ∞)`` by default.** A schedule spreadsheet holds the whole
         academic year, and the question a professor asks is almost always about what is COMING:
@@ -287,6 +342,15 @@ class CoordinatorService:
                                      role=role, identity_label=identity_label)
         if err:
             raise CoordinatorAccessError(err)
+        if turma.strip():
+            keys = self.resolve_turmas(turma)
+            if not keys:
+                if report is not None:
+                    report.unmatched_turma = turma.strip()
+                    report.known_turmas = tuple(self.cfg.spreadsheets)
+                return []
+            wanted = set(keys)
+            entries = [e for e in entries if e.sheet_key in wanted]
         mspec = _resolve_month(month)
         if mspec:
             mm, yy = mspec
