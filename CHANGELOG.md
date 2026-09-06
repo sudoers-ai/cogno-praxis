@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### Added
+
+- **`company` — o cadastro de empresas passa a ser um vertical MCP.** Estava no host como skill
+  nativa cogno-cortex (`cogno_host/company_registration.py` + `company_adapter.py`); vem para cá
+  inteiro, com store port + adaptador Postgres, e liga-se a uma persona por `allowed_modules`
+  como o `scheduler`. É **transversal**: não é o domínio de nenhuma persona — a SECRETARY
+  carrega-o ao lado da agenda.
+
+  Três coisas foram **medidas antes de escritas**, e cada uma mudou o desenho:
+
+  1. **O NOME da ferramenta é um contrato, não um rótulo.** O host decide de que empresa se está
+     a falar procurando execuções chamadas exactamente `company_registration` e lendo
+     `company_id`/`company_name` da resposta. Um rename não parte nada: o foco pára de se mover,
+     e o turno seguinte planeia para a empresa errada com um texto que continua plausível. O
+     nome e as chaves da resposta ficam byte a byte como estavam, e o pino vive **deste lado**
+     também (`test_company_server.py`), porque a mudança que o parte acontece aqui.
+  2. **A resposta é um `repr`, e a tool é `-> str`.** O host lê-a com `ast.literal_eval`.
+     Anotar `-> dict` faria o FastMCP serializar com `pydantic_core.to_json`, cujo `true`/`null`
+     não são literais de Python: começa por `{`, passa a guarda do host, e depois **falha
+     fechado** — o foco pára de se mover sem um único vermelho.
+  3. **Uma recusa LEVANTA, não devolve `"ERROR: ..."`.** Medido pela cadeia real: uma string
+     devolvida é um retorno normal, logo o cogno-mcp constrói `ToolResult(ok=True,
+     side_effect=True)` — que é a convenção dos verticais vizinhos e que aqui registaria um
+     cadastro recusado como **escrita comitada**, contada pelo `committed_this_turn` e passada
+     pela guarda `if not ex.ok` do foco. A skill que este vertical substitui respondia
+     `ok=False`; levantar é como isso sobrevive à mudança.
+
+  A tabela é a **mesma** `tenant_companies` do host (viva desde 02/09), com as mesmas colunas e
+  a mesma chave primária: o host continua a LER dali para montar o bloco «empresa em foco», e
+  uma tabela nova teria deixado a escrita aqui e a leitura lá, em linhas diferentes.
+
+  `company_registration` entra em `_UNDOABLE` no varrimento de anotações: a chave da linha é
+  derivada do nome dobrado sem acentos, portanto cadastrar de novo **actualiza** — a mesma forma
+  de desfazer do `set_auto_confirm`, e executada, não acreditada.
+
 ### Fixed
 
 - **COORDINATOR: a TURMA passa a viajar em toda a linha — e «outras turmas» deixa de ser lido

@@ -1,7 +1,7 @@
 [project]
 name = "cogno-praxis"
 version = "0.1.1"
-description = "The Cogno business verticals as standalone MCP servers (the product layer). Each vertical is an independent FastMCP server the host orchestrates via cogno-mcp; verticals own their domain logic + data behind their own store ports. Verticals: scheduler (agenda → SECRETARY persona) and bookkeeper (finance → BOOKKEEPER persona)."
+description = "The Cogno business verticals as standalone MCP servers (the product layer). Each vertical is an independent FastMCP server the host orchestrates via cogno-mcp; verticals own their domain logic + data behind their own store ports. Verticals: scheduler (agenda → SECRETARY persona), bookkeeper (finance → BOOKKEEPER persona), coordinator (academic schedule) and company (brand registration, transversal)."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
@@ -92,6 +92,7 @@ pythonpath = ["."]
 # infra-free logic, so omit it here to keep the 90% floor meaningful instead of
 # counting an always-skipped-in-unit adapter as 0%.
 omit = ["*/scheduler/stores/postgres.py", "*/bookkeeper/stores/postgres.py",
+        "*/company/stores/postgres.py",
         "*/coordinator/stores/google_sheets.py"]
 
 [tool.ruff]

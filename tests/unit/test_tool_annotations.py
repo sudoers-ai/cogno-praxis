@@ -46,6 +46,7 @@ from datetime import date, timedelta
 import pytest
 
 from cogno_praxis.bookkeeper.server import build_server as build_bookkeeper
+from cogno_praxis.company.server import build_server as build_company
 from cogno_praxis.coordinator.server import build_server as build_coordinator
 from cogno_praxis.scheduler.server import build_server as build_scheduler
 
@@ -64,6 +65,13 @@ _UNDOABLE: "dict[str, str]" = {
     "set_schedule_settings": "write the previous values back",
     "add_income": "remove_by_search",
     "add_outcome": "remove_by_search",
+    # The row's key is DERIVED from the accent-folded name, so this is the `set_auto_confirm`
+    # shape of undo: the correction IS the same call. The residual is named rather than
+    # implied — a typo in the NAME keys a DIFFERENT row, and the stray registration stays; no
+    # tool removes it (the store port carries `delete` and deliberately does not expose it,
+    # because a delete tool here is a new destructive capability, not part of a move).
+    "company_registration": "register the same company again — the folded name is the key, so "
+                            "the corrected values UPDATE that row",
 }
 
 # tool → the argument it requires in order to commit, which a caller can only have learned from
@@ -75,7 +83,7 @@ _ASKS_ITSELF: "dict[str, str]" = {
 }
 
 _BUILDERS = {"scheduler": build_scheduler, "bookkeeper": build_bookkeeper,
-             "coordinator": build_coordinator}
+             "coordinator": build_coordinator, "company": build_company}
 
 
 async def _annotations(vertical: str) -> "dict[str, object]":
@@ -275,6 +283,16 @@ def test_every_undoable_tool_really_undoes():
                                    confirm_tx_id=proposal.confirm_tx_id).removed is not None, q
     summary = bk.get_summary("e1", "ADMIN")
     assert summary["income_count"] == 0 and summary["outcome_count"] == 0
+
+    from cogno_praxis.company import CompanyService, InMemoryCompanyStore  # register → register
+    co = CompanyService(InMemoryCompanyStore())
+    co.register("Padaria São João", visual_identity="azul")
+    co.register("padaria sao joao", visual_identity="verde")   # the correction, same call
+    rows = co.list_companies()
+    # The claim is that the wrong value LEAVES and no second row appears. Asserting only the
+    # new value would pass over an undo that added a row beside the mistake instead of
+    # replacing it — which is exactly the failure mode a name-derived key exists to prevent.
+    assert len(rows) == 1 and rows[0].visual_identity == {"visual_identity": "verde"}
 
 
 @pytest.mark.parametrize("days_back", [0, 1, 7])
