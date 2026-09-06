@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
 _log = logging.getLogger(__name__)
 
@@ -48,10 +48,17 @@ class SmtpCalendarSender:
 
     async def send(self, *, to: str, subject: str, body: str, ics: str,
                    filename: str = "schedule.ics") -> bool:
+        # ``Callable[..., Any]`` on purpose, and it is not laziness. The config travels as a
+        # plain mapping because it arrives as one — from JSON in the environment, or from a
+        # host that never imported herald — while ``send_email_with_ics`` declares herald's
+        # ``SmtpConfig`` TypedDict. Narrowing the local to the typed function would make the
+        # port refuse the very shape it exists to carry, and re-declaring the TypedDict here
+        # would be a second copy of somebody else's contract. The transport is a SEAM: the
+        # host may inject anything that accepts these six arguments.
         send = self._send_fn
         if send is None:
             from cogno_herald import send_email_with_ics
-            send = send_email_with_ics
+            send = cast("Callable[..., Any]", send_email_with_ics)
         result = await send(self._smtp, [to], subject, body, ics, filename)
         ok = bool(result.get("sent")) if isinstance(result, dict) else bool(result)
         if not ok:
