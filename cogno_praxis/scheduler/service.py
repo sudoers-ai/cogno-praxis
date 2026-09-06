@@ -262,6 +262,27 @@ def _norm_host(s: str) -> str:
     return "".join(ch for ch in folded if ch.isalnum())
 
 
+# Honorifics as WHOLE tokens. ``_norm_host`` strips them as substrings anywhere in the
+# string, which is fine for collapsing one name to one key and wrong for splitting a name into
+# words ("Pedro" would lose its "dr"). The two normalisers therefore stay separate.
+_HONORIFICS: frozenset[str] = frozenset({"dr", "dra", "sr", "sra", "prof", "profa"})
+
+
+def _host_tokens(s: str) -> frozenset[str]:
+    """The folded word tokens of a person's name, honorifics dropped, 1-char words dropped.
+
+    Token-wise, unlike :func:`_norm_host`, which collapses the whole string to a single key.
+    A contact says "a Dra. Marina" and the catalogue holds "Dra. Marina Aloe": only a token
+    comparison can tell *every word they said is in this name* from *no match at all*, and
+    that difference is what separates "book it" from "ask which one".
+
+    One-character tokens are dropped from the QUERY side on purpose — a bare initial matches
+    almost anything, and a match that loose is exactly what must not resolve to one agenda.
+    """
+    return frozenset(t for t in re.split(r"[^0-9a-z]+", _fold(s)) if len(t) > 1
+                     and t not in _HONORIFICS)
+
+
 class SchedulerError(RuntimeError):
     """A recoverable domain error (unknown host, slot taken, past date, unknown id)."""
 
@@ -322,36 +343,120 @@ class SchedulerService:
         host.auto_confirm = bool(value)
         return host
 
-    # ── host resolution ────────────────────────────────────────────────
-    def _resolve_host_id(self, host_id: str) -> str:
-        """Tolerate a model that invents a name-slug id ('dr_jose_luiz_manzoli') instead of the
-        catalog id: exact match first, then a normalized match against every host's id AND name
-        (accent/honorific/separator-insensitive), then a **single specialty** match ('o
-        cardiologista' → the one cardiologist). An ambiguous specialty (more than one host with
-        that role) stays unresolved, so the caller lists them and the user picks. Returns the real
-        id, or the input unchanged so the 'unknown host' error still fires when nothing matches."""
-        if self.store.get_host(host_id) is not None:
-            return host_id
-        target = _norm_host(host_id)
-        if not target:
-            return host_id
-        for h in self.store.list_hosts():
-            if _norm_host(h.host_id) == target or _norm_host(h.name) == target:
-                return h.host_id
-        # specialty/role: booking "com o cardiologista" is valid when exactly one host has it.
-        by_role = [h for h in self.store.list_hosts() if h.role and _norm_host(h.role) == target]
-        if len(by_role) == 1:
-            return by_role[0].host_id
-        return host_id
+    # ── whose agenda does this call act on? ────────────────────────────
+    # ONE door, for every call that reads or writes an agenda. It replaces `_resolve_host_id`,
+    # which answered the question in three callers and REPORTED it in none: it may substitute one
+    # professional's string for another's id (a model-invented name-slug, a lone specialty), and
+    # both `check_availability` and `book` then echoed the caller's own argument back, so the
+    # substitution read as agreement. Live trace 731 (2026-09-03): the model booked with an id the
+    # catalogue it had just been shown did not list, carrying a `host_name` for a professional who
+    # does not work here, and the turn answered "Booked … with <that name>". The reply named
+    # whoever the CALLER said, the row landed on whoever the VERTICAL resolved, and nothing in
+    # between compared the two. A substitution nobody can see is a booking in the wrong agenda
+    # that nobody can see — so this door returns the catalogue Host, and its refusals carry the
+    # roster instead of a bare error the model answers with a second guess.
+    def _roster(self) -> str:
+        """The bookable professionals, as a line a model can relay to the client."""
+        hosts = self.store.list_hosts()
+        if not hosts:
+            return "nobody is configured as bookable here"
+        return "; ".join(f"{h.name} [{h.host_id}]" for h in hosts)
+
+    def _host_candidates(self, text: str) -> list[Host]:
+        """Every catalogue host a free string could mean — 0, 1 or many. Never picks.
+
+        Three tiers, first non-empty wins, each STRICTER than the phrase it answers:
+        the catalogue key itself (id or full name, accent/honorific/separator-insensitive),
+        then *every word the caller said is a word of this name* ("Marina" → "Dra. Marina
+        Aloe"), then a specialty ("o cardiologista"). A tier that matches two hosts returns
+        both, so the caller asks instead of guessing — the old resolver collapsed that case
+        into "unknown host", which reads as *nobody* when the truth is *which of these two*.
+        """
+        hosts = self.store.list_hosts()
+        key = _norm_host(text)
+        if key:
+            exact = [h for h in hosts
+                     if _norm_host(h.host_id) == key or _norm_host(h.name) == key]
+            if exact:
+                return exact
+        want = _host_tokens(text)
+        if want:
+            partial = [h for h in hosts
+                       if want <= (_host_tokens(h.name) | _host_tokens(h.host_id))]
+            if partial:
+                return partial
+        if key:
+            return [h for h in hosts if h.role and _norm_host(h.role) == key]
+        return []
+
+    def _host_for(self, text: str) -> Host:
+        """Exactly one catalogue host for a free string, or a refusal that says which case it is.
+
+        The refusals are written for the MODEL that will relay them: they say that nothing was
+        written, they carry the roster (or the two candidates) so the answer is one message and
+        not another round-trip, and they say **do not pick one yourself** — because the failure
+        this whole door exists for is a silent pick, not a loud error. They keep the historical
+        ``unknown host`` opening so a caller matching on it keeps working.
+        """
+        exact = self.store.get_host(text)
+        if exact is not None:
+            return exact
+        cands = self._host_candidates(text)
+        if len(cands) == 1:
+            return cands[0]
+        if not cands:
+            raise SchedulerError(
+                f"unknown host: {text!r} — nobody bookable here goes by that, and NOTHING was "
+                f"written. The professionals who can be booked are: {self._roster()}. Do NOT "
+                f"pick one yourself: show this list to the client and ask which one they mean.")
+        raise SchedulerError(
+            f"unknown host: {text!r} is ambiguous — it matches {len(cands)} professionals "
+            f"({'; '.join(f'{h.name} [{h.host_id}]' for h in cands)}), and NOTHING was written. "
+            f"Ask the client which one they mean; do NOT pick one yourself.")
+
+    def resolve_agenda(self, host_id: str = "", host_name: str = "") -> Host:
+        """The catalogue host this call acts on, or a :class:`SchedulerError` explaining why not.
+
+        ``host_id`` is the catalogue id (or anything that resolves to exactly one); ``host_name``
+        is **the professional the client named**, and when both are given they must be the same
+        person. They can disagree — trace 731 carried an id and a name that no single row could
+        satisfy — and the cheap moment to find out is before the write, not after it.
+
+        Callers get the :class:`Host`, not an id, so what they echo back to the client comes from
+        the CATALOGUE. That is the half that makes a substitution audible.
+        """
+        given, named = (host_id or "").strip(), (host_name or "").strip()
+        if not given and not named:
+            raise SchedulerError(
+                f"unknown host: none was given, and NOTHING was written. The professionals who "
+                f"can be booked are: {self._roster()}. Ask the client which one they mean.")
+        by_id = self._host_for(given) if given else None
+        by_name = self._host_for(named) if named else None
+        if by_id is not None and by_name is not None and by_id.host_id != by_name.host_id:
+            raise SchedulerError(
+                f"unknown host: this call names {named!r} ({by_name.name} [{by_name.host_id}]) "
+                f"but passes host_id {given!r} ({by_id.name} [{by_id.host_id}]) — two different "
+                f"agendas, so NOTHING was written. Re-issue it with the id of the professional "
+                f"the client actually named, or ask the client which one they mean.")
+        # One of the two branches ran (the empty/empty case raised above) and both raise rather
+        # than return None, so this is total — spelled as a fallback, not an ``assert``, because
+        # ``python -O`` strips asserts and a stripped guard on a write path is no guard.
+        if by_id is not None:
+            return by_id
+        if by_name is not None:
+            return by_name
+        raise SchedulerError(                                      # pragma: no cover
+            f"unknown host: {host_id!r}/{host_name!r} could not be resolved to one agenda, "
+            f"and NOTHING was written. Bookable: {self._roster()}.")
 
     # ── reads ──────────────────────────────────────────────────────────
     def list_hosts(self) -> list[Host]:
         return self.store.list_hosts()
 
-    def check_availability(self, host_id: str, date: str) -> list[str]:
-        host_id = self._resolve_host_id(host_id)
-        if self.store.get_host(host_id) is None:
-            raise SchedulerError(f"unknown host: {host_id}")
+    def check_availability(self, host_id: str, date: str, *, host_name: str = "") -> list[str]:
+        """Free slots on a date. ``host_name`` is the professional the CLIENT named — passing it
+        makes this read verify the agenda instead of trusting the id it was handed."""
+        host_id = self.resolve_agenda(host_id, host_name).host_id
         self._require_future(date)
         self._require_working_day(date)
         taken = self.store.booked_times(host_id, date)
@@ -364,9 +469,7 @@ class SchedulerService:
         holidays/weekends (the engine decides which days count). Returns
         ``(iso_date, free_slots)`` or ``None`` if nothing opens within ``horizon_days``
         working days scanned. Never books — a pure look-ahead the secretary can OFFER."""
-        host_id = self._resolve_host_id(host_id)
-        if self.store.get_host(host_id) is None:
-            raise SchedulerError(f"unknown host: {host_id}")
+        host_id = self.resolve_agenda(host_id).host_id
         cursor = date.fromisoformat(after_date) + timedelta(days=1)
         scanned = 0
         # Hard calendar cap so a long holiday stretch can't loop indefinitely.
@@ -473,10 +576,11 @@ class SchedulerService:
     def book(self, host_id: str, date: str, time: str, with_name: str,
              notes: str = "", *, guest_id: str = "", host_name: str = "",
              persona_id: str = "") -> Appointment:
-        host_id = self._resolve_host_id(host_id)
-        host = self.store.get_host(host_id)
-        if host is None:
-            raise SchedulerError(f"unknown host: {host_id}")
+        # The agenda is decided ONCE, here, against the catalogue — and ``host_name`` is read as
+        # the professional the client NAMED, not as a display label to copy down. A call whose id
+        # and name are two different people is refused before anything is written.
+        host = self.resolve_agenda(host_id, host_name)
+        host_id = host.host_id
         self._require_future(date)
         self._require_working_day(date)
         self._enforce_policies(host_id, date, time, with_name, guest_id=guest_id)
@@ -491,7 +595,11 @@ class SchedulerService:
         appt = Appointment(
             appointment_id=uuid.uuid4().hex[:8], host_id=host_id, date=date,
             time=time, with_name=with_name, status=status, notes=notes,
-            guest_id=guest_id, host_name=host_name or host.name,
+            # The CATALOGUE's name, never the caller's: this field is what `list_appointments`
+            # and the booking reply show, so a row that took ``host_name`` from the argument
+            # could sit in one professional's agenda while announcing another's — measured on
+            # live trace 731. The argument is an INPUT to `resolve_agenda`, not an output.
+            guest_id=guest_id, host_name=host.name or host_name.strip(),
             # Quem marcou. Chega do HOST, nunca do modelo — e vazio significa «nao se sabe»,
             # nao «a persona base»: um valor que ninguem mediu responderia a pergunta do dono
             # com um palpite.
