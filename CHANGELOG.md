@@ -50,6 +50,39 @@
 
 ### Fixed
 
+- **COMPANIES: corrigir um campo deixa de apagar outro — e o `segment` ganha quem o escreva.**
+  Medido: «corrige o SEGMENTO para padaria artesanal» chegou como
+  `company_update(guidelines='artisanal bakery')`. O campo errado, e as diretrizes que estavam
+  gravadas foram SUBSTITUÍDAS. Três metades, e só duas são código:
+
+  1. **A perda que não precisa de modelo nenhum.** `company_registration` PROMETE que registar
+     uma empresa que já está em ficha ACTUALIZA o registo — e reconstruía a linha a partir dos
+     argumentos dados, com o default de cada um dos outros. Medido no commit base: corrigir só
+     as diretrizes de uma empresa que tinha CNPJ, segmento e identidade visual **apagou os
+     três** (`ON CONFLICT … SET cnpj = EXCLUDED.cnpj`, e o mesmo para os outros dois). Passa a
+     valer a mesma regra que o `update` já enunciava: **um campo que não é enviado fica como
+     está.** Apagar um campo continua deliberadamente inexprimível.
+  2. **O `segment` era coluna sem escritor no caminho do registo.** Existia na tabela, no
+     `update` e na busca; uma empresa registada nascia sempre sem segmento até alguém a
+     corrigir noutro turno. `company_registration(segment=…)` fecha o par, e a resposta do
+     registo passa a dizer o que está EM FICHA em vez de ecoar os argumentos — depois de (1),
+     ecoar o argumento diria `visual_identity: ''` sobre uma empresa que tem uma.
+  3. **A descrição é a promessa, e não distinguia os três campos.** `segment` (o que a empresa
+     FAZ), `visual_identity` (como a marca SE VÊ) e `guidelines` (como a marca FALA) passam a
+     ter cada um a sua linha, com as palavras que o contacto usa — «segmento», «ramo»,
+     «diretrizes», «tom de voz» — coladas ao campo que significam. E a resposta do `update`
+     passa a NOMEAR o que se moveu (`CHANGED segment: 'padaria' → 'padaria artesanal'`): uma
+     linha de empresa lida depois da escrita é idêntica quer o campo certo tenha mudado quer
+     tenha sido o vizinho.
+
+  Uma chamada que não altera nada passa a RECUSAR em vez de responder — devolver faria
+  cogno-mcp construir `ToolResult(ok=True, side_effect=True)`, uma escrita que nunca houve
+  contada pelo `committed_this_turn` do host (a propriedade do #104, aplicada a este vertical).
+
+  **A frase honesta:** a metade (3) que decide QUAL argumento o modelo escolhe é do MODELO — a
+  descrição é a única alavanca que este repositório tem sobre ela. As metades (1) e (2), e o
+  facto de a resposta nomear o campo, são PORTÃO.
+
 - **SCHEDULER: uma lista vazia deixa de apagar o catálogo inteiro de um escopo.**
   `PgAppointmentStore.sync_hosts([])` corria `DELETE FROM schedule_hosts WHERE scope = %s` —
   sem `NOT IN`, todos os profissionais do inquilino numa só instrução. A fronteira ENTRE

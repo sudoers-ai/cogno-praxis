@@ -74,6 +74,34 @@ class DeletionProposal:
 
 
 @dataclass(frozen=True)
+class FieldChange:
+    """One field that MOVED, named the way the caller names it.
+
+    ``field`` is the ARGUMENT name (``segment``, ``guidelines``, …) and not a prose label, on
+    purpose: the reader of this is the model that just chose an argument, and the one thing it
+    has to be able to check is whether the field it changed is the field the user named. A
+    pretty label would be readable and uncheckable.
+    """
+
+    field: str
+    before: str
+    after: str
+
+
+@dataclass(frozen=True)
+class UpdateOutcome:
+    """What :meth:`CompanyService.update` wrote — the row AND the fields that moved.
+
+    The pair travels together because the answer has to name the change and not only the
+    result: a company line rendered after the write reads the same whether the caller corrected
+    the segment it meant to or overwrote the brand guidelines it did not mention.
+    """
+
+    company: Company
+    changes: "tuple[FieldChange, ...]"
+
+
+@dataclass(frozen=True)
 class DeletionOutcome:
     """Either the row LEFT (``removed``) or a grounded question was asked (``proposal``)."""
 
@@ -90,12 +118,28 @@ class CompanyService:
         self._clock = clock
 
     def register(self, name: str, *, cnpj: str = "", visual_identity: str = "",
-                 guidelines: str = "", identity_id: str = "") -> Company:
+                 guidelines: str = "", segment: str = "", identity_id: str = "") -> Company:
         """Persist one company and return the stored row. Raises :class:`CompanyError`.
 
         ``identity_id`` is the AUTHOR — an opaque string the host injects (it is never a value
         the model chooses). It is recorded on creation and, on a later correction, the original
         author survives: a correction is not a new registration by a new person.
+
+        **A field that was NOT supplied is left as it is**, which is the same rule
+        :meth:`update` states and, until 2026-09-06, the rule this method did not keep. The tool
+        promises that registering a company already on file UPDATES its record, and the row it
+        built carried a default for every argument it was not given: measured on the base
+        commit, correcting the guidelines of a company that had a CNPJ, a segment and a visual
+        identity **wiped all three** — ``EXCLUDED.cnpj``/``EXCLUDED.segment``/
+        ``EXCLUDED.visual_identity`` in the store's ``ON CONFLICT``, and the caller had asked to
+        change one field. Blanking a field is still not expressible here, exactly as in
+        :meth:`update`: it is the rarer act and the ambiguous spelling of it is the dangerous
+        one.
+
+        The merge lives HERE and not in the store because both stores would need it and a rule
+        two adapters re-derive is a rule the second adapter gets wrong alone — the in-memory
+        one already keeps ``created_at``/``created_by`` for exactly this reason, and that is as
+        far as a store can reasonably go.
         """
         cname = (name or "").strip()
         if not cname:
@@ -113,10 +157,27 @@ class CompanyService:
                 "O CNPJ informado (campo `cnpj`) não é válido: confira os 14 dígitos e os "
                 "dígitos verificadores, ou deixe o campo em branco — o CNPJ é opcional no "
                 "cadastro.")
-        brand = {k: v for k, v in (("visual_identity", visual_identity),
-                                   ("guidelines", guidelines)) if v}
+        key = company_id_for(cname)
+        try:
+            prior = self.store.get(key)
+        except Exception as exc:  # noqa: BLE001 — the merge READS, and a read can fail too
+            # Same contract as the upsert below, and it needs saying because this read is new:
+            # every path out of `register` that did not reach the store raises `CompanyError`,
+            # so the EGO gets a recoverable `ToolResult(ok=False)` and feeds it back. A raw
+            # store exception escaping HERE would be wrapped in `ToolExecutionError` and
+            # PROPAGATED instead — a Postgres blip would kill the turn rather than let the
+            # model say "não consegui cadastrar agora".
+            raise CompanyError(
+                f"Não consegui salvar o cadastro da empresa agora ({type(exc).__name__}).") from exc
+        brand = dict(prior.visual_identity or {}) if prior is not None else {}
+        for field, value in (("visual_identity", visual_identity), ("guidelines", guidelines)):
+            if value:
+                brand[field] = value
         now = self._clock()
-        row = Company(company_id=company_id_for(cname), name=cname, cnpj=clean,
+        row = Company(company_id=key, name=cname,
+                      cnpj=(clean or (prior.cnpj if prior is not None else "")),
+                      segment=((segment or "").strip()
+                               or (prior.segment if prior is not None else "")),
                       visual_identity=brand, created_by_user_id=identity_id,
                       created_at=now, updated_at=now)
         try:
@@ -134,8 +195,7 @@ class CompanyService:
     def list_companies(self) -> "list[Company]":
         return self.store.list_companies()
 
-    def registration_payload(self, row: Company, *, visual_identity: str = "",
-                             guidelines: str = "") -> "dict[str, Any]":
+    def registration_payload(self, row: Company) -> "dict[str, Any]":
         """The tool's answer, as a MAPPING — rendered by the server, read by the host's focus.
 
         The keys and their order are the ones the host's native skill produced before this
@@ -148,13 +208,21 @@ class CompanyService:
         ``cnpj`` is the stored, NORMALISED form ('' when none was supplied). It is here so the
         executor can ground a read-back on what LANDED rather than on what the contact typed,
         which is the difference between confirming a record and repeating an argument.
+
+        **Every value now comes off the stored row**, ``segment`` included. The two brand
+        fields used to be the ARGUMENTS echoed back, which was already the weaker answer and
+        became a false one the day a registration stopped blanking what it was not given: a
+        correction supplying only ``guidelines`` echoed ``visual_identity: ''`` for a company
+        that has one, and the model reading that back tells the contact their visual identity
+        is empty. Same reason as ``cnpj``, one paragraph up — this is what LANDED.
         """
         return {
             "company_id": row.company_id,
             "company_name": row.name,
             "cnpj": row.cnpj,
-            "visual_identity": visual_identity,
-            "guidelines": guidelines,
+            "segment": row.segment,
+            "visual_identity": str((row.visual_identity or {}).get("visual_identity") or ""),
+            "guidelines": str((row.visual_identity or {}).get("guidelines") or ""),
             "message": f"Successfully registered company brand profile for '{row.name}'.",
         }
 
@@ -238,8 +306,22 @@ class CompanyService:
     # ── writes ───────────────────────────────────────────────────────────────────────────
     def update(self, company_id: str, *, name: str = "", cnpj: str = "",
                visual_identity: str = "", guidelines: str = "", segment: str = "",
-               identity_id: str = "", role: str = "") -> Company:
+               identity_id: str = "", role: str = "") -> UpdateOutcome:
         """Change the fields GIVEN on a company this caller may write to.
+
+        It answers WHICH fields moved and not only the row, because the row alone cannot be
+        checked: a company line rendered after the write reads the same whether the caller
+        corrected the segment the user named or replaced the brand guidelines nobody mentioned.
+        That was the measured loss — «corrige o segmento para X» arriving as
+        ``guidelines="X"`` — and naming the change is what makes it visible to the model that
+        must read the answer back to the person.
+
+        **A call that changes nothing RAISES**, and the refusal distinguishes "you named no
+        field" from "the company already holds those values". Returning would be worse than
+        useless: a mutating tool that returns comes back through cogno-mcp as
+        ``ToolResult(ok=True, side_effect=True)`` — a write that never happened, counted by the
+        host's ``committed_this_turn`` and shown to every anti-fabrication net as a commit. The
+        same reasoning as :class:`CompanyError`, applied to a no-op instead of a refusal.
 
         Only non-empty arguments are applied, and that is a rule with a victim if it is got
         wrong: a partial update that treated "" as "clear this field" would erase the brand
@@ -260,20 +342,47 @@ class CompanyService:
                 "O CNPJ informado (campo `cnpj`) não é válido: confira os 14 dígitos e os "
                 "dígitos verificadores.")
         brand = dict(row.visual_identity or {})
-        if visual_identity:
-            brand["visual_identity"] = visual_identity
-        if guidelines:
-            brand["guidelines"] = guidelines
-        updated = Company(company_id=row.company_id, name=(name or row.name),
-                          cnpj=(clean or row.cnpj), segment=(segment or row.segment),
+        # Argument name, value asked for, value on file — in the order the tool documents them.
+        # The value in this table is the value that gets WRITTEN below; there is no second
+        # reading of the arguments. A report and a write that read the arguments separately
+        # drift apart on the first edge case — a whitespace-only `segment` was written and NOT
+        # reported, which is a quieter version of the very defect this method now exists to
+        # make loud.
+        asked = (
+            ("name", (name or "").strip(), row.name),
+            ("cnpj", clean, row.cnpj),
+            ("segment", (segment or "").strip(), row.segment),
+            ("visual_identity", visual_identity, str(brand.get("visual_identity") or "")),
+            ("guidelines", guidelines, str(brand.get("guidelines") or "")),
+        )
+        given = {f: new for f, new, _ in asked if new}
+        changes = tuple(FieldChange(field=f, before=was, after=new)
+                        for f, new, was in asked if new and new != was)
+        if not changes:
+            if not any(new for _, new, _ in asked):
+                raise CompanyError(
+                    "Nenhum campo para alterar: envie ao menos um de `name`, `cnpj`, "
+                    "`segment`, `visual_identity` ou `guidelines`. Pergunte ao usuário QUAL "
+                    "dado ele quer corrigir — não escolha um campo por conta própria.")
+            already = ", ".join(f"`{f}` já é {was!r}" for f, new, was in asked if new)
+            raise CompanyError(
+                f"Nada foi alterado — a empresa já está assim ({already}). Diga isso ao "
+                "usuário; NÃO repita a chamada com outro campo.")
+        for field in ("visual_identity", "guidelines"):
+            if field in given:
+                brand[field] = given[field]
+        updated = Company(company_id=row.company_id, name=given.get("name", row.name),
+                          cnpj=given.get("cnpj", row.cnpj),
+                          segment=given.get("segment", row.segment),
                           visual_identity=brand,
                           created_by_user_id=row.created_by_user_id,
                           created_at=row.created_at, updated_at=self._clock())
         try:
-            return self.store.upsert(updated)
+            stored = self.store.upsert(updated)
         except Exception as exc:  # noqa: BLE001
             raise CompanyError(
                 f"Não consegui salvar a alteração agora ({type(exc).__name__}).") from exc
+        return UpdateOutcome(company=stored, changes=changes)
 
     def delete(self, company_id: str, *, identity_id: str = "", role: str = "",
                confirm_company_id: str = "") -> DeletionOutcome:
