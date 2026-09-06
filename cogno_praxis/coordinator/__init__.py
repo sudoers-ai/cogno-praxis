@@ -10,12 +10,16 @@ via :class:`CoordinatorConfig`. See ``docs/COORDINATOR.md``.
 from cogno_praxis.coordinator.config import CoordinatorConfig
 from cogno_praxis.coordinator.durability import is_perishable_edge
 from cogno_praxis.coordinator.server import build_server
-from cogno_praxis.coordinator.service import CoordinatorError, CoordinatorService
+from cogno_praxis.coordinator.service import (
+    CoordinatorAccessError,
+    CoordinatorError,
+    CoordinatorService,
+)
 from cogno_praxis.coordinator.store import InMemorySpreadsheetStore, SpreadsheetStore
-from cogno_praxis.coordinator.types import ClassEntry, ColumnLayout
+from cogno_praxis.coordinator.types import ClassEntry, ColumnLayout, ReadReport, SheetReadError
 
 __all__ = [
-    "CoordinatorConfig", "CoordinatorService", "CoordinatorError",
+    "CoordinatorConfig", "CoordinatorService", "CoordinatorError", "CoordinatorAccessError",
     "SpreadsheetStore", "InMemorySpreadsheetStore", "ClassEntry", "ColumnLayout",
-    "build_server", "is_perishable_edge",
+    "ReadReport", "SheetReadError", "build_server", "is_perishable_edge",
 ]

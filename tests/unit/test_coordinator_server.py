@@ -47,6 +47,13 @@ def test_get_professor_schedule_tool_reads_real_data():
 
 
 def test_professor_role_cannot_see_others_via_tool():
+    """The refusal reaches the model as a LIMIT, not as a breakdown.
+
+    The rule itself never changed and is not weakened here: a professor asking about a colleague
+    is still refused. What changed is the WORD. The refusal used to arrive as
+    ``ERROR: You can only view your own schedule.`` — and a model handed "ERROR" reports a
+    malfunction, which is how "I could not access the schedule" was said to someone whose only
+    problem was that they had asked about somebody else."""
     mcp, _ = _server([
         ["20/07/2026", "Seg", "Ana", "Redes", "101"],
         ["20/07/2026", "Ter", "Bruno", "Cálculo", "102"],
@@ -56,7 +63,58 @@ def test_professor_role_cannot_see_others_via_tool():
         out = _text(await mcp.call_tool("get_professor_schedule",
                                         {"professor": "Bruno", "role": "EMPLOYEE",
                                          "identity_label": "Ana"}))
-        assert out.startswith("ERROR")           # refused — a professor can't query another
+        assert out.startswith("NOT PERMITTED")   # refused — a professor can't query another
+        assert "not a failure" in out            # ... and told apart from one
+        assert "ERROR" not in out
+        assert "Cálculo" not in out              # the refusal leaks nothing
+    asyncio.run(run())
+
+
+def test_oversight_asking_for_another_professor_still_sees():
+    """The other half of the twin. Narrowing the refusal's WORDING must not narrow the ACCESS:
+    a supervisor/coordinator naming a colleague is the case the rule exists to allow."""
+    mcp, _ = _server([
+        ["20/07/2026", "Seg", "Ana", "Redes", "101"],
+        ["20/07/2026", "Ter", "Bruno", "Cálculo", "102"],
+    ])
+
+    async def run():
+        out = _text(await mcp.call_tool("get_professor_schedule",
+                                        {"professor": "Bruno", "role": "SUPERVISOR",
+                                         "identity_label": "Sofia"}))
+        assert "Cálculo" in out and "Redes" not in out
+        assert "NOT PERMITTED" not in out
+    asyncio.run(run())
+
+
+def test_a_real_domain_failure_is_still_called_an_error():
+    """A refusal is a limit; a swap that cannot find the class is not. Keeping both under one
+    label is what made the first indistinguishable from the second."""
+    mcp, _ = _server([["16/07/2026", "Ter", "Ana", "Redes", "101"]])
+
+    async def run():
+        out = _text(await mcp.call_tool("confirm_swap",
+                                        {"professor": "Ana", "original_date": "01/01/2026",
+                                         "new_date": "18/07/2026", "role": "SUPERVISOR",
+                                         "identity_label": "Sofia"}))
+        assert out.startswith("ERROR") and "No class found" in out
+    asyncio.run(run())
+
+
+def test_a_professor_own_schedule_needs_no_name_and_no_asking():
+    """``professor=""`` from an EMPLOYEE resolves to their own identity — the seam that makes
+    "minhas aulas" answerable WITHOUT asking the contact who they are. Pinned here because the
+    coordinator prompt now promises exactly this to the model."""
+    mcp, _ = _server([
+        ["20/07/2026", "Seg", "Ana", "Redes", "101"],
+        ["20/07/2026", "Ter", "Bruno", "Cálculo", "102"],
+    ])
+
+    async def run():
+        out = _text(await mcp.call_tool("get_professor_schedule",
+                                        {"role": "EMPLOYEE", "identity_label": "Ana",
+                                         "include_past": True}))
+        assert "Redes" in out and "Cálculo" not in out
     asyncio.run(run())
 
 

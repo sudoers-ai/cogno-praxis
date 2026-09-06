@@ -12,6 +12,8 @@ may query any professor or the whole master schedule.
 
 from __future__ import annotations
 
+import calendar
+import logging
 import re
 import unicodedata
 from datetime import date, datetime, timedelta
@@ -20,7 +22,9 @@ from typing import Callable, Optional
 
 from cogno_praxis.coordinator.config import CoordinatorConfig
 from cogno_praxis.coordinator.store import SpreadsheetStore
-from cogno_praxis.coordinator.types import ClassEntry, ColumnLayout
+from cogno_praxis.coordinator.types import ClassEntry, ColumnLayout, ReadReport, SheetReadError
+
+_log = logging.getLogger(__name__)
 
 _OVERSIGHT_ROLES = frozenset({"SUPERVISOR", "ADMIN", "OWNER"})
 GRADE_GRACE_DAYS = 14           # parent parity: grades/attendance due within 14d of the last class
@@ -28,12 +32,23 @@ BRIEFING_HORIZON_DAYS = 7
 REPLACEMENT_HORIZON_DAYS = 21
 _DISCIPLINE_FUZZY_THRESHOLD = 0.75    # parent parity: per-token SequenceMatcher ratio floor
 
-# PT-BR month name → number (a professor asks for "março", not "2026-03"). Parent parity.
+# Month name → number. PT-BR because a professor asks for "março", not "2026-03" (parent
+# parity) — and ENGLISH because of who actually fills the argument: the EGO reads the NOUMENO's
+# canonical-English rewrite of the turn, so "aulas de setembro" reaches the tool as
+# ``month="September"``. That fell through to ``None`` = no filter at all, the tool returned the
+# whole year (an April workshop included, on a September conversation), the judge rejected the
+# answer for not showing September, and the retry — which guessed "2026-09" — passed. One full
+# EGO+judge round trip per request, bought back by twelve dictionary rows.
 _MONTH_NAMES: dict[str, int] = {
     "janeiro": 1, "jan": 1, "fevereiro": 2, "fev": 2, "março": 3, "marco": 3, "mar": 3,
     "abril": 4, "abr": 4, "maio": 5, "mai": 5, "junho": 6, "jun": 6,
     "julho": 7, "jul": 7, "agosto": 8, "ago": 8, "setembro": 9, "set": 9,
     "outubro": 10, "out": 10, "novembro": 11, "nov": 11, "dezembro": 12, "dez": 12,
+    # English. No collision with the PT rows above: where the two languages share a prefix
+    # ("mar", "jun", "jul", "nov") they also share the month, and the values agree.
+    "january": 1, "february": 2, "feb": 2, "march": 3, "april": 4, "apr": 4, "may": 5,
+    "june": 6, "july": 7, "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9,
+    "october": 10, "oct": 10, "november": 11, "december": 12, "dec": 12,
 }
 
 
@@ -79,8 +94,29 @@ def _resolve_month(raw: str) -> Optional[tuple[int, int]]:
     if s.isdigit():                                       # "3" / "03"
         m = int(s)
         return (m, 0) if 1 <= m <= 12 else None
-    named = _MONTH_NAMES.get(_norm(s))                    # "março" / "mar"
+    named = _MONTH_NAMES.get(_norm(s))                    # "março" / "mar" / "September"
     return (named, 0) if named else None
+
+
+def _month_is_over(mspec: tuple[int, int], today: date) -> bool:
+    """Did the whole named month already end before ``today``? Naming a FULLY PAST month IS the
+    explicit request for the past ("as aulas de agosto"), so the today-onward default steps aside
+    for it — while the month IN PROGRESS keeps the cut and shows from today to its end."""
+    month, year = mspec
+    year = year or today.year
+    last = date(year, month, calendar.monthrange(year, month)[1])
+    return last < today
+
+
+def _read_error(sheet_key: str, sheet_id: str, exc: BaseException) -> SheetReadError:
+    """One failed spreadsheet read, described TERSELY. The message reaches the model and from
+    there the contact, so it carries the status and nothing else: the raw exception text of an
+    HTTP client embeds the request URL (and with it the spreadsheet id) into what a person ends
+    up reading. The operator still gets the full exception, on the log."""
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    return SheetReadError(sheet_key=sheet_key, sheet_id=sheet_id,
+                          message=f"HTTP {status}" if status else type(exc).__name__)
 
 
 def _parse_date(raw: str) -> Optional[date]:
@@ -168,12 +204,27 @@ class CoordinatorService:
         return any(n == _norm(lbl) for lbl in self.cfg.free_slot_labels)
 
     # ── aggregation (the core read) ──────────────────────────────────────────────────
-    def aggregate(self, *, include_skip: bool = False, include_free: bool = True) -> list[ClassEntry]:
+    def aggregate(self, *, include_skip: bool = False, include_free: bool = True,
+                  report: Optional[ReadReport] = None) -> list[ClassEntry]:
         """Every schedule row across all configured spreadsheets, dates normalized, sorted
-        chronologically (unparseable dates last). Skip-label rows dropped unless asked for."""
+        chronologically (unparseable dates last). Skip-label rows dropped unless asked for.
+
+        **One unreadable spreadsheet does not take the others with it.** A read that raises is
+        recorded on ``report`` (and logged) and the loop moves on: a tenant with four course
+        spreadsheets and one stale id gets three schedules plus a named failure, instead of a
+        turn that ends in "I could not access the schedule". The caller decides what to do with
+        the record — the read tools SAY it, ``confirm_swap`` REFUSES on it (a write must not be
+        planned against a schedule it only half read)."""
         out: list[ClassEntry] = []
         for key, sid in self.cfg.spreadsheets.items():
-            rows = self.store.read_range(sid, self.cfg.tab_schedule, self.cfg.range_schedule)
+            try:
+                rows = self.store.read_range(sid, self.cfg.tab_schedule, self.cfg.range_schedule)
+            except Exception as exc:                   # noqa: BLE001 — the store is a PORT: any
+                _log.warning("coordinator: spreadsheet %r (%s) could not be read: %r",
+                             key, sid, exc)            # adapter may raise anything at all
+                if report is not None:
+                    report.errors.append(_read_error(key, sid, exc))
+                continue
             if not rows:
                 continue
             header = [c.strip() for c in rows[0]]
@@ -215,14 +266,27 @@ class CoordinatorService:
     # ── read tools ───────────────────────────────────────────────────────────────────
     def get_professor_schedule(self, *, professor: str = "", role: str = "",
                                identity_label: str = "", month: str = "",
-                               discipline: str = "") -> list[ClassEntry]:
+                               discipline: str = "", include_past: bool = False,
+                               report: Optional[ReadReport] = None) -> list[ClassEntry]:
         """A professor's (or, for oversight, anyone's) classes, optionally narrowed by ``month``
-        (``'2026-03'``, ``'03'``, or a PT-BR name like ``'março'``) and/or ``discipline`` (fuzzy,
-        typo-tolerant — 'machne learning' still matches 'Machine Learning')."""
-        entries, err = self._visible(self.aggregate(), professor=professor, role=role,
-                                     identity_label=identity_label)
+        (``'2026-03'``, ``'03'``, or a month name in Portuguese or English — ``'março'``,
+        ``'September'``) and/or ``discipline`` (fuzzy, typo-tolerant — 'machne learning' still
+        matches 'Machine Learning').
+
+        **The window is ``[today, ∞)`` by default.** A schedule spreadsheet holds the whole
+        academic year, and the question a professor asks is almost always about what is COMING:
+        returning the year and leaving the model to choose is how an April opening workshop got
+        read back on a conversation held in September. Past classes come back only when the
+        caller asks — ``include_past=True``, or by naming a month that has already ENDED, which
+        is the same request said differently. The cut is by DAY, not by clock: a class earlier
+        TODAY still counts as today, because "what do I have today" asked at 3pm must not answer
+        an empty list. Entries whose date could not be parsed are never cut — the filter refuses
+        to hide what it cannot date. ``report.hidden_past`` counts what the cut removed, so a
+        caller can say "from today onward" ONLY when something was actually left out."""
+        entries, err = self._visible(self.aggregate(report=report), professor=professor,
+                                     role=role, identity_label=identity_label)
         if err:
-            raise CoordinatorError(err)
+            raise CoordinatorAccessError(err)
         mspec = _resolve_month(month)
         if mspec:
             mm, yy = mspec
@@ -230,16 +294,24 @@ class CoordinatorService:
                        and (yy == 0 or e.when.year == yy)]
         if discipline.strip():
             entries = [e for e in entries if _fuzzy_match_discipline(discipline, e.subject)]
+        if not include_past:
+            today = self._today()
+            if not (mspec and _month_is_over(mspec, today)):
+                kept = [e for e in entries if e.when is None or e.when >= today]
+                if report is not None:
+                    report.hidden_past += len(entries) - len(kept)
+                entries = kept
         return entries
 
     def check_deadlines(self, *, professor: str = "", role: str = "",
-                        identity_label: str = "") -> list[ClassEntry]:
+                        identity_label: str = "",
+                        report: Optional[ReadReport] = None) -> list[ClassEntry]:
         """Disciplines whose LAST class already happened and are within the 14-day grace window
         (grades/attendance still due). Keyed by (sheet, professor, subject)."""
-        entries, err = self._visible(self.aggregate(), professor=professor, role=role,
-                                     identity_label=identity_label)
+        entries, err = self._visible(self.aggregate(report=report), professor=professor,
+                                     role=role, identity_label=identity_label)
         if err:
-            raise CoordinatorError(err)
+            raise CoordinatorAccessError(err)
         today = self._today()
         last_of: dict[tuple, date] = {}
         for e in entries:
@@ -258,34 +330,40 @@ class CoordinatorService:
         return due
 
     def weekly_briefing(self, *, professor: str = "", role: str = "",
-                        identity_label: str = "") -> list[ClassEntry]:
-        """Classes in the next 7 days (inclusive of today)."""
-        entries, err = self._visible(self.aggregate(), professor=professor, role=role,
-                                     identity_label=identity_label)
+                        identity_label: str = "",
+                        report: Optional[ReadReport] = None) -> list[ClassEntry]:
+        """Classes in the next 7 days (inclusive of today).
+
+        Already ``[today, today+7]`` — the "no past classes" default needs nothing here, and
+        that is worth saying out loud so nobody adds a second cut on top of this one."""
+        entries, err = self._visible(self.aggregate(report=report), professor=professor,
+                                     role=role, identity_label=identity_label)
         if err:
-            raise CoordinatorError(err)
+            raise CoordinatorAccessError(err)
         today = self._today()
         horizon = today + timedelta(days=BRIEFING_HORIZON_DAYS)
         return [e for e in entries if e.when and today <= e.when <= horizon]
 
     def find_replacement_slot(self, *, professor: str = "", role: str = "",
-                              identity_label: str = "") -> list[ClassEntry]:
+                              identity_label: str = "",
+                              report: Optional[ReadReport] = None) -> list[ClassEntry]:
         """Free slots (FREE_SLOT_LABELS) within the next 21 days — candidates for a swap."""
         today = self._today()
         horizon = today + timedelta(days=REPLACEMENT_HORIZON_DAYS)
         # free slots are not professor-owned; oversight sees all, a professor sees the pool too
-        return [e for e in self.aggregate(include_free=True)
+        return [e for e in self.aggregate(include_free=True, report=report)
                 if e.is_free_slot and e.when and today <= e.when <= horizon]
 
     def ibope_status(self, *, professor: str = "", role: str = "",
-                     identity_label: str = "") -> list[ClassEntry]:
+                     identity_label: str = "",
+                     report: Optional[ReadReport] = None) -> list[ClassEntry]:
         """LAST classes of a discipline that fall on TODAY — the mechanism behind the survey
         (IBOPE) reminder. The specific threshold/wording (e.g. '30% for the bonus') is the
         persona prompt's job; the vertical only identifies WHICH classes need the nudge."""
-        entries, err = self._visible(self.aggregate(), professor=professor, role=role,
-                                     identity_label=identity_label)
+        entries, err = self._visible(self.aggregate(report=report), professor=professor,
+                                     role=role, identity_label=identity_label)
         if err:
-            raise CoordinatorError(err)
+            raise CoordinatorAccessError(err)
         today = self._today()
         last_of: dict[tuple, date] = {}
         for e in entries:
@@ -298,7 +376,8 @@ class CoordinatorService:
                 and last_of.get((e.sheet_id, _norm(e.professor), _norm(e.subject))) == today]
 
     def get_professor_info(self, *, professor: str = "", role: str = "",
-                           identity_label: str = "") -> list[dict[str, str]]:
+                           identity_label: str = "",
+                           report: Optional[ReadReport] = None) -> list[dict[str, str]]:
         """Faculty details from the professors tab (``TAB_PROFESSORS``/``RANGE_PROFESSORS`` — e.g.
         Disciplina, CH, Professor, e-mail, titulação), one dict per row keyed by lowercased header.
         RBAC parity with the schedule: a non-oversight caller only sees THEIR OWN row (pinned to
@@ -310,13 +389,21 @@ class CoordinatorService:
         target = professor.strip()
         if not oversight:
             if target and _norm(target) != _norm(identity_label):
-                raise CoordinatorError("You can only view your own faculty details.")
+                raise CoordinatorAccessError("You can only view your own faculty details.")
             target = identity_label
         want = _norm(target)
         out: list[dict[str, str]] = []
         seen: set[str] = set()
-        for sid in self.cfg.spreadsheets.values():
-            rows = self.store.read_range(sid, self.cfg.tab_professors, self.cfg.range_professors)
+        for key, sid in self.cfg.spreadsheets.items():
+            try:
+                rows = self.store.read_range(sid, self.cfg.tab_professors,
+                                             self.cfg.range_professors)
+            except Exception as exc:                   # noqa: BLE001 — same port contract as
+                _log.warning("coordinator: professors tab of %r (%s) could not be read: %r",
+                             key, sid, exc)            # aggregate(): one sheet, not the request
+                if report is not None:
+                    report.errors.append(_read_error(key, sid, exc))
+                continue
             if not rows:
                 continue
             header = [c.strip().lower() for c in rows[0]]
@@ -342,12 +429,23 @@ class CoordinatorService:
                      role: str = "", identity_label: str = "") -> tuple[ClassEntry, ClassEntry]:
         """Swap a professor's class (source, by date+professor) into a free slot (dest, by
         date+free-label): exchanges the CONTENT columns, leaving fixed columns (dates) put.
-        Returns (source, dest) as they were located. Raises if either can't be found."""
-        entries = self.aggregate(include_free=True)
+        Returns (source, dest) as they were located. Raises if either can't be found.
+
+        **Refuses outright when any spreadsheet failed to read.** The read tools degrade to a
+        partial answer and say so; a WRITE must not, because a half-read schedule cannot tell
+        "that class is not there" from "the sheet holding it did not load" — and the second one,
+        acted on, moves the wrong row."""
+        report = ReadReport()
+        entries = self.aggregate(include_free=True, report=report)
+        if report.errors:
+            unread = ", ".join(f"{e.sheet_key} ({e.message})" for e in report.errors)
+            raise CoordinatorError(
+                f"Cannot swap right now: {len(report.errors)} spreadsheet(s) could not be read "
+                f"({unread}) — the schedule is only partly loaded. Try again shortly.")
         vis, err = self._visible(entries, professor=professor, role=role,
                                  identity_label=identity_label)
         if err:
-            raise CoordinatorError(err)
+            raise CoordinatorAccessError(err)
         src_matches = [e for e in vis if _date_matches(e.when, e.date_str, original_date)]
         if not src_matches:
             raise CoordinatorError(f"No class found for that professor on {original_date}.")
@@ -371,4 +469,16 @@ class CoordinatorService:
 
 
 class CoordinatorError(Exception):
-    """A domain error (not configured, not found, or a forbidden cross-professor request)."""
+    """A domain error (not configured, not found, or an unreadable spreadsheet)."""
+
+
+class CoordinatorAccessError(CoordinatorError):
+    """The caller asked for someone ELSE'S data and the role does not allow it.
+
+    A subclass, not a message convention, because the two are told apart by a CALLER outside
+    this module: the MCP wrapper renders a plain :class:`CoordinatorError` as a failure and this
+    one as a LIMIT. Flattened together, the refusal reached the model reading ``ERROR: You can
+    only view your own schedule.`` — and a model handed the word ERROR reports a breakdown, so a
+    professor who asked about a colleague was told the assistant could not access the schedule.
+    The rule held; only its NAME was wrong on the way out. Nothing here weakens the rule: a
+    non-oversight caller is still refused, an oversight one still sees."""

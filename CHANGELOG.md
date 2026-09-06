@@ -2,6 +2,55 @@
 
 ## Unreleased
 
+### Fixed
+
+- **COORDINATOR: quatro consertos de uma só conversa — o horário que a persona disse não
+  conseguir aceder, e o que a fez dizê-lo.** Medido em 06/09 nos turnos t50–t55 do dono.
+
+  1. **O parser de `SPREADSHEETS:` falhava em SILÊNCIO e engolia uma URL como id de planilha.**
+     A secção do tenant tem chaves **com espaço** («`Turma SMP_33 = <id>`») e o regex exigia
+     `\S+\s*=`: a secção não era reconhecida, caía-se na varredura do TEXTO INTEIRO à procura
+     de tokens longos, e o slug de 31 caracteres de uma URL de curso no meio das regras entrava
+     como `SHEET_1`. Iterado primeiro, dava 404 no Drive e a excepção levava a chamada inteira —
+     3/3 tentativas, o juiz a rejeitar as três, e o professor a ouvir «não consegui acessar»
+     com **quatro planilhas boas** legíveis. Agora: chaves com espaço são chaves; **um cabeçalho
+     declarado nunca cai na varredura** (sem par utilizável, «não configurado» é a resposta
+     verdadeira e um id adivinhado não é); e **uma planilha que falha não mata as outras** — o
+     erro fica **por planilha** (`Turma SMP_33: HTTP 404`) e o tool devolve o que leu. A ESCRITA
+     não degrada: `confirm_swap` **recusa** sobre um horário meio carregado, porque «essa aula
+     não está lá» e «a folha que a tinha não abriu» são indistinguíveis e a segunda, agida, move
+     a linha errada. A fixture do teste é **anonimizada** e estruturalmente equivalente (ids
+     inventados com a morfologia certa, slug inventado): reproduz o defeito, e nenhum id do
+     tenant entra num repositório público.
+  2. **O mês em INGLÊS não filtrava, e custava uma volta inteira de juiz.** O executor lê a
+     reescrita canónica em inglês do NOUMENO, por isso «aulas de setembro» chegava como
+     `month="September"` → `None` → **sem filtro** → o ano inteiro (com um workshop de abril
+     numa conversa de setembro) → o juiz rejeitava → a 2.ª tentativa acertava com `2026-09`.
+     Os nomes ingleses entram na tabela, ao lado dos portugueses; onde as duas línguas partilham
+     prefixo («mar», «jun», «jul», «nov») partilham também o mês.
+  3. **A janela por omissão passa a ser `[HOJE, ∞)`.** As planilhas guardam o ano lectivo
+     inteiro e devolvê-lo deixava a escolha ao modelo — foi assim que abril foi lido de volta.
+     O passado pede-se: `include_past=True`, ou nomeando um mês **já terminado**, que é o mesmo
+     pedido dito de outra maneira. Um mês **em curso** mostra de hoje ao fim do mês. O corte é à
+     granularidade do **DIA** (uma aula das 08h ainda é de hoje às 15h) e **nunca esconde uma
+     linha sem data**. A frase «a partir de hoje» só aparece quando **houve mesmo corte**.
+     E o «hoje» vem da **âncora do host** (`COGNO_COORDINATOR_TODAY`, o mesmo dia que ele rende
+     como `[HOJE]`), não do relógio do processo: o contentor arranca em UTC de propósito, e sem
+     isto, entre as 21h e a meia-noite em São Paulo, uma aula de hoje desaparecia da lista. O
+     host carimba essa variável desde que o vertical existe; este servidor era o único dos três
+     que não a lia.
+  4. **Uma recusa de âmbito chega como LIMITE, não como avaria.** A regra não mudou — um
+     EMPLOYEE continua a ver só as suas aulas e um SUPERVISOR/ADMIN continua a ver as dos outros.
+     Mudou a PALAVRA: `ERROR: You can only view your own schedule.` ensinava ao modelo que houve
+     uma falha, e «não consegui acessar» era o que saía. `CoordinatorAccessError` é agora uma
+     classe própria e o wrapper MCP rende-a como `NOT PERMITTED: … not a failure`, com o
+     `voice.txt` a nomear a frase a NÃO produzir e o `limits.txt` a dizer ao juiz que um limite
+     dito com verdade é uma resposta **completa**.
+
+  O `system.txt` ganha as metades que só o prompt pode dar: o contacto **já está identificado**
+  (nada de pedir nome ou matrícula a quem o sistema autenticou — t50), `professor` fica **vazio**
+  para «minhas aulas», e o `include_past` liga-se só a pedido explícito.
+
 ### Changed
 
 - **INTERVIEWER («Carol»): a persona de entrevista/checklist/formulário entra no pacote —
