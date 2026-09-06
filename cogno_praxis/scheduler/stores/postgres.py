@@ -190,16 +190,43 @@ class PgAppointmentStore:
         Used when the injected tenant catalog (``COGNO_SCHEDULER_HOSTS``) is authoritative —
         a professional removed on the dashboard must stop being offered/bookable, not linger
         from an old seed (upsert-only left ghost doctors in the catalog). Appointments keep
-        their ``host_id`` (history is preserved); only the bookable catalog shrinks."""
+        their ``host_id`` (history is preserved); only the bookable catalog shrinks.
+
+        **An EMPTY list never deletes.** It used to mean "make the catalog empty" and ran a
+        ``DELETE`` with no ``NOT IN`` — the whole scope, in one statement. The list arrives
+        from a caller that cannot tell its two meanings apart: ``COGNO_SCHEDULER_HOSTS="[]"``
+        is what a host emits both when a tenant really has no bookable professionals AND when
+        whatever it asked for the list came back with nothing. One of those readings costs a
+        real catalog and no reply undoes it, so the ambiguity is resolved the only way a
+        destructive primitive may resolve one: it keeps what is there and says so.
+
+        Shrinking still works, and that is the half worth naming: a NON-empty list removes
+        everyone missing from it, so a professional taken off the dashboard still stops being
+        bookable. What no longer has a door is "remove the LAST one" — un-flagging the final
+        professional leaves them persisted, and emptying the catalog is done by deleting the
+        identity (``purge_identity``, the targeted removal the host already calls). A stale
+        offer is recoverable by the operator the warning reaches; a deleted catalog is not."""
+        if not hosts:
+            row = self._conn.execute(
+                "SELECT count(*) FROM schedule_hosts WHERE scope = %s",
+                (self._scope,)).fetchone()
+            kept = int(row[0]) if row else 0
+            if kept:
+                # Only when there is something to lose. A tenant that legitimately has no
+                # professionals would otherwise warn on every start, and a warning that fires
+                # for the normal case is one nobody reads on the day it means something.
+                logger.warning(
+                    "stage=scheduler event=sync_hosts_empty_refused scope=%s kept=%d — an "
+                    "empty catalog cannot be told apart from a catalog nobody sent, so the "
+                    "%d persisted professional(s) were KEPT rather than deleted. Remove them "
+                    "one by one (a non-empty list still shrinks) or delete the identity.",
+                    self._scope, kept, kept)
+            return
         for h in hosts:
             self.add_host(h)
-        keep = [h.host_id for h in hosts]
-        if keep:
-            self._conn.execute(
-                "DELETE FROM schedule_hosts WHERE scope = %s AND NOT (host_id = ANY(%s))",
-                (self._scope, keep))
-        else:
-            self._conn.execute("DELETE FROM schedule_hosts WHERE scope = %s", (self._scope,))
+        self._conn.execute(
+            "DELETE FROM schedule_hosts WHERE scope = %s AND NOT (host_id = ANY(%s))",
+            (self._scope, [h.host_id for h in hosts]))
 
     def list_hosts(self) -> list[Host]:
         rows = self._conn.execute(

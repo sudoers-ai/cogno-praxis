@@ -76,9 +76,17 @@ def test_partitioned_by_hash_scope_and_isolated():
     s2.close()
 
 
+def _catalog_rows(scope: str) -> int:
+    """The scope's catalog counted in the TABLE — not through the store that wrote it."""
+    with psycopg.connect(DSN, autocommit=True) as c:
+        return c.execute("SELECT count(*) FROM schedule_hosts WHERE scope = %s",
+                         (scope,)).fetchone()[0]
+
+
 def test_sync_hosts_reconciles_catalog():
     # A professional removed from the tenant catalog must leave the persisted catalog too —
     # upsert-only seeding left ghost doctors bookable forever. Appointments keep their rows.
+    # This is the half an empty list must NOT cost (see the next test): shrinking still works.
     store = _drop_and_store("clinic")
     store.add_host(Host("ghost", "Dr. Ghost", "Cardio"))
     store.add_host(Host("dr_real", "Dr. Real", "GP"))
@@ -87,9 +95,42 @@ def test_sync_hosts_reconciles_catalog():
     hosts = {h.host_id: h for h in store.list_hosts()}
     assert set(hosts) == {"dr_real", "dr_new"}              # ghost gone, new added
     assert hosts["dr_real"].role == "Endócrino"             # kept host still upserted
+    assert _catalog_rows("clinic") == 2                     # and the TABLE agrees
+    store.close()
 
-    store.sync_hosts([])                                    # empty catalog → none bookable
-    assert store.list_hosts() == []
+
+def test_sync_hosts_empty_list_keeps_the_whole_scope(caplog):
+    # An empty list used to run `DELETE FROM schedule_hosts WHERE scope = %s` — no `NOT IN`,
+    # the entire tenant catalog in one statement. It reaches here from a caller that cannot
+    # tell "this tenant has nobody" from "nothing came back", and only one of those readings
+    # is worth a catalog. The assertion is on the TABLE, not on the return value.
+    store = _drop_and_store("clinic")
+    for host_id in ("p_one", "p_two", "p_three"):
+        store.add_host(Host(host_id, host_id.upper(), "GP"))
+    assert _catalog_rows("clinic") == 3
+
+    with caplog.at_level(logging.WARNING, logger="cogno_praxis.scheduler.stores.postgres"):
+        store.sync_hosts([])
+
+    assert _catalog_rows("clinic") == 3                     # 3 of 3 survive the empty list
+    assert {h.host_id for h in store.list_hosts()} == {"p_one", "p_two", "p_three"}
+    # And the operator who emptied the list by mistake is told the configuration did nothing.
+    assert any("sync_hosts_empty_refused" in r.getMessage() for r in caplog.records)
+    store.close()
+
+
+def test_sync_hosts_empty_list_is_silent_when_there_was_nothing_to_lose(caplog):
+    # The refusal warns about a catalog it KEPT. A tenant that legitimately has no bookable
+    # professionals loses nothing, so it must not warn — a warning that fires on the normal
+    # case is one nobody reads on the day it means something.
+    store = _drop_and_store("clinic")
+    assert _catalog_rows("clinic") == 0
+
+    with caplog.at_level(logging.WARNING, logger="cogno_praxis.scheduler.stores.postgres"):
+        store.sync_hosts([])
+
+    assert _catalog_rows("clinic") == 0
+    assert not [r for r in caplog.records if "sync_hosts_empty_refused" in r.getMessage()]
     store.close()
 
 
