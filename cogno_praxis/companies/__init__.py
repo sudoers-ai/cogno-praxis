@@ -16,19 +16,29 @@ the durable facts the graph is for — so there is nothing here to veto, and an 
 function would read as coverage.
 """
 
-from cogno_praxis.company.identifiers import (
+from cogno_praxis.companies.identifiers import (
     cnpj_is_acceptable,
     cnpj_valid,
     company_id_for,
     fold,
     normalize_cnpj,
 )
-from cogno_praxis.company.server import build_server
-from cogno_praxis.company.service import CompanyError, CompanyService
-from cogno_praxis.company.store import Company, CompanyStore, InMemoryCompanyStore
+from cogno_praxis.companies.server import build_server
+from cogno_praxis.companies.service import (
+    CompanyError,
+    CompanyService,
+    DeletionOutcome,
+    DeletionProposal,
+)
+from cogno_praxis.companies.store import (
+    Company,
+    CompanyStore,
+    InMemoryCompanyStore,
+    is_oversight,
+)
 
 __all__ = [
     "build_server", "CompanyError", "CompanyService", "CompanyStore",
-    "InMemoryCompanyStore", "Company",
+    "InMemoryCompanyStore", "Company", "DeletionOutcome", "DeletionProposal", "is_oversight",
     "cnpj_is_acceptable", "cnpj_valid", "company_id_for", "fold", "normalize_cnpj",
 ]

@@ -9,7 +9,7 @@ just persists and echoes them back.
 
 ## Why the key is DERIVED from the name
 
-``company_id`` is not a surrogate: it is :func:`~cogno_praxis.company.identifiers.company_id_for`
+``company_id`` is not a surrogate: it is :func:`~cogno_praxis.companies.identifiers.company_id_for`
 over the accent-folded name, so registering "Padaria São João" twice UPDATES one row instead of
 piling up a row per turn. That is the whole undo story for this vertical's one write (see
 ``server.py``), and it is why :meth:`CompanyStore.upsert` is an upsert rather than an insert.
@@ -20,12 +20,37 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional, Protocol, runtime_checkable
 
-# NO role vocabulary here, and the omission is deliberate rather than pending. Its three
-# siblings each carry one (`OVERSIGHT_ROLES`, `is_oversight`) because each has a role-scoped
-# READ: an EMPLOYEE sees their own transactions, a professor their own classes. This vertical
-# has one tool and it is a write, so a role constant here would have no reader — a symbol that
-# exists, looks like a policy, and decides nothing. Who may register a company is the host's
-# call (`cogno_host/rbac.py`), which is where every vertical's role gate already lives.
+# Roles whose view is UNSCOPED — they see every company in the scope. Anyone else (a GUEST, or
+# a role this vertical has never heard of) sees only the companies THEY registered, matched on
+# `created_by_user_id`. Written out here rather than imported from a sibling: three verticals
+# define this set today and they do NOT agree (the scheduler counts SECRETARY, the bookkeeper
+# counts OWNER), so a shared constant would be a fourth definition claiming to be the one.
+#
+# The vertical only maps role → VISIBILITY. The host AUTHORISES (`cogno_host/rbac.py` decides
+# which tools a role even sees) and injects the role; nothing here trusts a value the model
+# chose. An unknown role falls to the NARROWEST view, which is the direction a mistake should
+# take: a role nobody taught this vertical about must not inherit oversight.
+EMPLOYEE_ROLE = "EMPLOYEE"
+OVERSIGHT_ROLES: "frozenset[str]" = frozenset({"EMPLOYEE", "SUPERVISOR", "ADMIN", "OWNER"})
+
+
+def is_oversight(role: str) -> bool:
+    """May this role see companies it did not register?
+
+    ``EMPLOYEE`` is IN this set, which is where this vertical differs from the bookkeeper's
+    identically-named predicate — and the difference is the owner's rule, not an oversight. A
+    financial entry belongs to the person who recorded it; a registered company belongs to the
+    BUSINESS, and every member of staff works for it. What is scoped here is the visitor: a
+    lead who registered their own company sees that one and no other.
+
+    A consequence, declared rather than left to be discovered: because the vertical's whole
+    store is already ONE tenant's (the host injects `scope = tenant_id`), "the tenant's
+    companies" and "all companies" are the SAME SET here. The policy distinguishes EMPLOYEE
+    from SUPERVISOR/ADMIN and this vertical cannot: the difference would only become visible in
+    a deployment whose scope is narrower than a tenant, and inventing one to honour the shape
+    of the table would be a filter that answers a question nobody asked.
+    """
+    return (role or "").upper() in OVERSIGHT_ROLES
 
 
 @dataclass

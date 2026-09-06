@@ -28,7 +28,7 @@ from typing import Optional
 import psycopg
 from psycopg.types.json import Jsonb
 
-from cogno_praxis.company.store import Company
+from cogno_praxis.companies.store import Company
 
 # Same order as the SELECT mapper below, so ``_row``'s indices can be read against it. A class
 # constant (a literal column list) — no caller can reach it, and every VALUE travels as %s.

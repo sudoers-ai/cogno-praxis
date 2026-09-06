@@ -24,7 +24,7 @@ pytest.importorskip("cogno_mcp", reason="cogno-mcp not installed")
 from cogno_mcp import MCPDispatcher, stdio_session  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parents[2]
-SERVER = str(_ROOT / "cogno_praxis" / "company" / "server.py")
+SERVER = str(_ROOT / "cogno_praxis" / "companies" / "server.py")
 # Point the spawned subprocess at THIS checkout so it imports our vertical even when an
 # editable install of cogno_praxis would otherwise shadow it (worktree/CI parity). Without it
 # this file measures whichever checkout happens to be installed — a green that belongs to
@@ -41,7 +41,11 @@ async def test_company_registration_over_mcp():
     async with stdio_session(sys.executable, args=[SERVER], env=_ENV) as session:
         disp = await MCPDispatcher.create(session)
 
-        assert {s["function"]["name"] for s in disp.tools_schema()} == {"company_registration"}
+        assert {s["function"]["name"] for s in disp.tools_schema()} == {
+            "company_registration", "list_companies", "company_search",
+            "company_update", "company_delete"}
+        for read in ("list_companies", "company_search"):
+            assert disp.is_mutating(read) is False, read
 
         # policy flows from the server's annotations through cogno-mcp: this is WHERE the tool
         # is classified as a write. The host then wraps the module source in
@@ -94,7 +98,7 @@ async def test_the_host_focus_contract_end_to_end():
         disp = await MCPDispatcher.create(session)
 
         def focus(name, result):                      # company_focus's rule, in its own terms
-            if name not in ("company_registration",) or not result.ok:
+            if name not in ("company_registration", "company_search") or not result.ok:
                 return None
             text = str(result.output or "").strip()
             if not text.startswith("{"):
@@ -107,11 +111,41 @@ async def test_the_host_focus_contract_end_to_end():
             return {"company_id": cid, "name": str(data.get("company_name") or "")} if cid else None
 
         good = await disp.execute("company_registration",
-                                  {"company_name": "Padaria Sol Nascente"})
+                                  {"company_name": "Padaria Sol Nascente",
+                                   "identity_id": "u1"})
         assert focus("company_registration", good) == {
             "company_id": "padaria-sol-nascente", "name": "Padaria Sol Nascente"}
 
         # a refused write does not move the focus: there is no new company
         bad = await disp.execute("company_registration",
-                                 {"company_name": "Acme", "cnpj": _CNPJ_BAD})
+                                 {"company_name": "Acme", "cnpj": _CNPJ_BAD,
+                                  "identity_id": "u1"})
         assert focus("company_registration", bad) is None
+
+        # ── the READ side of the same rule, through the same dispatcher ─────────────────
+        await disp.execute("company_registration",
+                           {"company_name": "Padaria Central", "identity_id": "u1"})
+        await disp.execute("company_registration",
+                           {"company_name": "Acme", "identity_id": "outro"})
+
+        # a LISTING chooses nothing, even holding rows
+        listed = await disp.execute("list_companies", {"identity_id": "u1", "role": "ADMIN"})
+        assert listed.ok is True and focus("list_companies", listed) is None
+
+        # a search with EXACTLY ONE hit selects that company
+        one = await disp.execute("company_search",
+                                 {"query": "Sol", "identity_id": "u1", "role": "ADMIN"})
+        assert focus("company_search", one) == {"company_id": "padaria-sol-nascente",
+                                                "name": "Padaria Sol Nascente"}
+
+        # several hits select nothing — the model is told to ask which
+        many = await disp.execute("company_search",
+                                  {"query": "Padaria", "identity_id": "u1", "role": "ADMIN"})
+        assert many.ok is True and focus("company_search", many) is None
+
+        # and a visitor reaching for a company outside their scope ends the turn with NOTHING
+        # in focus: the read succeeds, finds none of theirs, and says the limit.
+        reached = await disp.execute("company_search",
+                                     {"query": "Acme", "identity_id": "u1", "role": "GUEST"})
+        assert reached.ok is True and reached.side_effect is False
+        assert focus("company_search", reached) is None

@@ -27,8 +27,8 @@ DSN = resolve_test_dsn()      # COGNO_TEST_PG_DSN, else `cogno_praxis_test` on t
 pytestmark = pytest.mark.skipif(
     not DSN, reason="no Postgres reachable (see tests/integration/conftest.py)")
 
-from cogno_praxis.company import CompanyError, CompanyService              # noqa: E402
-from cogno_praxis.company.stores.postgres import PgCompanyStore            # noqa: E402
+from cogno_praxis.companies import CompanyError, CompanyService              # noqa: E402
+from cogno_praxis.companies.stores.postgres import PgCompanyStore            # noqa: E402
 
 _CNPJ_OK = "11.222.333/0001-81"
 _CNPJ_BAD = "11.222.333/0001-99"
