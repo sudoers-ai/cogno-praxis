@@ -30,9 +30,14 @@ def test_interviewer_voice_rules() -> None:
 
 
 def test_interviewer_limits_rules() -> None:
+    """The two sections a judge prompt is allowed to have: TRUTH, and the persona's business
+    limits. `## 2.` was called RITMO E FOCO until 2026-09-06; RITMO is form, and the section
+    only ever held one rule that was not (pushing a sale). The header now says what is left."""
     limits = (PROMPTS / "limits.txt").read_text()
     assert "VERDADE" in limits
-    assert "RITMO E FOCO" in limits
+    assert "RITMO" not in limits
+    assert "LIMITES DO QUE ELA PODE FAZER" in limits
+    assert "empurrar propostas comerciais" in limits
 
 
 # ── twins (2026-09-05) ──────────────────────────────────────────────────────────────────
@@ -134,32 +139,66 @@ def test_the_judge_has_no_calendar() -> None:
     assert "[HOJE]" in flat and "resolve_date" in flat
     assert "Sem âncora no contexto, não julgue calendário" in flat
     assert "nunca rejeite por um dia da semana que você calculou de cabeça" in flat
-    assert limits.index("## 0.") < limits.index("## 1. VERDADE") < limits.index("## 2. RITMO")
+    assert limits.index("## 0.") < limits.index("## 1. VERDADE") < limits.index("## 2. ")
 
 
-def test_one_question_per_message_is_the_voices_rule_and_the_judge_no_longer_repeats_it() -> None:
+def test_form_is_the_voices_business_and_the_judge_keeps_only_the_business_limit() -> None:
     """`limits.txt` and `voice.txt` reach DIFFERENT calls — `cogno_host/persona.py`'s
     SLOT_TO_LAYER sends "limits" to the judge and "voice" to the voicer, and nothing merges
-    them. "Two questions in one turn" is an instruction about writing a message, and the voice
-    slot already carried it twice (the conduction rule and the # Forma line), so as a judge
-    criterion it bought a rejection of a reply nobody could rewrite into fewer questions
-    without re-running the turn — while costing its tokens on every judge call.
+    them. A style rule written in the judge slot is paid on every judge call, never reaches the
+    writer, and buys the rejection of a reply nobody could rewrite without re-running the turn.
 
-    What STAYS is deliberately not symmetric with the CLOSER's move. Pushing a sale is SCOPE.
-    And "ignorou a resposta e refez a mesma pergunta" stays because the machinery that backs
-    the CLOSER's version does not exist here: `cogno_host/arc.py`'s `_ARCS` registry holds
-    only "closer", so this persona gets no `[ARCO]` state marking a question answered. The
-    host's checklist block covers the declared-list path (it renders PENDING items only, so an
-    answered one never reappears) and the anti-repeat guard covers a near-duplicate reply, but
-    neither reaches a re-asked question that is worded fresh outside a checklist. Moving this
-    one would trade a criterion for nothing."""
+    Two items left across two PRs, and the SECOND one REVERSES a decision this test used to
+    pin — said here rather than quietly rewritten:
+
+    * `#105` moved "duas perguntas no mesmo turno". The voice already carried it twice.
+    * This PR moves "ignorou a resposta e refez a mesma pergunta", on the owner's rule of
+      2026-09-06 (*«todos os juízes de todas as personas só devem julgar verdade e
+      respostas»*). The version of this test written at `#105` argued the opposite, and its
+      argument was not wrong: `cogno_host/arc.py`'s `_ARCS` holds only "closer", so this
+      persona gets no `[ARCO]` state marking a question answered, and the deterministic
+      anti-repeat guard (`cogno_host/service.py: _counts_as_repeat`, read at `13b4c1d`) fires
+      on a near-duplicate REPLY (jaccard over word sets, with a moved-question discriminator)
+      — so a question re-asked in FRESH words inside an otherwise different reply is outside
+      its reach. That gap is REAL and is not closed by this PR.
+
+      What changes is where the instruction lands. The judge can only REJECT, after the fact,
+      a reply that a retry cannot improve; the voice can not-write it in the first place. So
+      the rule is not deleted, it MOVES — `voice.txt` now carries "Não repita pergunta já
+      respondida" beside the one-question rule, which is exactly the shape `#105` gave the
+      CLOSER. The residual: a judge no longer catches the case the guard misses.
+
+    What STAYS is the business limit. Pushing a sale is about what the persona may DO, not
+    about how the sentence reads, and it is the only rule `## 2.` still holds.
+    """
     limits = " ".join((PROMPTS / "limits.txt").read_text().split())
     voice = " ".join((PROMPTS / "voice.txt").read_text().split())
     assert "apenas uma pergunta por mensagem" in voice
     assert "uma interrogação por mensagem" in voice
-    assert "duas perguntas no mesmo turno" not in limits
-    assert "empurrar propostas comerciais" in limits          # scope stays
-    assert "refazer a mesma pergunta" in limits               # unbacked here — stays
+    assert "duas perguntas no mesmo turno" not in limits      # left at #105
+    assert "refazer a mesma pergunta" not in limits           # left here
+    assert "Não repita pergunta já respondida" in voice       # …and ARRIVED at the voice
+    assert "empurrar propostas comerciais" in limits          # the business limit stays
+    # the judge is told, in words, that form is not its job — the CLOSER's sentence, verbatim
+    assert "Forma NÃO é critério seu" in limits
+    assert "vive no prompt da voz" in limits
+
+
+def test_what_left_the_judge_was_already_in_the_voice_or_arrived_there() -> None:
+    """Gémeo: nothing was DELETED — each item is checked at its destination.
+
+    "acolha com empatia" also left `## 0.` in this PR (how warmly it reads is the voice's), and
+    that one needed no move: the voice slot already opened with "amigável, acolhedora, paciente"
+    and closed with "Tom humano, atencioso e prestativo". Removing it from the judge deleted a
+    DUPLICATE. The re-ask rule is the opposite case — grepped absent from the voice before the
+    move — so it had to be written there, and this pins that it was.
+    """
+    limits = (PROMPTS / "limits.txt").read_text()
+    voice = (PROMPTS / "voice.txt").read_text()
+    for gone in ("empatia", "acolha", "RITMO"):
+        assert gone not in limits, gone
+    assert "acolhedora" in voice and "Tom humano" in voice
+    assert "Acolha a resposta anterior" in voice
 
 
 def test_the_scope_guard_is_told_that_bare_answers_are_the_normal_message() -> None:
