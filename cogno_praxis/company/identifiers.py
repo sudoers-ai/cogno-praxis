@@ -58,8 +58,25 @@ def company_id_for(name: str) -> str:
 
 
 def cnpj_valid(text: str) -> bool:
-    """Brazilian CNPJ check-digit validation."""
-    d = "".join(ch for ch in (text or "") if ch.isdigit() and ch.isascii())
+    r"""Brazilian CNPJ check-digit validation.
+
+    ``\D`` and not an ASCII test, and that is a FIDELITY choice rather than a preference. This
+    function is a re-expression of ``cogno_anima.security.detector.cnpj_valid``, which strips
+    with ``re.sub(r"\D", "", text)`` — and under ``re`` that keeps Arabic-Indic digits, which
+    ``int()`` then happily reads. So the original answers ``True`` for a CNPJ written in
+    ``١٢٣...``, and so must this, or the two copies disagree.
+
+    The first draft here used ``ch.isdigit() and ch.isascii()``, which is arguably the *better*
+    rule and is the wrong thing for a COPY to do: it was stricter than the original on exactly
+    one input class, and the host's corpus pin
+    (``tests/unit/test_company_rules_match_the_core.py``) is what found it. Two copies of a
+    checksum are two chances to disagree; the fix is agreement, not a private improvement.
+
+    Nothing is lost by being permissive here, because this is not the gate:
+    :func:`cnpj_is_acceptable` runs ``_CNPJ_DIGITS`` — fourteen ASCII digits, ``[0-9]`` — over
+    the normalised value FIRST, so a non-ASCII number never reaches the store either way.
+    """
+    d = re.sub(r"\D", "", text or "")
     if len(d) != 14 or d == d[0] * 14:
         return False
     w1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
