@@ -21,6 +21,8 @@ Format (all sections optional; sensible defaults shown)::
     COLUMN_DATE: "Data"
     COLUMN_PROFESSOR: "Professor"
     COLUMN_SUBJECT: "Disciplina"
+    COLUMN_TIME: "Hora"                 # optional — absent → the calendar export is all-day
+    CLASS_DURATION_MINUTES: 240         # only used when COLUMN_TIME resolves
     FIXED_COLUMNS: "Data, Dia"
     FREE_SLOT_LABELS: "Livre, Reposição"
     SKIP_LABELS: "Recesso, Feriado, Férias"
@@ -49,6 +51,17 @@ def _find(rules: str, key: str, default: str) -> str:
     """First ``KEY: value`` line (case-insensitive), stripped of surrounding quotes/space."""
     m = re.search(rf"(?im)^\s*{key}:\s*(.+)$", rules)
     return m.group(1).strip().strip('"').strip("'") if m else default
+
+
+def _find_int(rules: str, key: str, default: int) -> int:
+    """A ``KEY: 240`` line as a positive int; anything else (absent, blank, "abc", 0, -5) →
+    ``default``. A duration that is not a positive number is not a duration."""
+    raw = _find(rules, key, "")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
 
 
 def _find_list(rules: str, key: str, default: tuple[str, ...]) -> tuple[str, ...]:
@@ -82,6 +95,15 @@ class CoordinatorConfig:
         self.column_date: str = _find(rules, "COLUMN_DATE", "Data")
         self.column_professor: str = _find(rules, "COLUMN_PROFESSOR", "Professor")
         self.column_subject: str = _find(rules, "COLUMN_SUBJECT", "Disciplina")
+        # The HOUR, when the sheet has one. Optional by design and absent in most tenants: a
+        # schedule spreadsheet records a DAY, and the calendar export renders an all-day event
+        # when no hour column resolves. Never guessed from a header — only this name is looked
+        # for, exactly like the three above.
+        self.column_time: str = _find(rules, "COLUMN_TIME", "Hora")
+        # How long a class lasts, for the calendar export's DTEND when an hour IS present.
+        # Only reachable together with COLUMN_TIME; a non-numeric value falls back rather than
+        # raising, because a typo in the rules must not take the vertical down.
+        self.class_duration_minutes: int = _find_int(rules, "CLASS_DURATION_MINUTES", 60)
 
         # Columns that DON'T move during a swap (dates stay put; content columns are exchanged).
         self.fixed_columns: tuple[str, ...] = _find_list(rules, "FIXED_COLUMNS", ("Data", "Dia"))

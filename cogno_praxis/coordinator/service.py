@@ -20,6 +20,14 @@ from datetime import date, datetime, timedelta
 from difflib import SequenceMatcher
 from typing import Callable, Optional
 
+from cogno_praxis.coordinator.ics import (
+    CalendarEvent,
+    CalendarSender,
+    build_ics_calendar,
+    class_event_uid,
+    parse_time,
+    sequence_now,
+)
 from cogno_praxis.coordinator.config import CoordinatorConfig
 from cogno_praxis.coordinator.store import SpreadsheetStore
 from cogno_praxis.coordinator.types import ClassEntry, ColumnLayout, ReadReport, SheetReadError
@@ -223,10 +231,11 @@ class CoordinatorService:
         prof_idx = next((i for i, c in enumerate(h) if c == self.cfg.column_professor.lower()), None)
         subj_idx = next((i for i, c in enumerate(h) if c == self.cfg.column_subject.lower()), None)
         last = max((i for i, c in enumerate(header) if c.strip()), default=len(header) - 1)
+        time_idx = next((i for i, c in enumerate(h) if c == self.cfg.column_time.lower()), None)
         fixed_names = {_norm(n) for n in self.cfg.fixed_columns}
         fixed = {i for i, c in enumerate(h) if _norm(c) in fixed_names}
         content = [i for i in range(last + 1) if i not in fixed]
-        return ColumnLayout(date_idx, prof_idx, subj_idx, last, fixed, content)
+        return ColumnLayout(date_idx, prof_idx, subj_idx, last, fixed, content, time_idx=time_idx)
 
     @staticmethod
     def _cell(row: list[str], idx: Optional[int]) -> str:
@@ -488,7 +497,146 @@ class CoordinatorService:
                 out.append(rec)
         return out
 
-    # ── the one write ────────────────────────────────────────────────────────────────
+    # ── the calendar export (a write: it leaves the house) ───────────────────────────
+    def entry_time(self, entry: ClassEntry) -> str:
+        """The class hour as canonical ``HH:MM``, or ``""`` when the sheet records none.
+
+        Read through the SAME layout resolution every other field goes through, so a tenant
+        who has no ``COLUMN_TIME`` column simply gets ``""`` — never a guessed hour."""
+        cols = self._resolve_columns(entry.header)
+        return parse_time(self._cell(entry.cells, cols.time_idx))
+
+    def calendar_events(self, entries: list[ClassEntry], *,
+                        describe: Optional[Callable[[ClassEntry], str]] = None
+                        ) -> list[CalendarEvent]:
+        """The datable classes as calendar events, identified by CONTENT.
+
+        Rows whose date could not be parsed are DROPPED, and that is the one thing this method
+        hides: a calendar entry needs a day, and inventing one would put a professor in a
+        classroom on a date nobody wrote. The caller compares the two lengths and says how many
+        were left out — the same contract ``ReadReport.hidden_past`` has for the read tools.
+        """
+        out: list[CalendarEvent] = []
+        for e in entries:
+            if e.when is None:
+                continue
+            time = self.entry_time(e)
+            turma = e.sheet_key.strip()
+            subject = e.subject.strip() or "Aula"
+            summary = f"{subject} — {turma}" if turma else subject
+            out.append(CalendarEvent(
+                uid=class_event_uid(turma=turma, subject=subject, day=e.when,
+                                    date_str=e.date_str, time=time),
+                summary=summary, day=e.when, time=time,
+                description=describe(e) if describe else ""))
+        return out
+
+    def professor_email(self, *, professor: str = "", role: str = "", identity_label: str = "",
+                        identity_email: str = "",
+                        report: Optional[ReadReport] = None) -> str:
+        """The address the target professor's calendar goes to — ``""`` when there is none.
+
+        TWO sources, in a DECLARED order, because they answer the question with different
+        authority:
+
+        1. the HOST DIRECTORY (``identity_email``, injected by the host's RBAC and never
+           fillable by the model) — but ONLY when the target IS the caller, because that is the
+           only person the host authenticated. It wins there: it is the address the
+           institution's own directory holds for them.
+        2. the tenant's PROFESSORS TAB, read through :meth:`get_professor_info` and therefore
+           under the very same role scoping — a professor sees their own row, an oversight role
+           sees anyone's. This is the only source for an oversight caller sending SOMEONE
+           ELSE'S calendar, and the fallback when the directory has no address on file.
+
+        The order is stated rather than implied because the two can disagree, and a recipient
+        resolved by whichever source happened to answer first is how a calendar reaches the
+        wrong mailbox.
+        """
+        target = (professor or "").strip() or identity_label.strip()
+        if not target:
+            return ""
+        own = bool(identity_label.strip()) and _norm(target) == _norm(identity_label)
+        if own and identity_email.strip():
+            return identity_email.strip()
+        for rec in self.get_professor_info(professor=target, role=role,
+                                           identity_label=identity_label, report=report):
+            for header, value in rec.items():
+                if "mail" in header and "@" in value:
+                    return value.strip()
+        return ""
+
+    async def send_schedule_to_calendar(
+            self, *, sender: Optional[CalendarSender], professor: str = "", role: str = "",
+            identity_label: str = "", identity_email: str = "", month: str = "",
+            turma: str = "", tz_name: str = "", subject_line: str = "",
+            describe: Optional[Callable[[ClassEntry], str]] = None,
+            sequence: Optional[int] = None,
+            report: Optional[ReadReport] = None) -> tuple[int, str, int]:
+        """Mail the target professor's upcoming classes as ONE ``.ics``. Returns
+        ``(events_sent, recipient, classes_dropped)``.
+
+        **It RAISES on every path that did not send**, and that is a contract, not a style: a
+        FastMCP tool that RETURNS a sentence is a successful call, and a successful call on a
+        tool the server marks non-read-only is stamped ``side_effect=True`` by the MCP bridge —
+        so a polite "there is no e-mail configured" would make the turn count as a WRITE that
+        never happened, in the very accounting (``committed_this_turn``) the house uses to
+        decide whether a promise was kept. Raising lands as ``isError`` → ``ok=False`` →
+        ``side_effect=False``. The one non-error return of this method IS a completed send.
+
+        The read underneath is :meth:`get_professor_schedule` — the same call, the same
+        ``_visible`` scoping, the same today-onward window. Nothing here can widen it.
+        """
+        entries = self.get_professor_schedule(
+            professor=professor, role=role, identity_label=identity_label, month=month,
+            turma=turma, report=report)
+        # WHO the calendar is about, resolved exactly as ``_visible`` resolves it: an oversight
+        # caller means whoever they named (empty = the whole master schedule), everyone else is
+        # pinned to themselves. Reading it as "the named one, else me" would quietly turn a
+        # supervisor's master-schedule request into their own calendar.
+        oversight = role.upper() in _OVERSIGHT_ROLES
+        target = (professor or "").strip() if oversight else identity_label.strip()
+        if oversight and not target:
+            raise CoordinatorError(
+                "Name the professor whose calendar to send — a calendar is one person's, so "
+                "the whole master schedule has no single recipient. Nothing was sent.")
+        if not entries:
+            raise CoordinatorError(
+                f"No upcoming classes were found for {target or 'this professor'}, so there is "
+                f"nothing to put in a calendar. Nothing was sent.")
+        events = self.calendar_events(entries, describe=describe)
+        dropped = len(entries) - len(events)
+        if not events:
+            raise CoordinatorError(
+                "None of the classes found carries a date this system could read, so no "
+                "calendar entry could be built. Nothing was sent.")
+        recipient = self.professor_email(professor=professor, role=role,
+                                         identity_label=identity_label,
+                                         identity_email=identity_email, report=report)
+        if not recipient:
+            raise CoordinatorError(
+                f"There is no e-mail address on file for {target}, so there is nowhere to send "
+                f"the calendar. This is a missing address, not a failure — ask them to have it "
+                f"recorded. Nothing was sent.")
+        if sender is None:
+            raise CoordinatorError(
+                "No e-mail is configured for this institution, so the calendar cannot be sent "
+                "from here. Nothing was sent — offer to read the classes out instead.")
+        org_email, org_name = sender.organizer()
+        ics = build_ics_calendar(
+            events, organizer_email=org_email, organizer_name=org_name, attendee=recipient,
+            tz_name=tz_name, sequence=sequence_now() if sequence is None else sequence,
+            duration_minutes=self.cfg.class_duration_minutes)
+        body = (f"{len(events)} aula(s) em anexo, no formato de calendário (.ics). "
+                f"Abra o anexo para importar tudo de uma vez.")
+        ok = await sender.send(to=recipient, subject=subject_line or "Suas aulas",
+                               body=body, ics=ics)
+        if not ok:
+            raise CoordinatorError(
+                "The e-mail server did NOT accept the message, so the calendar was not "
+                "delivered. Nothing was sent — say exactly that and try again later.")
+        return len(events), recipient, dropped
+
+    # ── the spreadsheet write ────────────────────────────────────────────────────────
     def confirm_swap(self, *, professor: str, original_date: str, new_date: str,
                      role: str = "", identity_label: str = "") -> tuple[ClassEntry, ClassEntry]:
         """Swap a professor's class (source, by date+professor) into a free slot (dest, by

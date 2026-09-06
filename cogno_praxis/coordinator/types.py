@@ -19,6 +19,11 @@ class ColumnLayout:
     last_col_idx: int
     fixed_indices: set[int] = field(default_factory=set)
     content_indices: list[int] = field(default_factory=list)
+    #: Where the HOUR sits, when the sheet has such a column at all. ``None`` is the common
+    #: case and is not a defect: a schedule spreadsheet records a DAY, and the calendar export
+    #: renders an all-day event for it. Last, with a default, so nothing that builds a layout
+    #: positionally has to change.
+    time_idx: Optional[int] = None
 
 
 @dataclass

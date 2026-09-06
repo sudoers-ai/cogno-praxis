@@ -24,8 +24,37 @@ Two layers of "business rules" stay separate: **orchestration** rules live in th
 |---|---|---|
 | **scheduler** | the agenda capability — ships the **SECRETARY** persona, the universal reception/scheduling front door for any client | `list_schedulable_hosts`, `check_availability`, `book_appointment`, `list_appointments`, `confirm_appointment`, `complete_appointment`, `cancel_appointment` |
 | **bookkeeper** | the financial capability — ships the **BOOKKEEPER** persona (parent SaaS ANALYST): records income/expenses, tracks clients, produces summaries. See [`docs/BOOKKEEPER.md`](docs/BOOKKEEPER.md) | `add_income`, `add_outcome`, `get_summary`, `list_clients`, `search`, `remove_by_search`, `get_usage`, `help` |
+| **coordinator** | the academic capability — ships the **COORDINATOR** persona: reads class schedules across a tenant's course spreadsheets, checks grade/attendance deadlines, finds open slots, swaps a class, and mails a professor their classes as a calendar | `get_professor_schedule`, `get_professor_info`, `check_deadlines`, `get_weekly_briefing`, `check_ibope_status`, `find_replacement_slot`, `confirm_swap`, `send_schedule_to_calendar` |
 
 More verticals (restaurant, veterinary, …) follow the same shape.
+
+### The calendar export (`send_schedule_to_calendar`)
+
+The coordinator's second write, and the only one that leaves the house: it reads the
+professor's upcoming classes — through the very same `get_professor_schedule` and therefore the
+same role scoping — and e-mails them as **one** `.ics` with **one `VEVENT` per class**. One
+message with every class in it, because that is what a calendar imports in a single action.
+
+Three things about it are worth knowing before you wire it:
+
+- **The `UID` is derived from CONTENT** — class group + discipline + date (+ hour when the sheet
+  has one), normalized and digested — never from the spreadsheet ROW. A row index is a
+  *position*: insert one class at the top of the sheet and every index below it shifts, so
+  row-derived identifiers would make the next send duplicate the professor's whole term instead
+  of updating it. Send it again after a room change and the entries update in place.
+- **Delivery is a port.** `CalendarSender` (`coordinator/ics.py`) is injected into
+  `build_server(service, sender=…)`. `coordinator/mailer.py` is the SMTP adapter over
+  [`cogno-herald`](https://github.com/sudoers-ai/cogno-herald) — an **optional** dependency
+  (install it from git; it is not on PyPI yet, so it is not declarable as an extra). No SMTP
+  configured → **no sender**, and the tool refuses honestly and sends **nothing**. It never
+  swallows a message.
+- **Every path that did not send RAISES**, so the MCP bridge reports `ok=False` /
+  `side_effect=False` and the turn is never recorded as a write that did not happen. The one
+  non-error answer starts with `SENT:`.
+
+Zones: an hour travels with the tenant's `TZID` (`COGNO_COORDINATOR_TZ`, stamped by the host
+from its own `tenant_tz`). No hour column, or no declared zone → an **all-day** event. Never a
+floating time, never raw UTC.
 
 **Prompt-only personas.** Two personas ship here with **no tools of their own** — just the
 four prompt slots (`system`, `voice`, `scope`, `limits`) as package data, loaded by the host's

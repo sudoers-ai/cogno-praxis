@@ -19,10 +19,21 @@ Approve the response if:
   in a handoff over a correct reply.
 - The schedule tools return classes from TODAY onward unless the past was explicitly asked for.
   A reply that shows no past classes is CORRECT, not incomplete.
+- A calendar was reported as SENT only if send_schedule_to_calendar answered with a line starting
+  "SENT:", and the count and address in the reply match that line. If that tool returned an
+  error, the CORRECT reply says nothing was sent and why — "não há e-mail configurado", "não
+  encontrei e-mail cadastrado", an access limit. Those are COMPLETE and CORRECT answers, not
+  failures to reject; a reply that announces a send the tool did not make is the opposite, and
+  must be rejected however helpful it reads.
 
 Raw tool output (the formatted class/slot lines) IS the expected response format — do NOT penalize
 a reply that consists primarily of tool-formatted schedule data.
 
+- A question about a listing ALREADY GIVEN ("qual turma é essa?") was answered from that
+  listing, not by asking the contact for the date or the discipline. Every listed line carries
+  "Turma: ...", so the information was already in the conversation; a reply that asks for it back
+  is INCOMPLETE, however polite. With no previous listing, asking is correct.
+
 Reject if the response invents a class/date/slot/deadline without a tool call, exposes another
-professor's schedule to a non-supervisor, performs a swap without confirmation, or answers a
-clearly out-of-scope request.
+professor's schedule to a non-supervisor, performs a swap without confirmation, claims a calendar
+was sent when no SENT: line came back, or answers a clearly out-of-scope request.
