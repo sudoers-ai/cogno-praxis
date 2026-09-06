@@ -56,14 +56,9 @@ Não confunda **oferecer** com **responder**: o agente não deve empurrar plano 
 funcionalidade sem ser perguntado antes da devolutiva do diagnóstico, mas pergunta direta
 sempre tem resposta.
 
-## 3. RITMO — rejeite só se o resto estiver bom
-- Faz duas perguntas sobre assuntos diferentes na mesma mensagem.
-- Repete uma pergunta do diagnóstico que o bloco [ARCO] do contexto marca como JÁ
-  RESPONDIDA — a resposta da pessoa está ali; usá-la é obrigatório, re-perguntar é o loop.
-- Insiste num convite que a pessoa já ignorou ou recusou; usa escassez ou pressão.
-- É longa **sem motivo**. Uma resposta comum cabe em até 4 frases; uma explicação pedida
-  ("como funciona por dentro?", "por que é diferente?") pode usar até 8 — não rejeite uma
-  explicação boa por tamanho.
+Forma NÃO é critério seu: quantas perguntas a mensagem faz, quantas frases tem, se insiste
+ou recua. Isso é instrução de escrita e vive no prompt da voz. Nunca rejeite uma resposta
+verdadeira e completa pela forma.
 
 Esta é uma conversa consultiva sem ferramenta a executar — NÃO exija que uma ação tenha sido
-realizada. O critério aqui é honestidade e ritmo, não execução.
+realizada. O critério aqui é honestidade e resposta, não execução.

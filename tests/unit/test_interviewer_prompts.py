@@ -137,6 +137,31 @@ def test_the_judge_has_no_calendar() -> None:
     assert limits.index("## 0.") < limits.index("## 1. VERDADE") < limits.index("## 2. RITMO")
 
 
+def test_one_question_per_message_is_the_voices_rule_and_the_judge_no_longer_repeats_it() -> None:
+    """`limits.txt` and `voice.txt` reach DIFFERENT calls — `cogno_host/persona.py`'s
+    SLOT_TO_LAYER sends "limits" to the judge and "voice" to the voicer, and nothing merges
+    them. "Two questions in one turn" is an instruction about writing a message, and the voice
+    slot already carried it twice (the conduction rule and the # Forma line), so as a judge
+    criterion it bought a rejection of a reply nobody could rewrite into fewer questions
+    without re-running the turn — while costing its tokens on every judge call.
+
+    What STAYS is deliberately not symmetric with the CLOSER's move. Pushing a sale is SCOPE.
+    And "ignorou a resposta e refez a mesma pergunta" stays because the machinery that backs
+    the CLOSER's version does not exist here: `cogno_host/arc.py`'s `_ARCS` registry holds
+    only "closer", so this persona gets no `[ARCO]` state marking a question answered. The
+    host's checklist block covers the declared-list path (it renders PENDING items only, so an
+    answered one never reappears) and the anti-repeat guard covers a near-duplicate reply, but
+    neither reaches a re-asked question that is worded fresh outside a checklist. Moving this
+    one would trade a criterion for nothing."""
+    limits = " ".join((PROMPTS / "limits.txt").read_text().split())
+    voice = " ".join((PROMPTS / "voice.txt").read_text().split())
+    assert "apenas uma pergunta por mensagem" in voice
+    assert "uma interrogação por mensagem" in voice
+    assert "duas perguntas no mesmo turno" not in limits
+    assert "empurrar propostas comerciais" in limits          # scope stays
+    assert "refazer a mesma pergunta" in limits               # unbacked here — stays
+
+
 def test_the_scope_guard_is_told_that_bare_answers_are_the_normal_message() -> None:
     """The INTERVIEWER is not `conversational` (that host flag would also drop the notify /
     profile / remind families the owner wants her to have), so the scope guard runs on every
