@@ -28,15 +28,46 @@ from cogno_praxis.coordinator.service import (
     CoordinatorAccessError,
     CoordinatorError,
     CoordinatorService,
+    _parse_date,
 )
 from cogno_praxis.coordinator.store import InMemorySpreadsheetStore
 from cogno_praxis.coordinator.types import ClassEntry, ReadReport
 
 
+def _says_the_same_date(cell: str, e: ClassEntry) -> bool:
+    """Is this cell just the entry's date said again?
+
+    A tenant's sheet may spend three columns on one day — the live layout is ``Mês | Dia | Data``
+    and all three carry the identical value, which reached the model as
+    ``Mês: 2026-09-08 00:00:00 | Dia: 2026-09-08 00:00:00 | Data: 2026-09-08 00:00:00``. Three
+    readings of one fact is noise the reader has to reconcile before it can answer, and it
+    crowded out the one thing the line did NOT say: which class group the class belongs to.
+
+    The test is the DATE, not the column name: a column is folded away only when it parses to the
+    very same day (or repeats the raw string verbatim, for a date that could not be parsed at
+    all). A ``Dia`` holding "Terça" is a different fact and survives; so does a second, DIFFERENT
+    date. Nothing is guessed from a header."""
+    if cell.strip() == e.date_str.strip():
+        return True
+    parsed = _parse_date(cell)
+    return bool(e.when and parsed and parsed == e.when)
+
+
 def _fmt_entry(e: ClassEntry) -> str:
-    """One class as a compact, verbatim line — every non-empty header:cell so the model never
-    has to guess column meaning (dates already normalized DD/MM/YYYY)."""
-    parts = [f"{h}: {c}" for h, c in zip(e.header, e.cells) if c.strip()]
+    """One class as a compact line: its CLASS GROUP, ONE date, then every other non-empty
+    header:cell verbatim, so the model never has to guess column meaning.
+
+    ``Turma`` leads because it is the field a professor teaching four groups needs first and the
+    only one the line never had: the group is the spreadsheet's own key, the tenant's label, and
+    it reached a human only inside an error message. The date follows once, normalized
+    DD/MM/YYYY like the rest of the system."""
+    parts: list[str] = []
+    if e.sheet_key.strip():
+        parts.append(f"Turma: {e.sheet_key.strip()}")
+    if e.date_str.strip():
+        parts.append(f"Data: {e.date_str.strip()}")
+    parts += [f"{h}: {c}" for h, c in zip(e.header, e.cells)
+              if c.strip() and not _says_the_same_date(c, e)]
     return " | ".join(parts) if parts else e.date_str
 
 
@@ -48,6 +79,13 @@ def _fmt_report(report: ReadReport) -> str:
     turns where nothing was; a permanent "all spreadsheets read" is noise. They appear when they
     are TRUE and are silent otherwise."""
     lines: list[str] = []
+    if report.unmatched_turma:
+        known = ", ".join(report.known_turmas) or "(none configured)"
+        lines.append(
+            f'NO SUCH CLASS GROUP: "{report.unmatched_turma}" does not name any configured class '
+            f"group. The groups are: {known}. If the request was not about a class group at all, "
+            f"call again with `turma` empty — a word like \"de\" is usually a preposition, not a "
+            f"group.")
     if report.hidden_past:
         lines.append(
             f"(Showing from today onward. {report.hidden_past} earlier class(es) matching this "
@@ -97,21 +135,29 @@ def build_server(service: Optional[CoordinatorService] = None, *,
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_professor_schedule(professor: str = "", month: str = "", discipline: str = "",
-                               include_past: bool = False,
+                               turma: str = "", include_past: bool = False,
                                identity_label: str = "", role: str = "") -> str:
         """List a professor's class schedule (aggregated across all course spreadsheets, sorted
-        by date). Returns UPCOMING classes only — from today onward — unless ``include_past``.
+        by date). EVERY line names its class group ("Turma: ..."), so an unfiltered read already
+        answers "which group is this class in?".
+        Returns UPCOMING classes only — from today onward — unless ``include_past``.
         ``month`` filters by YYYY-MM, a bare number, or a month name in Portuguese or English
         ("março", "September"). ``discipline`` filters by subject and is typo-tolerant ("machne
-        learning" still matches). Set ``include_past=True`` ONLY when the user explicitly asks
-        about the past ("what I already taught", "my August classes", "the history") — naming a
-        month that is already over counts as asking, and needs no flag. A professor sees only
+        learning" still matches). ``turma`` narrows to one class group or a family of them: a
+        bare prefix takes the whole family ("DSA" → DSA_33 and DSA_34) and separators, case and
+        spacing do not matter ("DE_09", "de 09", "DE09"). Fill ``turma`` ONLY with a group
+        DESIGNATOR the user actually named — never a sentence and never a stray word; a group
+        prefix can also be an ordinary Portuguese word, so in "as aulas de outubro" the "de" is a
+        preposition and ``turma`` must stay EMPTY. Set ``include_past=True`` ONLY when the user
+        explicitly asks about the past ("what I already taught", "my August classes", "the
+        history") — naming a month that is already over counts as asking, and needs no flag;
+        asking about OTHER CLASS GROUPS is not asking about the past. A professor sees only
         their own classes; a supervisor may name any professor or omit it for the whole master
         schedule."""
         report = ReadReport()
         return _guard(lambda: _fmt_list(
             svc.get_professor_schedule(professor=professor, month=month, discipline=discipline,
-                                       include_past=include_past, report=report,
+                                       turma=turma, include_past=include_past, report=report,
                                        identity_label=identity_label, role=role),
             empty="No classes found.", report=report))
 

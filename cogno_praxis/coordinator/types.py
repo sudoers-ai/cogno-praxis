@@ -26,7 +26,14 @@ class ClassEntry:
     """One aggregated schedule row across all spreadsheets, dates normalized.
 
     ``cells`` is the full row (for verbatim display + swaps); ``sheet_id``/``row_idx`` locate it
-    for a write. ``when`` is the parsed date (None if unparseable — kept but sorted last)."""
+    for a write. ``when`` is the parsed date (None if unparseable — kept but sorted last).
+
+    ``sheet_key`` is the tenant's own label for the spreadsheet ("Turma DSA_33"), which in this
+    vertical IS the CLASS GROUP: one spreadsheet per turma. It has been on every entry since the
+    vertical shipped and reached a human only inside an error message ("Turma DSA_33: HTTP 404"),
+    so a professor teaching four groups got four indistinguishable lists of dates and could not
+    tell which class belonged to which group. It is carried, not derived: the display and the
+    ``turma`` filter both read THIS field, never a name parsed back out of the row."""
     sheet_id: str
     sheet_key: str
     row_idx: int                 # 0-based index into the sheet's schedule range (row 0 = header)
@@ -67,3 +74,5 @@ class ReadReport:
     exactly today's behaviour."""
     errors: list[SheetReadError] = field(default_factory=list)
     hidden_past: int = 0         # classes dropped by the "today onward" default (0 = nothing cut)
+    unmatched_turma: str = ""    # a `turma` filter that matched NO configured class group
+    known_turmas: tuple[str, ...] = ()   # the configured group names, so the reply can name them
