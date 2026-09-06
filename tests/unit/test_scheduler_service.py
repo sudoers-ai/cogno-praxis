@@ -670,7 +670,11 @@ def test_block_does_not_appear_as_client_booking():
 
 
 def test_resolve_date_unparseable_raises():
-    with pytest.raises(SchedulerError, match="could not resolve"):
+    # Capitalised because the message is now the SHARED `resolve_date_error` — one sentence,
+    # read by a model, published identically by this vertical and by the host's builtin. The
+    # two copies had drifted here (this one opened lowercase and said "from:"); the wording
+    # contract itself is pinned in `test_resolve_date_contract.py`.
+    with pytest.raises(SchedulerError, match="Could not resolve"):
         _svc().resolve_date("qualquer coisa sem data")
 
 

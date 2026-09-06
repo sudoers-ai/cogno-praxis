@@ -141,6 +141,72 @@ def format_date(d: date, lang: str = "pt") -> str:
     return _SPOKEN_FORMAT[key].format(wd=weekdays[d.weekday()], day=d.day,
                                       month=months[d.month - 1], year=d.year)
 
+
+# ── what the MODEL is told about `resolve_date` ──────────────────────────────────────────
+# The parser has always had one implementation and TWO shells: this vertical's MCP tool and
+# the host's cortex builtin (`cogno_host.date_tool`), which every other persona sees. The
+# implementation was shared from the start; the WORDS were not, and by 2026-09-06 the two
+# copies had drifted in six places — the weekday example ('sexta que vem' vs 'próxima
+# sexta'), the imperative ("NEVER compute" vs "Always call this"), and four differences in
+# the unparseable-phrase error, one of which mattered: the host's copy did not list
+# 'depois de amanhã' among the resolvable forms, so half the personas were never told about
+# a form the parser has always accepted.
+#
+# A tool description is not documentation — it is the ONLY thing a model reads before
+# deciding whether to call. Two descriptions of one tool is a duplicated contract, and this
+# one had already rotted. So the words live HERE, beside the parser that has to honour them,
+# for the same reason `format_date` does: the promise and the thing that keeps it are one
+# job. Both shells import these; neither writes its own.
+#
+# Every form named below MUST actually parse — that is not a style rule, it is the defect
+# this text was rewritten for once already. The older host copy advertised "ANY date
+# expression" plus counted relatives while the parser had no branch for them, so the model
+# passed exactly what it was promised and got an error: measured on `secretary_bench`
+# (2026-08-04), `resolve_date` failed 50-86% of its calls. A description that over-promises
+# is a defect in the tool, not in the model that believed it. Tests on BOTH sides run every
+# quoted form through the parser, in both directions (promised → resolves, warned → raises).
+
+#: The shared description, byte-identical in every shell. A vertical may append its own
+#: sentence (see :data:`RESOLVE_DATE_SCHEDULER_SUFFIX`) but never rewrite this.
+RESOLVE_DATE_DESCRIPTION = (
+    "Convert a date expression into the exact calendar date: 'hoje', 'amanhã', "
+    "'depois de amanhã', counted relatives ('daqui a 3 dias', 'em 2 semanas'), "
+    "weekday names ('sexta que vem', 'próxima sexta'), numeric ('09/07') or written "
+    "('9 de julho') dates, and ISO ('2026-07-09'). NEVER compute or guess a date or "
+    "weekday yourself — call this and use its result. A vague SPAN ('semana que vem', "
+    "'esse mês', 'de manhã') is not a date: ask the user which day instead of calling this.")
+
+#: The scheduler's own tail — it names tools only this vertical has, which is exactly why it
+#: is NOT in the shared core: a BOOKKEEPER or SDR persona reading "then call
+#: check_availability" is being pointed at a tool it was never offered. Declared here rather
+#: than inline in the server so the host can assert what this vertical publishes, in full,
+#: without keeping a second copy of either half.
+RESOLVE_DATE_SCHEDULER_SUFFIX = (
+    " Then use the returned YYYY-MM-DD in check_availability / book_appointment.")
+
+
+def resolve_date_answer(iso: str, spoken: str) -> str:
+    """The successful reply: the ISO date to compute with AND the words to say.
+
+    Handing over both is the point — the live incident behind this whole seam is a persona
+    reading the anchor "2026-07-25 (Saturday)" and still voicing "sexta-feira". A model that
+    is given the words never has to derive them."""
+    return (f"{iso} ({spoken}). Use the ISO date in tool calls; the written "
+            f"form when speaking to the user.")
+
+
+def resolve_date_error(expression: object) -> str:
+    """The unresolvable-phrase reply, read by a MODEL and not by a developer.
+
+    It says what to DO, not only what went wrong: "could not resolve" alone left the model
+    rewording the same unresolvable span and burning a second step on the identical failure.
+    """
+    return (f"Could not resolve a date from {expression!r} — it names no single day. "
+            f"ASK THE USER which day they mean; do NOT call this again with a reworded "
+            f"version of the same phrase. Resolvable forms: 'hoje', 'amanhã', "
+            f"'depois de amanhã', 'daqui a 3 dias', 'em 2 semanas', a weekday ('sexta'), "
+            f"'09/07', '9 de julho', ISO ('2026-07-09').")
+
 def _year_for(day: int, month: int, today: date) -> Optional[date]:
     """Pick the year that puts (day, month) today-or-later — this year, else next.
     Returns None for an impossible day/month (e.g. 31/02)."""
@@ -827,17 +893,12 @@ class SchedulerService:
         cal = _parse_calendar_date(e, today)
         if cal is not None:
             return cal.isoformat()
-        # The message is read by a MODEL, not a developer: the scheduler MCP tool lets this
-        # propagate as the tool's error text. "could not resolve" alone left it rewording the
-        # same unresolvable phrase and burning a second step on the identical failure — say
-        # what to DO. (The host's builtin `resolve_date` already returns this guidance; the
-        # SECRETARY uses the scheduler's tool and was getting the bare sentence.)
-        raise SchedulerError(
-            f"could not resolve a date from: {expression!r} — it names no single day. "
-            f"ASK THE USER which day they mean; do NOT call this again with a reworded "
-            f"version of the same phrase. Resolvable: 'hoje', 'amanhã', 'depois de amanhã', "
-            f"'daqui a 3 dias', 'em 2 semanas', a weekday ('sexta'), '09/07', '9 de julho', "
-            f"ISO ('2026-07-09').")
+        # The message is read by a MODEL, not a developer, and it is the SAME message the
+        # host's builtin returns — one text, defined once (`resolve_date_error`). It used to
+        # be written out here as well, and the two copies had already drifted: this one said
+        # "from:" and "Resolvable:", the host's said "from" and "Resolvable forms:", and the
+        # host's omitted 'depois de amanhã' from a list the parser has always accepted.
+        raise SchedulerError(resolve_date_error(expression))
 
     # ── domain rules ───────────────────────────────────────────────────
     def _require_future(self, iso_date: str) -> None:
