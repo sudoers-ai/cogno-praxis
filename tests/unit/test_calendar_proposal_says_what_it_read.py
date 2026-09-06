@@ -83,6 +83,17 @@ def _text(res):
     return "\n".join(b.text for b in res[0] if getattr(b, "type", None) == "text")
 
 
+def _proposal_line(text: str) -> str:
+    """The ONE line that carries the three facts — the atom the voicer is asked to copy whole.
+
+    Read by marker, not by position: a line that has to be found by counting is a line the next
+    edit moves. ``PROPOSAL:`` is to this call what ``SENT:`` is to the send.
+    """
+    hits = [ln for ln in text.splitlines() if ln.startswith("PROPOSAL:")]
+    assert len(hits) == 1, f"expected exactly one PROPOSAL: line, got {len(hits)}"
+    return hits[0]
+
+
 def _server(rows=None, *, today=date(2026, 8, 31), sender=None, profs=None):
     return build_server(_service(rows, today=today, profs=profs),
                         sender=sender if sender is not None else RecordingCalendarSender(),
@@ -111,6 +122,25 @@ def test_the_proposal_names_the_count_the_period_and_the_destination():
     assert text.startswith("NOT SENT")
 
 
+def test_the_three_facts_live_on_ONE_line_adjacent():
+    """The anti-deformation property, and it is the one this text most needs.
+
+    Nothing here reaches the contact directly — a voicer rewrites it first, and that rewrite is
+    exactly where the month was lost on 2026-09-06: the executor's own draft said "1 aula de
+    setembro / 08/09/2026" and the reply that went out announced OCTOBER, taken from a listing
+    six turns earlier. A count in one sentence and a period in another are two things to
+    re-attach, and a re-attachment can go to the wrong list; glued into one short line they are
+    one thing to copy.
+
+    So the assertion is ADJACENCY, not mere presence: all three on the same line, in order, with
+    the period touching the count it belongs to.
+    """
+    line = _proposal_line(_calendar_proposal_text(_proposal(_service(), month="2026-09")))
+    assert line == "PROPOSAL: 3 class(es) of September 2026 → ana@escola.test"
+    # the count and its period are one token run, not two facts a rewrite has to pair up again
+    assert "3 class(es) of September 2026" in line
+
+
 def test_the_proposal_lists_the_very_classes_that_would_go():
     """A count a person cannot check is a count they have to trust. The lines are the check."""
     text = _calendar_proposal_text(_proposal(_service(), month="2026-09"))
@@ -129,9 +159,8 @@ def test_the_proposal_claims_no_period_when_the_read_filtered_by_none():
     """
     p = _proposal(_service(), month="")
     assert p.period == ""
-    first = _calendar_proposal_text(p).splitlines()[0]
     # the count runs straight into the destination: there is no period between them to claim
-    assert "6 class(es) into ONE calendar file, e-mailed to ana@escola.test" in first
+    assert _proposal_line(_calendar_proposal_text(p)) == "PROPOSAL: 6 class(es) → ana@escola.test"
 
 
 def test_a_month_the_resolver_could_not_read_is_not_repeated_back_as_one():
@@ -143,8 +172,8 @@ def test_a_month_the_resolver_could_not_read_is_not_repeated_back_as_one():
     """
     p = _proposal(_service(), month="de")
     assert p.period == "" and p.count == 6           # everything from 31/08 onward, unfiltered
-    first = _calendar_proposal_text(p).splitlines()[0]
-    assert "6 class(es) into ONE calendar file" in first and " of " not in first
+    line = _proposal_line(_calendar_proposal_text(p))
+    assert line == "PROPOSAL: 6 class(es) → ana@escola.test" and " of " not in line
 
 
 def test_a_month_named_without_a_year_is_not_given_one():
@@ -156,7 +185,7 @@ def test_a_month_named_without_a_year_is_not_given_one():
     p = _proposal(_service(), month="setembro")
     assert p.period == "September" and p.count == 4  # three in 2026 + the one in 2027
     text = _calendar_proposal_text(p)
-    assert "4 class(es) of September into ONE" in text.splitlines()[0]
+    assert _proposal_line(text) == "PROPOSAL: 4 class(es) of September → ana@escola.test"
     assert "September 2026" not in text              # a year the read never established
     assert "07/09/2027" in text
 
@@ -257,8 +286,7 @@ def test_the_preview_tool_answers_with_the_grounded_sentence():
             "preview_schedule_to_calendar",
             {"role": "EMPLOYEE", "identity_label": "Ana", "month": "2026-09"}))
         assert out.startswith("NOT SENT")
-        assert "3 class(es) of September 2026" in out
-        assert "ana@escola.test" in out
+        assert _proposal_line(out) == "PROPOSAL: 3 class(es) of September 2026 → ana@escola.test"
         assert "08/09/2026" in out
         assert sender.sent == []
     asyncio.run(run())
@@ -363,4 +391,4 @@ def test_a_YYYY_MM_outside_1_to_12_is_not_a_month_either(raw):
     # no filter ran, so the answer is the unfiltered window — an answer, not an exception
     assert [e.date_str for e in got] == ["01/09/2026", "08/09/2026", "29/09/2026",
                                          "05/10/2026", "14/10/2026", "07/09/2027"]
-    assert " of " not in _calendar_proposal_text(_proposal(_service(), month=raw)).splitlines()[0]
+    assert " of " not in _proposal_line(_calendar_proposal_text(_proposal(_service(), month=raw)))

@@ -202,6 +202,8 @@ def test_the_executor_is_told_to_ground_the_proposal_in_a_read_not_in_memory():
     system = _flat("system")
     assert "preview_schedule_to_calendar" in system
     assert "Do NOT compose that proposal from memory" in system
+    # the three facts travel TOGETHER, because a rewrite that re-pairs them can re-pair them wrong
+    assert 'on ONE "PROPOSAL:" line' in system
     # ...and WHY the system's own hold cannot stand in for it
     assert "stops the call BEFORE it reads anything" in system
 
@@ -210,8 +212,8 @@ def test_the_voicer_takes_the_proposal_numbers_from_this_turn_not_from_the_histo
     """The measured failure mode of the same conversation: a September request answered with
     October classes, lifted out of a listing given six turns earlier."""
     voice = _flat("voice")
-    assert 'from the "NOT SENT" line the preview returned THIS turn' in voice
-    assert "never from a listing earlier in the conversation" in voice
+    assert 'put the preview\'s "PROPOSAL:" line to the contact as ONE sentence' in voice
+    assert "Never re-assemble them from a listing earlier in the conversation" in voice
 
 
 def test_the_judge_is_told_a_proposal_is_a_complete_answer():

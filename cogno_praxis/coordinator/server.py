@@ -157,19 +157,32 @@ def _calendar_proposal_text(p: CalendarProposal,
 
     It deliberately does NOT start with the ``SENT:`` marker the rest of the system reads as
     proof an e-mail left (``prompts/limits.txt``, ``prompts/voice.txt``): nothing was sent, and
-    that marker is how every layer downstream tells the two apart.
+    that marker is how every layer downstream tells the two apart. What it carries instead is a
+    ``PROPOSAL:`` marker of its own, and the three facts live on THAT ONE LINE, adjacent.
+
+    **The single line is a defence, not a layout choice.** This text is not what the contact
+    reads — a voicer rewrites it first, and on 2026-09-06 that rewrite is exactly where the
+    month was lost: the executor's own draft said "1 aula de setembro / 08/09/2026" and the
+    reply that reached the professor announced OCTOBER, lifted out of a listing given six turns
+    earlier. A count in one sentence and a period in another are two things to re-attach, and a
+    re-attachment can go to the wrong list. Glued into one short line they are one fact to copy,
+    which is the hardest shape to deform. Nothing here can guarantee the voicer copies it; what
+    it can do is make copying the easy path and splitting the deliberate one.
     """
     period = f" of {p.period}" if p.period else ""
-    head = (f"NOT SENT — no e-mail has left. Sending would put {p.count} class(es){period} "
-            f"into ONE calendar file, e-mailed to {p.recipient}:")
-    lines = [head] + [f"  - {_fmt_event(e)}" for e in p.events]
+    lines = ["NOT SENT — no e-mail has left.",
+             f"PROPOSAL: {p.count} class(es){period} → {p.recipient}",
+             "Put THAT ONE LINE to the user, the three facts together and unchanged: the count, "
+             "the period and the address are a single fact. Splitting them across sentences, or "
+             "taking any of them from an earlier listing in this conversation, is how a period "
+             "comes to belong to another month's classes. The classes it covers:"]
+    lines += [f"  - {_fmt_event(e)}" for e in p.events]
     if p.dropped:
         lines.append(f"({p.dropped} class(es) carry a date this system could not read and would "
                      f"be left out of that count.)")
     lines.append(
-        "Tell the user EXACTLY how many classes, which period and which address, and get their "
-        "agreement. Only then call send_schedule_to_calendar with the SAME professor/month/"
-        "turma. NOTHING has been sent by this call.")
+        "Only after an explicit yes, call send_schedule_to_calendar with the SAME "
+        "professor/month/turma. NOTHING has been sent by this call.")
     footer = _fmt_report(report) if report else ""
     body = "\n".join(lines)
     return f"{body}\n\n{footer}" if footer else body
@@ -322,8 +335,10 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         the exact count, period and recipient, so you can put those numbers to the user and get
         a yes about the real thing. Take the same ``professor``/``month``/``turma`` you intend
         to send with, and then send with EXACTLY those. Its answer starts with "NOT SENT" —
-        nothing left, and you must not say anything did. If it comes back as an ERROR, the send
-        would fail the same way: relay that instead of proposing.
+        nothing left, and you must not say anything did — and carries ONE "PROPOSAL:" line with
+        the count, the period and the address together: put that line to the user unchanged,
+        never re-assembled from an earlier listing. If it comes back as an ERROR, the send would
+        fail the same way: relay that instead of proposing.
         """
         report = ReadReport()
         return _guard(lambda: _calendar_proposal_text(

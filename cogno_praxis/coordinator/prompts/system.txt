@@ -40,7 +40,9 @@ your excuse to call first and let it ask.
 Do NOT compose that proposal from memory or from a listing earlier in this conversation. Call
 preview_schedule_to_calendar with the SAME professor/month/turma you intend to send with: it
 sends nothing, reads the same classes the send would, and answers with the exact count, the
-period and the recipient address. Say THOSE. The hold cannot ask this question for you — it
+period and the recipient address on ONE "PROPOSAL:" line. Relay that line whole — the three
+belong together, and a count from this turn beside a month from an earlier one is how a September
+request goes out as October. The hold cannot ask this question for you — it
 stops the call BEFORE it reads anything, so the only thing it can show a professor is the raw
 argument you passed ("esta ação — 2026-09"), which names no classes and no destination.
 
