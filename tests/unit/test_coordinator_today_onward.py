@@ -297,3 +297,33 @@ def _flaky(*, broken: tuple[str, ...], today=date(2026, 9, 6)):
         store.put(sid, "Secretaria",
                   [[""] * 5, [""] * 5, [""] * 5, list(_HEADER)] + [list(r) for r in rows])
     return CoordinatorService(store, CoordinatorConfig(rules), today=lambda: today)
+
+
+def test_the_prompts_ask_for_the_window_and_not_for_a_shortfall():
+    """The prompt half, pinned by PRESENCE — and this test does not pretend that is obedience.
+
+    It is worth pinning anyway, and the live measurement says why. The judge prompt of the
+    2026-09-06 runs already carried, verbatim, "A reply that shows no past classes is CORRECT,
+    not incomplete" — and the judge rejected the turn three times over anyway, quoting the tool's
+    own note back. The prose lost to the data, which is why the fix above is in the DATA. What
+    these lines buy is narrower: the voice is no longer TOLD to copy a shortfall into the reply,
+    where the grader reads it a second time.
+
+    The twin is in the same assertions: the unreadable-spreadsheet instruction, which reports a
+    REAL incompleteness, must survive untouched."""
+    from pathlib import Path
+    prompts = Path(__import__("cogno_praxis").__file__).resolve().parent / "coordinator" / "prompts"
+    voice = (prompts / "voice.txt").read_text(encoding="utf-8")
+    system = (prompts / "system.txt").read_text(encoding="utf-8")
+
+    # the window is said, the deficit is not
+    assert "Say the WINDOW, never a deficit" in voice
+    assert 'were "not listed"' in voice
+    assert "OFFER the past; do not report a shortfall" in system
+    # the offer survives in both
+    assert "quer ver as anteriores?" in voice
+    assert "include_past=true` ONLY when the user explicitly asks" in system
+    # the twin: a real incompleteness is still announced, and still named
+    assert "could not read, give the classes it DID read and name the" in voice
+    assert "A reply that shows no past classes is CORRECT, not incomplete." in (
+        prompts / "limits.txt").read_text(encoding="utf-8")
