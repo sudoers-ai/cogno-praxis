@@ -50,6 +50,28 @@
 
 ### Fixed
 
+- **SCHEDULER: uma lista vazia deixa de apagar o catálogo inteiro de um escopo.**
+  `PgAppointmentStore.sync_hosts([])` corria `DELETE FROM schedule_hosts WHERE scope = %s` —
+  sem `NOT IN`, todos os profissionais do inquilino numa só instrução. A fronteira ENTRE
+  inquilinos já estava fechada (`WHERE scope`); o defeito era dentro do escopo.
+
+  A lista chega de um chamador que não consegue distinguir os seus dois significados:
+  `COGNO_SCHEDULER_HOSTS="[]"` é o que um host emite tanto quando o inquilino não tem mesmo
+  profissionais agendáveis como quando aquilo a que perguntou não devolveu nada. Um desses
+  significados custa um catálogo real e nenhuma resposta o desfaz, portanto a ambiguidade
+  resolve-se do único modo que uma primitiva destrutiva a pode resolver: **guarda o que lá
+  está e diz que guardou** (`event=sync_hosts_empty_refused`, com `kept=`).
+
+  **Encolher continua a funcionar**, e é essa a metade que importa nomear: uma lista NÃO vazia
+  remove quem falta nela, logo um profissional retirado do painel continua a deixar de ser
+  agendável. O que deixou de ter porta é «remover o ÚLTIMO» — esvaziar o catálogo faz-se
+  apagando a identidade (`purge_identity`). Uma oferta velha é reversível pelo operador a quem
+  o aviso chega; um catálogo apagado não é.
+
+  O aviso só sai quando há algo a perder: um inquilino legitimamente sem profissionais não
+  perde nada, e um aviso que dispara no caso normal é um aviso que ninguém lê no dia em que
+  significa alguma coisa.
+
 - **COORDINATOR: a TURMA passa a viajar em toda a linha — e «outras turmas» deixa de ser lido
   como «outros professores».** Medido em 06/09 nos turnos t56–t57 do dono.
 
