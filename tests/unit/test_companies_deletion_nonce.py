@@ -74,14 +74,26 @@ def test_the_token_the_proposal_minted_does_commit():
 
 
 def test_the_token_is_not_derivable_from_anything_the_caller_holds():
-    """It is a SECRET, not a rendering of the row: no field of the company appears in it."""
+    """It is a SECRET, not a rendering of the row.
+
+    Three checks, and the third is the one that actually separates a secret from a rendering:
+    the token is LONG, it is not any value the caller already holds, and **two proposals over
+    identical inputs differ**. A derivation of the row would repeat.
+
+    NOT a substring sweep over the ids, and that correction was made by measurement rather
+    than by taste: the first version of this test asserted `"e1" not in token`, and this PR's
+    own CI failed on `c6CotqpBJR65Las7EZRcR581Te1ycz_U` — a random 32-character token contains
+    a given two-character string by chance roughly once in thirty runs. **An assertion that
+    fails on a CORRECT implementation is a worse defect than the one it guards**, and it costs
+    nothing here: the mutation this test exists for (`fresh = row.company_id`) is killed by the
+    length check and by the equality check, both deterministic.
+    """
     svc = _svc()
     proposal = svc.delete("acme", identity_id="e1", role="ADMIN").proposal
     assert proposal is not None
     token = proposal.confirm_token
     assert len(token) >= 24
-    for known in ("acme", "Acme", "e1", "initech"):
-        assert known not in token
+    assert token not in ("acme", "Acme", "e1", "initech", "")
     # two proposals for the SAME company are two different tokens
     second = svc.delete("acme", identity_id="e1", role="ADMIN").proposal
     assert second is not None and second.confirm_token != token
