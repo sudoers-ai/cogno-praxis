@@ -59,6 +59,34 @@ _META_NEEDS_CONFIRMATION = "cogno-mcp/needs_confirmation"
 _META_CONFIRM_ARGUMENTS = "cogno-mcp/confirm_arguments"
 
 
+# ── _REFUSALS_RAISE: why a write that wrote nothing may not RETURN a sentence ─────────────
+#
+# A FastMCP tool that RETURNS is a successful call, and cogno-mcp stamps a successful call on a
+# non-read-only tool as ``ToolResult(ok=True, side_effect=True)`` — the exact pair
+# ``committed_this_turn`` counts as "this turn wrote". So on the three mutating tools here a
+# polite sentence about NOT writing declared a write.
+#
+# Measured on one production turn: ``remove_by_search`` matched nothing, answered "No
+# transaction of yours matches ... — nothing removed.", and the turn came out
+# ``guards.committed=True``. **Escrita declarada, zero linhas escritas** — and the cost is not
+# the bad number itself: ``committed`` is what the promise auditor and the grounding rules read
+# to ask "was there a write behind this claim?", so a false TRUE does not make the
+# anti-fabrication net fail, it SWITCHES IT OFF. From there "registei a sua despesa" looks
+# supported by a write that never happened. One turn in 1007 — one case, not a class.
+#
+# Raising lands as ``isError`` → ``ok=False`` → ``side_effect=False``, and the sentence still
+# reaches the model as ``ToolResult.error`` (fed back so it self-corrects), so nothing the
+# contact is told changes. It is the rule ``coordinator/service.py`` already states for
+# ``send_schedule_to_calendar`` ("**It RAISES on every path that did not send**") and the one
+# ``companies/server.py`` adopted for its refusals; these three were the siblings both of those
+# notes were describing.
+#
+# What is NOT covered here, deliberately: an IDEMPOTENT no-op — a call that changed nothing
+# because the desired state already held ("was ALREADY CONFIRMED — no change was made"). That
+# is a result the judge has been taught to read, and re-labelling it as a failure is a
+# different question with a different answer.
+
+
 def _brl(v: float) -> str:
     return f"R$ {v:,.2f}"
 
@@ -99,20 +127,16 @@ def build_server(service: Optional[BookkeeperService] = None, *,
     def add_income(description: str, amount: str, identity_id: str = "",
                    client: str = "", date: str = "") -> str:
         """Record an income (entrada). Confirm the summary with the user BEFORE calling this."""
-        try:
-            tx = svc.add_income(description, amount, identity_id, client_name=client, tx_date=date)
-        except BookkeeperError as exc:
-            return f"ERROR: {exc}"
+        # The refusal RAISES rather than returning "ERROR: ..." — see _REFUSALS_RAISE.
+        tx = svc.add_income(description, amount, identity_id, client_name=client, tx_date=date)
         who = f" ({tx.client_name})" if tx.client_name else ""
         return f"Income recorded: {tx.description}{who} = {_brl(tx.amount)} on {tx.tx_date}."
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     def add_outcome(description: str, amount: str, identity_id: str = "", date: str = "") -> str:
         """Record an expense (saída). Confirm the summary with the user BEFORE calling this."""
-        try:
-            tx = svc.add_outcome(description, amount, identity_id, tx_date=date)
-        except BookkeeperError as exc:
-            return f"ERROR: {exc}"
+        # The refusal RAISES rather than returning "ERROR: ..." — see _REFUSALS_RAISE.
+        tx = svc.add_outcome(description, amount, identity_id, tx_date=date)
         return f"Expense recorded: {tx.description} = {_brl(tx.amount)} on {tx.tx_date}."
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -173,7 +197,12 @@ def build_server(service: Optional[BookkeeperService] = None, *,
         if outcome.removed is not None:
             return f"Removed: {_entry_line(outcome.removed)}."
         if outcome.proposal is None:
-            return f"No transaction of yours matches {query!r} — nothing removed."
+            # NOTHING MATCHED, so nothing was deleted — and a RETURN here would have the MCP
+            # bridge stamp this call ``side_effect=True``. See _REFUSALS_RAISE. The sentence is
+            # unchanged and still reaches the model (as ``ToolResult.error``); what changes is
+            # that the turn no longer declares a write it did not make.
+            raise BookkeeperError(
+                f"No transaction of yours matches {query!r} — nothing removed.")
         # The prose stays the text; the machine-readable half rides in the block's ``_meta``
         # beside it. ``confirm_arguments`` names the argument THIS tool needs in order to
         # commit — the vertical's own business, never invented by the layer above.

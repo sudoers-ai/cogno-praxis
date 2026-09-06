@@ -34,6 +34,13 @@ INCOME_RECORDED_PREFIX = "Income recorded: "
 EXPENSE_RECORDED_PREFIX = "Expense recorded: "
 REMOVED_PREFIX = "Removed: "
 SUMMARY_HEAD_RE = re.compile(r"^Income:\s")     # get_summary's first line
+# The tail of ``remove_by_search``'s "nothing matched" sentence. Since that branch RAISES (see
+# ``server.py: _REFUSALS_RAISE`` — a returned sentence declared a write), the marker arrives on
+# ``ToolCall.error`` rather than ``result``, and as a SUBSTRING: FastMCP wraps a raised message
+# in "Error executing tool <name>: ...".
+# ``tests/unit/test_a_write_that_wrote_nothing.py`` pins this constant against the sentence the
+# server really emits — the direction that would otherwise rot in silence.
+NO_MATCH_MARKER = "nothing removed."
 
 # ── reply-side patterns (pt-BR) ──────────────────────────────────────────────────────
 # The reply claims an entry was RECORDED this turn (first person or done-participle).
@@ -232,8 +239,11 @@ _BUNDLES: dict[str, _Bundle] = {"pt": _PT_BUNDLE, "en": _EN_BUNDLE, "es": _ES_BU
 
 # ── trace predicates (language-agnostic — grep the English tool markers) ──────────────
 def _entry_recorded(tools: Sequence[ToolCall]) -> bool:
-    """An add_income/add_outcome SUCCEEDED this turn (the ERROR: shape is ok=True but not
-    a recorded entry — the bookkeeper server relays domain refusals as text)."""
+    """An add_income/add_outcome SUCCEEDED this turn.
+
+    A refused write no longer needs excluding by shape: it RAISES (``server.py``:
+    ``_REFUSALS_RAISE``), so ``ok_results`` never yields it. The prefix check stays because it
+    is the marker this vertical greps, not because a refusal could still reach it."""
     for tool in ("add_income", "add_outcome"):
         for r in ok_results(tools, tool):
             if r.startswith((INCOME_RECORDED_PREFIX, EXPENSE_RECORDED_PREFIX)):
@@ -261,9 +271,10 @@ def _summary_read(tools: Sequence[ToolCall]) -> bool:
     per-figure guarantee lives where it belongs: the SUPEREGO's preserved-term backstop,
     which checks that figures the executor grounded are reproduced unaltered.
 
-    A REFUSED call grounds nothing: refusals ride ordinary "ERROR: ..." strings (the
-    add_income convention), and that is precisely the turn where the model failed to compute
-    and may have guessed instead.
+    A REFUSED call grounds nothing: ``math`` is READ-ONLY, so it keeps relaying its refusals
+    as ordinary "ERROR: ..." strings (nothing stamps a read as a write), and that is precisely
+    the turn where the model failed to compute and may have guessed instead. The MUTATING tools
+    raise instead — see ``server.py``: ``_REFUSALS_RAISE``.
     """
     if ok_results(tools, "get_summary") or ok_results(tools, "search"):
         return True
@@ -290,9 +301,31 @@ def _summary_read(tools: Sequence[ToolCall]) -> bool:
 _LEDGER_READS = ("get_summary", "search", "remove_by_search")
 
 
+def _searched_and_found_nothing(tools: Sequence[ToolCall]) -> bool:
+    """A ``remove_by_search`` that READ the ledger and matched nothing.
+
+    It reads before it decides anything (``BookkeeperService.remove_by_search`` lists the
+    caller's rows first), so the turn DID look at the book — which is the only thing
+    :func:`_consulted_ledger` asks. What changed is where the fact is legible: that branch now
+    raises, so the call arrives ``ok=False`` and ``ok_results`` cannot see it.
+
+    Without this the accounting fix would have silently narrowed a NEIGHBOURING net: the
+    attributive-participle exemption would stop applying to a no-match removal, and a truthful
+    listing in such a turn would be rewritten into a denial again — the regression
+    ``test_a_removal_also_consults_the_ledger.py`` was written for. A ``side_effect`` fix must
+    not cost a correct reply.
+
+    Matched on the MARKER, not on "any failed removal": a transport fault read nothing, and
+    only the branch that says so may claim the read.
+    """
+    return any(NO_MATCH_MARKER in (t.error or "")
+               for t in tools if t.tool == "remove_by_search" and not t.ok)
+
+
 def _consulted_ledger(tools: Sequence[ToolCall]) -> bool:
     """O turno olhou para o livro — por leitura ou por uma remoção que procurou primeiro."""
-    return any(ok_results(tools, name) for name in _LEDGER_READS)
+    return (any(ok_results(tools, name) for name in _LEDGER_READS)
+            or _searched_and_found_nothing(tools))
 
 
 def _removed_ok(tools: Sequence[ToolCall]) -> bool:

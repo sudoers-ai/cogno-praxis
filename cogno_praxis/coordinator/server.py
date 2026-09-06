@@ -393,12 +393,26 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         """Move a professor's class (on ``original_date``) into a free slot (on ``new_date``):
         swaps the content columns, leaving dates fixed. Destructive — confirm with the user
         BEFORE calling. Both dates are DD/MM/YYYY."""
-        def _do():
+        # NOT ``_guard``, and that is the whole point of this call site. ``_guard`` RETURNS a
+        # sentence, which is right for the six READ tools above it — a read is stamped
+        # ``side_effect=False`` whatever it answers. This tool is MUTATING, so a returned
+        # "ERROR: ..." / "NOT PERMITTED: ..." is a successful call on a non-read-only tool, and
+        # the bridge stamps it as a write that happened: a refused swap declaring a commit.
+        # Raising is the accounting — the same reason ``send_schedule_to_calendar`` above
+        # raises, stated in ``service.py``: ``isError`` → ``ok=False`` → ``side_effect=False``.
+        # The WORDING is kept verbatim from ``_guard``, because a refusal is a rule working and
+        # a model handed the bare word "error" reports a breakdown to the contact.
+        try:
             src, dst = svc.confirm_swap(professor=professor, original_date=original_date,
-                                        new_date=new_date, identity_label=identity_label, role=role)
-            return (f"Swapped: {src.professor}'s {src.subject} moved from {src.date_str} "
-                    f"to {dst.date_str}.")
-        return _guard(_do)
+                                        new_date=new_date, identity_label=identity_label,
+                                        role=role)
+        except CoordinatorAccessError as exc:
+            raise CoordinatorError(
+                f"NOT PERMITTED — nothing was swapped. {exc} This is an access rule working as "
+                f"intended, not a failure — state the limit plainly and offer what IS allowed."
+            ) from exc
+        return (f"Swapped: {src.professor}'s {src.subject} moved from {src.date_str} "
+                f"to {dst.date_str}.")
 
     return mcp
 
