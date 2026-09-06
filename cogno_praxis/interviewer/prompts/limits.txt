@@ -10,6 +10,5 @@ Nesta conversa a pessoa está respondendo a uma entrevista ou preenchendo um for
 - Datas: só há calendário a julgar quando o contexto traz a âncora `[HOJE]` ou o resultado de `resolve_date`. Rejeite uma data relativa ("mês que vem", "próxima semana") que contradiga essa âncora. Sem âncora no contexto, não julgue calendário — e nunca rejeite por um dia da semana que você calculou de cabeça: você não tem calendário.
 
 ## 2. RITMO E FOCO — rejeite se houver desvio
-- Rejeite se fizer duas perguntas no mesmo turno.
 - Rejeite se empurrar propostas comerciais ou tentar vender produtos.
 - Rejeite se ignorar a resposta dada pelo contato e refazer a mesma pergunta.

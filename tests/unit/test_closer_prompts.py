@@ -49,8 +49,8 @@ def test_the_judge_rubric_ranks_truth_above_answering():
 
     Then, told that answering was mandatory, it approved "Sim, o Cogno integra com o Bling" —
     an integration that appears nowhere. Answering had outranked being true. So the rubric is
-    ORDERED now: truth first, then answering (with "I don't know" explicitly approvable), then
-    rhythm."""
+    ORDERED now: truth first, then answering (with "I don't know" explicitly approvable).
+    Rhythm used to be criterion 3 here; it is the voice's business and moved to `voice.txt`."""
     limits = (PROMPTS / "limits.txt").read_text()
     flat = " ".join(limits.split())
     assert "## 1. VERDADE" in limits and "## 2. RESPONDER" in limits
@@ -88,13 +88,61 @@ def test_the_judge_classifies_the_contact_turn_before_judging_it():
     assert "não está na lista de integrações" in flat
 
 
-def test_an_explanation_is_not_rejected_for_being_long():
+def test_length_is_the_writers_business_and_the_judge_has_no_criterion_for_it():
     """The "how does it work?" turn kept dying: explaining the pipeline does not fit the
-    4-sentence budget a normal reply gets, and the judge rejected it three times per turn."""
-    # normalize the file's own wrapping before matching a sentence that spans two lines
+    4-sentence budget a normal reply gets, and the judge rejected it three times per turn.
+    The carve-out was written into the JUDGE's rubric, which is the wrong stage twice over.
+
+    The two slots are DISJOINT — `limits.txt` renders into `limits_prompt` (the judge) and
+    `voice.txt` into `voice_prompt` (the voicer); `cogno_host/persona.py: SLOT_TO_LAYER` maps
+    "limits"→judge and "voice"→voice and nothing merges them. So the length budget was paid
+    in input tokens on every judge call, and the model that actually decides how long a reply
+    is never read it. Both halves of the budget now instruct the WRITER, and the judge is left
+    with no length criterion to reject over — which is stronger than the carve-out was."""
+    # normalize each file's own wrapping before matching a sentence that spans two lines
     limits = " ".join((PROMPTS / "limits.txt").read_text().split())
-    assert "pode usar até 8" in limits
-    assert "não rejeite uma explicação boa por tamanho" in limits
+    voice = " ".join((PROMPTS / "voice.txt").read_text().split())
+    assert "até 4 frases" in voice
+    assert "até 8 frases" in voice                       # the explanation carve-out
+    assert "não se alongue sem motivo" in voice          # ...and its ceiling
+    # nothing MEASURABLE about length left in the judge's rubric: the only surviving mention
+    # of "frases" is the guard that tells it length is not its criterion (asserted below), so
+    # the property is "no sentence BUDGET", not "the word never appears".
+    assert not re.search(r"\d+\s+frases", limits)
+    assert "Forma NÃO é critério seu" in limits
+
+
+def test_the_rhythm_rules_instruct_the_voice_instead_of_gating_the_judge():
+    """The other three §3 RITMO bullets, each in the slot that can act on it.
+
+    One question per message, not re-asking what is already answered, and not pressing an
+    invitation the contact declined are instructions about WRITING a message. A judge can only
+    reject the finished reply — and the CLOSER is rejected ~1% of the time, so as a judge
+    criterion these bought almost no corrections while costing their tokens on every call.
+
+    The re-ask rule is the one with real machinery behind it, and it is the host's, not this
+    file's: `cogno_host/arc.py` keeps per-session state of which diagnosis question was
+    ANSWERED, `render_arc_stamp` emits it as "JÁ RESPONDIDO" lines plus the order "NÃO repita
+    nenhuma pergunta marcada como JÁ RESPONDIDA", and `arc_voice_section` puts that block in
+    the VOICE prompt — for the measured reason that the voicer is the stage that re-asks. So
+    this bullet is not being demoted from a guarantee to a request: it is being written next
+    to the state that answers it."""
+    limits = " ".join((PROMPTS / "limits.txt").read_text().split())
+    voice = " ".join((PROMPTS / "voice.txt").read_text().split())
+    # one question, one subject
+    assert "sobre UM assunto só" in voice
+    assert "duas perguntas sobre assuntos diferentes" in voice
+    assert "assuntos diferentes" not in limits
+    # do not re-ask what the host's arc block marks answered
+    assert "[ARCO]" in voice and "JÁ RESPONDIDO" in voice
+    assert "[ARCO]" not in limits
+    # no insisting, no scarcity, no pressure
+    assert "escassez ou pressão" in voice
+    assert "escassez" not in limits
+    # and the section is gone as a section: the word "ritmo" survives nowhere in the rubric,
+    # including the closing line that used to name it as a criterion.
+    assert "ritmo" not in limits.lower()
+    assert "honestidade e resposta, não execução" in limits
 
 
 def test_the_integration_trap_is_called_out_by_name():
