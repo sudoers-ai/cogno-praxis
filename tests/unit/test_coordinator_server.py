@@ -91,15 +91,48 @@ def test_oversight_asking_for_another_professor_still_sees():
 
 def test_a_real_domain_failure_is_still_called_an_error():
     """A refusal is a limit; a swap that cannot find the class is not. Keeping both under one
-    label is what made the first indistinguishable from the second."""
+    label is what made the first indistinguishable from the second.
+
+    Both now RAISE, because ``confirm_swap`` is MUTATING and a returned sentence is a
+    successful call the bridge stamps ``side_effect=True`` (``server.py``, at the call site).
+    The DISTINCTION this test exists for is unaffected — it lives in the words, and both
+    wordings are asserted here and in the refusal twin below."""
     mcp, _ = _server([["16/07/2026", "Ter", "Ana", "Redes", "101"]])
 
     async def run():
-        out = _text(await mcp.call_tool("confirm_swap",
-                                        {"professor": "Ana", "original_date": "01/01/2026",
-                                         "new_date": "18/07/2026", "role": "SUPERVISOR",
-                                         "identity_label": "Sofia"}))
-        assert out.startswith("ERROR") and "No class found" in out
+        with pytest.raises(Exception) as erro:
+            await mcp.call_tool("confirm_swap",
+                                {"professor": "Ana", "original_date": "01/01/2026",
+                                 "new_date": "18/07/2026", "role": "SUPERVISOR",
+                                 "identity_label": "Sofia"})
+        texto = str(erro.value)
+        assert "No class found" in texto          # a domain failure, said plainly
+        assert "NOT PERMITTED" not in texto       # ... and NOT dressed as an access limit
+    asyncio.run(run())
+
+
+def test_a_refused_swap_is_called_a_limit_not_a_breakdown():
+    """The TWIN of the one above: the other failure KIND keeps the other word.
+
+    A professor swapping a colleague's class is refused by a rule that is working. The raised
+    message must say so — a model handed the bare word "error" reports a malfunction to the
+    contact, which is the defect ``_guard``'s wording was written to prevent and which raising
+    must not undo."""
+    mcp, _ = _server([
+        ["16/07/2026", "Ter", "Bruno", "Redes", "101"],
+        ["18/07/2026", "Qui", "", "", ""],
+    ])
+
+    async def run():
+        with pytest.raises(Exception) as erro:
+            await mcp.call_tool("confirm_swap",
+                                {"professor": "Bruno", "original_date": "16/07/2026",
+                                 "new_date": "18/07/2026", "role": "EMPLOYEE",
+                                 "identity_label": "Ana"})
+        texto = str(erro.value)
+        assert "NOT PERMITTED" in texto
+        assert "not a failure" in texto           # told apart from a breakdown
+        assert "nothing was swapped" in texto     # ... and it says the write did not happen
     asyncio.run(run())
 
 

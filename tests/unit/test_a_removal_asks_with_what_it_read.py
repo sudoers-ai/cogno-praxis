@@ -192,8 +192,15 @@ async def test_the_mcp_tool_proposes_then_commits():
 @pytest.mark.asyncio
 async def test_the_mcp_tool_keeps_the_no_match_sentence_byte_for_byte():
     """O terceiro gémeo pela ferramenta. Esta frase é lida a jusante (o teste do servidor e o
-    `hostbench` procuram "nothing removed"), e o caminho "não encontrei" não é o caminho novo."""
+    `hostbench` procuram "nothing removed"), e o caminho "não encontrei" não é o caminho novo.
+
+    O que mudou é o CANAL, não a frase: o ramo passou a LEVANTAR em vez de devolver, porque uma
+    devolução fazia a ponte carimbar `side_effect=True` sobre zero linhas apagadas (ver
+    `server.py`: `_REFUSALS_RAISE`). A frase continua idêntica e continua a chegar ao modelo —
+    agora como `ToolResult.error`."""
+    from mcp.server.fastmcp.exceptions import ToolError
+
     mcp = build_server(_com_tres_internets())
-    out = _text(await mcp.call_tool("remove_by_search",
-                                    {"query": "aluguel", "identity_id": EU}))
-    assert out == "No transaction of yours matches 'aluguel' — nothing removed."
+    with pytest.raises(ToolError) as erro:
+        await mcp.call_tool("remove_by_search", {"query": "aluguel", "identity_id": EU})
+    assert "No transaction of yours matches 'aluguel' — nothing removed." in str(erro.value)

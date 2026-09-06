@@ -108,3 +108,41 @@ async def test_the_meta_keys_are_the_ones_cogno_mcp_actually_reads():
 
     assert _META_NEEDS_CONFIRMATION == META_NEEDS_CONFIRMATION
     assert _META_CONFIRM_ARGUMENTS == META_CONFIRM_ARGUMENTS
+
+
+@pytest.mark.asyncio
+async def test_a_write_that_wrote_nothing_is_not_stamped_as_a_write():
+    """THE MEASUREMENT the unit twins can only approximate: the ``side_effect`` BIT itself.
+
+    Everything else about this defect is reasoning about ``dispatcher.execute``; this is the
+    only place in the repo that actually reads what the bridge stamped. The unit tests prove
+    the tool RAISES — this proves a raise really does arrive as ``ok=False`` +
+    ``side_effect=False``, i.e. that the turn stops declaring a write it did not make.
+
+    Mirrors ``test_companies_via_mcp.py``'s refusal assertion, on the two shapes cogno-praxis
+    was still emitting: a search that matched nothing, and a rejected recording.
+    """
+    async with stdio_session(sys.executable, args=[SERVER], env=_ENV) as session:
+        disp = await MCPDispatcher.create(session)
+
+        # (1) the measured production turn: remove_by_search matched nothing
+        nada = await disp.execute("remove_by_search", {"query": "no-such-entry",
+                                                       "identity_id": "emp-1"})
+        assert nada.ok is False
+        assert nada.side_effect is False, (
+            "a removal that deleted zero rows recorded as a write is what committed_this_turn "
+            "counts — and a false TRUE there switches the anti-fabrication net OFF")
+        assert "nothing removed" in (nada.error or "")     # the reason still reaches the model
+        assert nada.output == ""
+
+        # (2) a rejected recording — the "ERROR: ..." string shape
+        mau = await disp.execute("add_income", {"description": "consulta",
+                                                "amount": "abacaxi", "identity_id": "emp-1"})
+        assert mau.ok is False
+        assert mau.side_effect is False
+        assert mau.output == ""
+
+        # (3) THE TWIN — over-tightening would be just as bad: a real write must still stamp.
+        bom = await disp.execute("add_income", {"description": "consulta", "amount": "500",
+                                                "identity_id": "emp-1"})
+        assert bom.ok is True and bom.side_effect is True

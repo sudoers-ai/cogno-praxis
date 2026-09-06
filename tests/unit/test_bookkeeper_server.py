@@ -2,6 +2,8 @@
 
 from datetime import date
 
+import pytest
+
 from cogno_praxis.bookkeeper.server import build_server
 from cogno_praxis.bookkeeper.service import BookkeeperService
 from cogno_praxis.bookkeeper.store import InMemoryBookkeeperStore
@@ -93,10 +95,12 @@ async def test_remove_by_search_destructive():
                                                              "identity_id": "emp-1",
                                                              "confirm_tx_id": tx_id}))
     assert "Removed" in removed and "internet" in removed
-    # nothing left → the "nothing removed" branch
-    again = _text(await mcp.call_tool("remove_by_search", {"query": "internet",
-                                                           "identity_id": "emp-1"}))
-    assert "nothing removed" in again
+    # nothing left → the "nothing removed" branch, which RAISES (server.py: _REFUSALS_RAISE)
+    # so the bridge cannot stamp a deletion of zero rows as a write.
+    from mcp.server.fastmcp.exceptions import ToolError
+
+    with pytest.raises(ToolError, match="nothing removed"):
+        await mcp.call_tool("remove_by_search", {"query": "internet", "identity_id": "emp-1"})
 
 
 async def test_empty_state_and_static_notes():
