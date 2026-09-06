@@ -23,6 +23,7 @@ vertical is covered the day it is added instead of the day someone remembers.
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -42,8 +43,72 @@ def _declared() -> set[str]:
     return {m.group("name") for m in _ENTRY.finditer(body) if "prompts/" in m.group("globs")}
 
 
+def _tracked_prompt_files() -> "set[str] | None":
+    """The prompt files this REPOSITORY ships, or ``None`` when git cannot say.
+
+    ``None`` — never an empty set — for every "cannot say": no git binary, not a checkout (an
+    unpacked sdist is exactly that), or a git that answered non-zero. A command that BLOWS UP
+    returns the same kind of nothing as a command that FOUND nothing, and collapsing the two
+    would make this guard silently vacuous: with an empty set the caller below would sweep no
+    vertical at all and pass over everything. So an empty answer is also read as ``None``, and
+    the caller falls back to the disk — the STRICTER of the two, a superset, which can only
+    add verticals to check and never remove one.
+    """
+    try:
+        out = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z", "--", "cogno_praxis"],
+                             capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return {name for name in out.stdout.split("\0") if name} or None
+
+
+def _shipped(tracked: "set[str] | None") -> set[str]:
+    """Verticals that ship prompt .txt files — filtered to what ``tracked`` knows, if anything.
+
+    Kept apart from the two tests so the filter itself can be exercised both ways
+    (``test_the_guard_reads_the_repo_not_one_developers_disk``) instead of only in the
+    direction this checkout happens to be in.
+    """
+    out = set()
+    for prompts in PKG.glob("*/prompts"):
+        files = sorted(prompts.glob("*.txt"))
+        if not files:
+            continue
+        if tracked and not any(
+                str(f.relative_to(ROOT)) in tracked for f in files):
+            continue
+        out.add(prompts.parent.name)
+    return out
+
+
 def _on_disk() -> set[str]:
-    return {p.parent.name for p in PKG.glob("*/prompts") if any(p.glob("*.txt"))}
+    """The verticals this guard is ABOUT: the ones the repository ships.
+
+    Read from ``git ls-files``, not from the bare directory listing, and that is a deliberate
+    dependency rather than an implementation detail — so it is written here instead of being
+    discovered by whoever next sees a red they did not cause.
+
+    Until 2026-09-06 this globbed the working tree, which made the guard's COLOUR a property of
+    a developer's disk instead of a property of the commit. Measured that day at `47c5ec6`: a
+    clean worktree gave `4 passed`, and the SAME SHA with one untracked directory present
+    (`cogno_praxis/form_collector/prompts/*.txt`, an orphan copy an earlier PR deliberately
+    left out) gave `1 failed` — pointing at a missing `package-data` entry, which is not what
+    was wrong and not a change any commit had made. A guard nobody can reproduce from a
+    checkout is a guard people learn to ignore.
+
+    The untracked case is not silently benign, it is MEASURED benign: built as-is on the same
+    day, `pip wheel` put **zero** of that directory's files into the wheel. There is nothing for
+    this test to protect there — an undeclared, uncommitted directory ships nothing, which is
+    the state this guard wants anyway. (Adding the `package-data` entry alone DOES ship the
+    four files, with no ``__init__.py`` anywhere: measured, and the reason this fix does not
+    reach for package-hood as the predicate.)
+
+    What the guard still catches is unchanged and is the case that shipped an empty CLOSER
+    prompt: a vertical the repo COMMITS, with prompts, and no entry.
+    """
+    return _shipped(_tracked_prompt_files())
 
 
 def test_every_vertical_with_prompts_declares_them_as_package_data():
@@ -54,6 +119,36 @@ def test_every_vertical_with_prompts_declares_them_as_package_data():
         f'\'"cogno_praxis.<name>" = ["prompts/*.txt"]\' to [tool.setuptools.package-data]. '
         f"An editable install hides this; the wheel the image builds from does not."
     )
+
+
+def test_the_guard_reads_the_repo_not_one_developers_disk(monkeypatch, tmp_path):
+    """The filter itself, exercised BOTH ways — presence proved before absence.
+
+    An assertion that an untracked directory is excluded means nothing unless the same
+    directory is shown to be INCLUDED when the filter is off; otherwise it would also pass
+    over a `_shipped` that never finds anything. So both arms run against the same tree.
+
+    The third arm is the fallback: `None` (git could not answer — no binary, an unpacked
+    sdist, a non-zero exit) must widen the set, never narrow it. A guard that degrades to
+    silence is the failure this file's own history is made of.
+    """
+    root = tmp_path
+    pkg = root / "cogno_praxis"
+    for name in ("committed", "orphan"):
+        (pkg / name / "prompts").mkdir(parents=True)
+        (pkg / name / "prompts" / "system.txt").write_text("x", encoding="utf-8")
+    (pkg / "codeonly").mkdir()          # a vertical with no prompts is not this guard's subject
+    (pkg / "codeonly" / "__init__.py").write_text("", encoding="utf-8")
+
+    monkeypatch.setattr("tests.unit.test_packaging.ROOT", root)
+    monkeypatch.setattr("tests.unit.test_packaging.PKG", pkg)
+
+    tracked = {"cogno_praxis/committed/prompts/system.txt"}
+    assert _shipped(tracked) == {"committed"}, "the tracked vertical must be swept"
+    assert _shipped(None) == {"committed", "orphan"}, (
+        "with no git answer the set must WIDEN to the disk — if this side were also "
+        "{'committed'} the assertion above would be measuring nothing")
+    assert _shipped(set()) == {"committed", "orphan"}, "an empty tracked set is not a verdict"
 
 
 def test_no_stale_package_data_entry():
