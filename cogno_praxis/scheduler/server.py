@@ -103,20 +103,32 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         return resolve_date_answer(iso, spoken)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    def check_availability(host_id: str, date: str) -> str:
-        """List free time slots for a host on a date (YYYY-MM-DD, from tomorrow on).
+    def check_availability(host_id: str, date: str, host_name: str = "") -> str:
+        """List free time slots for a professional on a date (YYYY-MM-DD, from tomorrow on).
+
+        Pass ``host_name`` = the professional AS THE CLIENT NAMED THEM whenever the client named
+        someone. It is checked against ``host_id``: if the two are different people, or if
+        either is not in ``list_schedulable_hosts``, this refuses and hands you the roster to
+        offer — it never quietly reads a different agenda than the one you asked for.
 
         When the requested day is FULL, this also names the next day that has openings so you
         can OFFER it — do not dead-end the user; propose the overflow day (and its slots)."""
-        free = svc.check_availability(host_id, date)
+        # Resolve ONCE and echo the professional we resolved TO, never the string we were
+        # handed. The old echo replayed the caller's own `host_id`, so a substitution by
+        # `resolve_agenda` (a name-slug, a lone specialty) came back looking like agreement.
+        host = svc.resolve_agenda(host_id, host_name)
+        # Parentheses, not brackets: `cogno_host.scheduler_notify` reads the booking STATUS with
+        # `re.search(r"\[(\w+)\]")`, and a bracketed id would win that search.
+        who = f"{host.name} ({host.host_id})"
+        free = svc.check_availability(host.host_id, date)
         if free:
-            return f"Free slots for {host_id} on {date}: " + ", ".join(free)
+            return f"Free slots for {who} on {date}: " + ", ".join(free)
         # Full day → look ahead so the secretary can offer the overflow instead of dead-ending.
-        nxt = svc.next_available_day(host_id, date)
+        nxt = svc.next_available_day(host.host_id, date)
         if nxt is None:
-            return f"{host_id} has no free slots on {date} (and none in the next two weeks)."
+            return f"{who} has no free slots on {date} (and none in the next two weeks)."
         ndate, nslots = nxt
-        return (f"{host_id} has no free slots on {date}. "
+        return (f"{who} has no free slots on {date}. "
                 f"Next available day is {ndate}: " + ", ".join(nslots)
                 + " — offer this to the client.")
 
@@ -124,17 +136,25 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
     def book_appointment(host_id: str, date: str, time: str, with_name: str,
                          notes: str = "", guest_id: str = "", host_name: str = "",
                          persona_id: str = "") -> str:
-        """Book an appointment with a host at a date/time for a client (status PENDING).
+        """Book an appointment with a professional at a date/time for a client (status PENDING).
+
+        ``host_name`` is the professional AS THE CLIENT NAMED THEM — pass it whenever the client
+        named someone. It is not a label: it is CHECKED against ``host_id``, and a call whose id
+        and name are two different people writes nothing and comes back asking. So does an id or
+        a name that ``list_schedulable_hosts`` does not list. Booking the wrong person's agenda
+        costs two people a day; asking costs one question.
 
         ``guest_id`` is the client's STABLE id (host-injected) so the professional sees the
-        booking in their own agenda; ``with_name``/``host_name`` are display names.
+        booking in their own agenda; ``with_name`` is the client's display name.
 
         ``persona_id`` is HOST-INJECTED and is not yours to choose: it records WHICH PERSONA
         booked, which is a fact about the turn and not about the request. Leave it out."""
         appt = svc.book(host_id, date, time, with_name, notes,
                         guest_id=guest_id, host_name=host_name, persona_id=persona_id)
-        return (f"Booked {appt.appointment_id}: {with_name} with {appt.host_name or host_id} "
-                f"on {date} at {time} [{appt.status}].")
+        # The row's OWN host, from the catalogue — the old line echoed the caller's `host_name`,
+        # so a booking that landed on one agenda could announce another professional entirely.
+        return (f"Booked {appt.appointment_id}: {with_name} with {appt.host_name} "
+                f"({appt.host_id}) on {date} at {time} [{appt.status}].")
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     def block_schedule(host_id: str, date: str, start_time: str = "", end_time: str = "",
