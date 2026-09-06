@@ -7,6 +7,14 @@ adapter, in tests :class:`InMemorySpreadsheetStore`. Configured per tenant from 
 via :class:`CoordinatorConfig`. See ``docs/COORDINATOR.md``.
 """
 
+from cogno_praxis.coordinator.ics import (
+    CalendarEvent,
+    CalendarSender,
+    RecordingCalendarSender,
+    build_ics_calendar,
+    class_event_uid,
+    sequence_now,
+)
 from cogno_praxis.coordinator.config import CoordinatorConfig
 from cogno_praxis.coordinator.durability import is_perishable_edge
 from cogno_praxis.coordinator.server import build_server
@@ -22,4 +30,7 @@ __all__ = [
     "CoordinatorConfig", "CoordinatorService", "CoordinatorError", "CoordinatorAccessError",
     "SpreadsheetStore", "InMemorySpreadsheetStore", "ClassEntry", "ColumnLayout",
     "ReadReport", "SheetReadError", "build_server", "is_perishable_edge",
+    # the calendar export (.ics by e-mail) — the pure builder plus its delivery port
+    "CalendarEvent", "CalendarSender", "RecordingCalendarSender", "build_ics_calendar",
+    "class_event_uid", "sequence_now",
 ]

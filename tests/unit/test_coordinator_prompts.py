@@ -72,3 +72,117 @@ def test_the_voicer_is_told_a_refusal_is_a_rule_not_a_breakdown():
     voice = (PROMPTS / "voice.txt").read_text(encoding="utf-8")
     assert "não consegui acessar" in voice          # named, as the phrase to NOT produce
     assert "só posso mostrar as suas aulas" in voice
+
+
+# ── the calendar export: the half no code can keep ───────────────────────────────────
+#
+# The vertical enforces everything it can — the tool RAISES on every path that did not send, so
+# a refusal can never be stamped as a write, and the recipient is not an argument the model may
+# fill. What no code can enforce is the SENTENCE: nothing stops a model from writing "já enviei
+# suas aulas" in a turn where the tool answered an error, and a professor who reads that simply
+# waits for a calendar that is not coming. These pin that the instruction EXISTS in each of the
+# three places that produce or check that sentence — the executor, the judge and the voicer.
+
+def _flat(slot: str) -> str:
+    """A prompt with its line WRAPPING removed, so an assertion pins the SENTENCE and not the
+    column the sentence happened to be wrapped at. Re-flowing a paragraph is an edit that
+    changes nothing and would otherwise turn every check here red."""
+    return " ".join((PROMPTS / f"{slot}.txt").read_text(encoding="utf-8").split())
+
+
+def test_the_executor_is_told_that_only_a_SENT_line_means_an_email_left():
+    system = _flat("system")
+    assert "send_schedule_to_calendar" in system
+    assert 'starts with "SENT:"' in system
+    assert "NOTHING was sent" in system
+    # named as the phrases to NOT produce, because that is the failure with no visible symptom
+    for phrase in ("vou enviar", "estou enviando", "enviei"):
+        assert phrase in system, phrase
+
+
+def test_the_executor_is_told_to_propose_the_send_before_making_it():
+    system = _flat("system")
+    assert "an e-mail cannot be unsent" in system
+    assert "PROPOSE first" in system
+    assert "only after an explicit yes" in system
+    # the system hold is a BACKSTOP, not permission to call first
+    assert "not your excuse to call first" in system
+
+
+def test_the_judge_is_told_that_a_send_that_did_not_happen_must_be_rejected():
+    limits = _flat("limits")
+    assert 'answered with a line starting "SENT:"' in limits
+    assert "claims a calendar was sent when no SENT: line came back" in limits
+    # ...and the other direction: an honest "nothing was sent" is a COMPLETE answer, not a
+    # failure to reject. The judge rejecting THAT is how this persona already lost turns.
+    assert "COMPLETE and CORRECT answers" in limits
+
+
+def test_the_voicer_is_told_not_to_announce_a_send_it_did_not_make():
+    voice = _flat("voice")
+    assert 'ONLY if the tool answered "SENT:"' in voice
+    assert 'never "vou enviar" or "enviei" for a send that did not happen' in voice
+    assert "never as a system fault" in voice
+
+
+def test_the_executor_is_told_it_does_not_choose_the_recipient():
+    """The rule the code already enforces, said in the prompt too — because a model that
+    believes it can pick an address spends the turn asking for one it will never use."""
+    system = _flat("system")
+    assert "You do NOT choose the recipient" in system
+    assert "no argument for it" in system
+
+
+def test_the_scope_guard_lets_the_request_in_at_all():
+    """A capability the intake blocks is a capability nobody can reach."""
+    scope = (PROMPTS / "scope.txt").read_text(encoding="utf-8")
+    assert "calendar" in scope.lower()
+
+
+# ── "qual turma é essa?" right after a listing ────────────────────────────────────────
+#
+# Measured live on the turma matrix (2026-09-06): the persona listed the classes with
+# "Turma: ..." on EVERY line, the contact asked «qual turma é essa?», and the reply was
+# «poderia me informar a data ou a disciplina…» — asking the contact to look up what the
+# assistant itself had just written, in a list both of them could see.
+#
+# Nothing in code can hold this. There is no tool call to constrain, no argument to validate,
+# no output to sanitize: the whole defect is a SENTENCE chosen when the answer was already in
+# the previous turn. So these are PRESENCE assertions and nothing more — they pin that the
+# instruction exists and that it carries its negative arm, and a future edit cannot delete it
+# in silence. Whether the model obeys is a live measurement on the running box; this file's
+# own header says the same thing about the two rules above it.
+
+def test_the_executor_is_told_to_read_back_its_own_listing():
+    system = _flat("system")
+    assert "Never ask for what you just printed" in system
+    assert "Qual turma é essa?" in system
+    assert "question about YOUR OWN LAST ANSWER" in system
+    assert "already on the screen" in system
+
+
+def test_the_rule_carries_its_NEGATIVE_arm():
+    """The twin that keeps the rule from becoming "never ask".
+
+    Without it the instruction is a licence to guess: a contact who opens the conversation with
+    «qual turma é essa?» and no listing behind it must still be asked. The rule is about a list
+    that EXISTS, and both prompts that carry it say so."""
+    system, voice = _flat("system"), _flat("voice")
+    assert "If there is genuinely NO previous listing in this conversation, then asking IS right" \
+        in system
+    assert "Only when no listing was given is a question the right reply." in voice
+
+
+def test_the_voicer_carries_the_same_rule_because_it_writes_the_sentence():
+    voice = _flat("voice")
+    assert "ANSWER FROM YOUR OWN LAST REPLY" in voice
+    assert "Never ask them for the date or the discipline" in voice
+
+
+def test_the_judge_reads_a_question_about_a_given_listing_as_INCOMPLETE():
+    """The other half: the judge has to be able to reject it. A fail-closed judge with no clause
+    for this reads "poderia me informar a data?" as a perfectly reasonable clarification."""
+    limits = _flat("limits")
+    assert 'A question about a listing ALREADY GIVEN ("qual turma é essa?")' in limits
+    assert "is INCOMPLETE, however polite" in limits
+    assert "With no previous listing, asking is correct." in limits

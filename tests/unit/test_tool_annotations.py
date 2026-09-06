@@ -152,13 +152,20 @@ async def test_exactly_these_tools_are_gated_by_name():
     The three that remain are gate B's proper shape: each commits on its FIRST call, so none of
     them has anything to base a grounded question on. Deferring gate B for them — executing and
     only then deciding to hold — would run the cancellation and record the hold afterwards,
-    which is why the pre-emption is not a defect to be fixed generically."""
+    which is why the pre-emption is not a defect to be fixed generically.
+
+    ``send_schedule_to_calendar`` joined them: it MAILS a calendar, which is a write that leaves
+    the house and is the one kind no undo reaches — there is no un-sending an e-mail, so the
+    ``_UNDOABLE`` door was never open to it, and it commits on its FIRST call, so gate C's door
+    was not either. It is here because it is genuinely gate B's shape, not because a
+    destructiveHint was the convenient way to satisfy this sweep."""
     live = {}
     for vertical in _BUILDERS:
         live.update(await _annotations(vertical))
     gated = sorted(n for n, a in live.items()
                    if getattr(a, "destructiveHint", None) is True)
-    assert gated == ["cancel_appointment", "confirm_swap", "reschedule_appointment"]
+    assert gated == ["cancel_appointment", "confirm_swap", "reschedule_appointment",
+                     "send_schedule_to_calendar"]
 
 
 def test_every_asking_tool_really_refuses_to_commit_unasked():

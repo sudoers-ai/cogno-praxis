@@ -40,6 +40,10 @@ jobs:
           pip install "cogno-synapse @ git+https://github.com/sudoers-ai/cogno-synapse.git"
           pip install "cogno-anima @ git+https://github.com/sudoers-ai/cogno-anima.git"
           pip install "cogno-mcp @ git+https://github.com/sudoers-ai/cogno-mcp.git"
+          # The coordinator's calendar export mails its .ics through cogno-herald (optional at
+          # runtime, lazily imported). Installed here so the delivery adapter's tests RUN
+          # instead of skipping — a skipped adapter is an adapter nobody measured.
+          pip install "cogno-herald @ git+https://github.com/sudoers-ai/cogno-herald.git"
       - name: Lint (ruff)
         run: ruff check cogno_praxis tests examples
       - name: Type-check (mypy)

@@ -23,6 +23,7 @@ from mcp.types import ToolAnnotations
 
 from datetime import date
 
+from cogno_praxis.coordinator.ics import CalendarSender
 from cogno_praxis.coordinator.config import CoordinatorConfig
 from cogno_praxis.coordinator.service import (
     CoordinatorAccessError,
@@ -114,9 +115,22 @@ def _fmt_professors(rows: list[dict[str, str]], *, report: Optional[ReadReport] 
 
 
 def build_server(service: Optional[CoordinatorService] = None, *,
-                 name: str = "cogno-coordinator") -> FastMCP:
-    """Build a FastMCP server bound to a service (inject a Sheets-backed one in prod/tests)."""
+                 name: str = "cogno-coordinator",
+                 sender: Optional[CalendarSender] = None,
+                 tz_name: Optional[str] = None) -> FastMCP:
+    """Build a FastMCP server bound to a service (inject a Sheets-backed one in prod/tests).
+
+    ``sender`` is the calendar-mail port. ``None`` falls back to whatever the environment
+    declares (:func:`_demo_sender`), and when THAT is ``None`` too the calendar tool refuses
+    honestly and sends nothing — the deliberate behaviour of a deployment with no SMTP.
+
+    ``tz_name`` is the tenant's zone NAME for the exported events' ``TZID``; ``None`` reads
+    ``COGNO_COORDINATOR_TZ`` (the host stamps it from its own ``tenant_tz``). Absent, the
+    export renders all-day events rather than inventing a zone.
+    """
     svc = service or _demo_service()
+    snd = sender if sender is not None else _demo_sender()
+    tz = tz_name if tz_name is not None else os.environ.get("COGNO_COORDINATOR_TZ", "")
     mcp = FastMCP(name)
 
     def _guard(fn):
@@ -212,6 +226,47 @@ def build_server(service: Optional[CoordinatorService] = None, *,
             empty="No open slots in the next 21 days.", report=report))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
+    async def send_schedule_to_calendar(professor: str = "", month: str = "", turma: str = "",
+                                        identity_label: str = "", role: str = "",
+                                        identity_email: str = "") -> str:
+        """E-mail the professor's UPCOMING classes as ONE calendar file (.ics) they import in a
+        single action — "manda minhas aulas pro meu calendário", "envia meu calendário de
+        setembro". ``month`` and ``turma`` narrow it exactly like get_professor_schedule; leave
+        ``professor`` EMPTY for the caller's own classes. THIS SENDS AN E-MAIL: present what
+        will go (how many classes, which month/turma) and get an explicit yes BEFORE calling —
+        the system also holds the call and asks. The recipient is resolved by the system from
+        the professor's own records and can NOT be chosen here. A professor may only send their
+        own calendar; a coordinator/supervisor may send another professor's.
+        On success the answer starts with SENT: — and ONLY then did an e-mail leave. Any error
+        means NOTHING was sent: say what it says and never claim otherwise."""
+        def _describe(e: ClassEntry) -> str:
+            return _fmt_entry(e)
+
+        report = ReadReport()
+        try:
+            count, to, dropped = await svc.send_schedule_to_calendar(
+                sender=snd, professor=professor, month=month, turma=turma,
+                identity_label=identity_label, role=role, identity_email=identity_email,
+                tz_name=tz, describe=_describe, report=report)
+        except CoordinatorAccessError as exc:
+            # RAISED, not returned as text, and the two halves of that are separate.
+            # RAISING is the accounting: a FastMCP tool that RETURNS is a successful call, and
+            # the MCP bridge stamps a successful call on a non-read-only tool as a write that
+            # happened. Nothing was sent here, so nothing may be recorded as sent.
+            # The WORDING is the other half — the same sentence `_guard` writes, because a
+            # refusal is a rule working and a model handed the bare word "error" reports a
+            # breakdown to the contact.
+            raise CoordinatorError(
+                f"NOT PERMITTED — nothing was sent. {exc} This is an access rule working as "
+                f"intended, not a failure: state the limit plainly and offer what IS allowed."
+            ) from exc
+        detail = _fmt_report(report)
+        extra = (f" ({dropped} class(es) had a date this system could not read and were left "
+                 f"out.)" if dropped else "")
+        return (f"SENT: {count} class(es) e-mailed to {to} as one calendar attachment.{extra}"
+                + (f"\n\n{detail}" if detail else ""))
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
     def confirm_swap(professor: str, original_date: str, new_date: str, reason: str = "",
                      identity_label: str = "", role: str = "") -> str:
         """Move a professor's class (on ``original_date``) into a free slot (on ``new_date``):
@@ -250,6 +305,17 @@ def _demo_service() -> CoordinatorService:
     for _, sid in cfg.spreadsheets.items():
         store.put(sid, cfg.tab_schedule, [["Data", "Dia", "Professor", "Disciplina", "Sala"]])
     return CoordinatorService(store, cfg, today=clock)
+
+
+def _demo_sender() -> Optional[CalendarSender]:
+    """The calendar mailer for a standalone/subprocess run: whatever SMTP the environment
+    declares, else ``None``.
+
+    ``None`` is a real, shipped state and not a degraded one: most deployments have no mail
+    server, and the tool's answer there is an honest refusal with zero send. What must never
+    happen is the third possibility — a sender that accepts the message and drops it."""
+    from cogno_praxis.coordinator.mailer import sender_from_env
+    return sender_from_env()
 
 
 mcp = build_server()
