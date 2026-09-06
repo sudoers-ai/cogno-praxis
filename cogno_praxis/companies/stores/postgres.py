@@ -119,3 +119,63 @@ class PgCompanyStore:
             "DELETE FROM tenant_companies WHERE tenant_id = %s AND company_id = %s",
             (self._scope, company_id))
         return cur.rowcount > 0
+
+
+# ── the gate-C confirmation store ────────────────────────────────────────────────────────
+#
+# A SEPARATE table, not a column on `tenant_companies`. Two reasons, both load-bearing: the
+# row a pending removal points at is the row that removal DELETES, so a column would be
+# erased by the very act it authorises; and this is a credential with a lifetime, not a
+# durable fact about a company — the one thing in this vertical that is meant to disappear.
+_CONFIRMATIONS_DDL = """CREATE TABLE IF NOT EXISTS tenant_company_confirmations (
+        tenant_id text NOT NULL,
+        token text NOT NULL,
+        subject text NOT NULL,
+        expires_at double precision NOT NULL,
+        PRIMARY KEY (tenant_id, token))"""
+
+
+class PgConfirmationStore:
+    """Postgres-backed one-time confirmation tokens, scoped to one tenant. Sync; autocommit.
+
+    Production's answer to the measurement in :mod:`cogno_praxis.companies.confirmations`: the
+    vertical is a subprocess per turn, so the token has to outlive the process that minted it.
+
+    ``consume`` is ONE statement — ``DELETE ... RETURNING`` — so "is it valid" and "spend it"
+    cannot come apart. Two concurrent confirmations of the same proposal race on the same row
+    and exactly one wins, which is the property that makes it single-use rather than
+    single-use-if-nobody-is-quick.
+    """
+
+    def __init__(self, dsn: str, scope: str) -> None:
+        if not (scope or "").strip():
+            # Same reason as `PgCompanyStore`, one notch sharper: `tenant_id` is half the
+            # PRIMARY KEY, and a blank one would file every tenant's pending confirmations in
+            # one bucket — a token minted for one tenant spendable in another.
+            raise ValueError("PgConfirmationStore requires a non-empty scope (the tenant id)")
+        self._scope = scope
+        self._conn = psycopg.connect(dsn, autocommit=True)
+        self._conn.execute(_CONFIRMATIONS_DDL)
+
+    def close(self) -> None:
+        self._conn.close()
+
+    def issue(self, subject: str, token: str, expires_at: float) -> None:
+        # Housekeeping rides on the write path rather than on a cron: this table is low volume
+        # (one row per proposed removal) and the rows are short-lived, so the cheapest correct
+        # sweep is the one that happens whenever anything is added.
+        self._conn.execute(
+            "DELETE FROM tenant_company_confirmations WHERE tenant_id = %s AND expires_at <= %s",
+            (self._scope, time.time()))
+        self._conn.execute(
+            """INSERT INTO tenant_company_confirmations (tenant_id, token, subject, expires_at)
+               VALUES (%s, %s, %s, %s)
+               ON CONFLICT (tenant_id, token) DO NOTHING""",
+            (self._scope, token, subject, float(expires_at)))
+
+    def consume(self, subject: str, token: str, *, now: float) -> bool:
+        cur = self._conn.execute(
+            """DELETE FROM tenant_company_confirmations
+               WHERE tenant_id = %s AND token = %s AND subject = %s AND expires_at > %s""",
+            (self._scope, token, subject, float(now)))
+        return cur.rowcount > 0

@@ -25,6 +25,13 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
+from cogno_praxis.companies.confirmations import (
+    DEFAULT_CONFIRMATION_TTL_S,
+    ConfirmationStore,
+    InMemoryConfirmationStore,
+    confirmation_subject,
+    mint_token,
+)
 from cogno_praxis.companies.identifiers import (
     cnpj_is_acceptable,
     company_id_for,
@@ -62,15 +69,24 @@ class CompanyError(RuntimeError):
 class DeletionProposal:
     """What :meth:`CompanyService.delete` answers when it has READ but not committed.
 
-    ``confirm_company_id`` is the argument the caller must send back in order to delete, and it
-    can only be learned from this proposal. That is what makes deletion a gate-C tool rather
-    than a gate-B one: gate B decides by tool NAME before anything runs and can only say "a
-    deletion is coming"; this one ran, read the row, and can say WHICH company — and, once the
-    host tells it, what else points at that company.
+    ``confirm_token`` is a **one-time secret this proposal MINTED** — random, bound to the
+    ``(identity, company)`` pair, valid for a bounded time and spendable once. It is what makes
+    the second call a second call: the caller cannot have it before the first one ran.
+
+    Until 2026-09-06 this field was ``confirm_company_id`` and the prose here claimed it "can
+    only be learned from this proposal". That was **false**: it was the row's own
+    ``company_id``, which is the tool's required first argument and is derived from the
+    accent-folded name, so a single call with the id on both ends removed the company with
+    nothing proposed to anybody. Measured through the real chain, then fixed here rather than
+    re-described. See :mod:`cogno_praxis.companies.confirmations`.
+
+    Gate C is still the right gate for this tool, for the reason that has not changed: gate B
+    decides by tool NAME before anything runs and can only say "a deletion is coming"; this one
+    ran, read the row, and can say WHICH company.
     """
 
     company: Company
-    confirm_company_id: str
+    confirm_token: str
 
 
 @dataclass(frozen=True)
@@ -113,9 +129,18 @@ class CompanyService:
     """Register and read back the companies of one scope. Sync, like its store port."""
 
     def __init__(self, store: Optional[CompanyStore] = None, *,
-                 clock: Callable[[], float] = time.time) -> None:
+                 clock: Callable[[], float] = time.time,
+                 confirmations: Optional[ConfirmationStore] = None,
+                 confirmation_ttl_s: float = DEFAULT_CONFIRMATION_TTL_S) -> None:
         self.store: CompanyStore = store if store is not None else InMemoryCompanyStore()
         self._clock = clock
+        # The in-memory default is right for a test and WRONG for production, and the reason is
+        # in `confirmations`: the vertical is a subprocess per turn, so the two steps of a
+        # removal run in two processes. `server._seeded_service` injects the Postgres adapter
+        # beside the Postgres company store, from the same DSN.
+        self.confirmations: ConfirmationStore = (
+            confirmations if confirmations is not None else InMemoryConfirmationStore())
+        self._confirmation_ttl_s = float(confirmation_ttl_s)
 
     def register(self, name: str, *, cnpj: str = "", visual_identity: str = "",
                  guidelines: str = "", segment: str = "", identity_id: str = "") -> Company:
@@ -385,18 +410,31 @@ class CompanyService:
         return UpdateOutcome(company=stored, changes=changes)
 
     def delete(self, company_id: str, *, identity_id: str = "", role: str = "",
-               confirm_company_id: str = "") -> DeletionOutcome:
+               confirm_token: str = "") -> DeletionOutcome:
         """Remove a company — in TWO steps, and the first one commits nothing.
 
-        Called without ``confirm_company_id`` it READS the row and answers with a proposal
-        naming what it selected. Only a second call carrying the id the proposal named deletes.
-        That is cogno-anima's gate C, and the write path is UNREACHABLE without the argument —
-        the reachability claim ``tests/unit/test_tool_annotations.py`` performs.
+        Called without a valid ``confirm_token`` it READS the row, MINTS a one-time token bound
+        to ``(identity, company)`` and answers with a proposal naming what it selected. Only a
+        second call carrying that token deletes, and it deletes once: the token is spent.
+
+        That is cogno-anima's gate C, and the write path is UNREACHABLE without a token this
+        very method produced — which is the difference from the shape this carried until
+        2026-09-06, where the "second" argument was the row id the caller had already sent.
+        The reachability claim is performed by ``tests/unit/test_tool_annotations.py`` and by
+        ``tests/unit/test_companies_deletion_nonce.py``.
+
+        The order of the two checks is load-bearing: ownership FIRST, token second. A caller
+        who may not write to this company is refused before anything is minted, so the token
+        can never become a way around :meth:`_mine_or_refuse`.
         """
         row = self._mine_or_refuse(company_id, identity_id, role)
-        if confirm_company_id.strip() != row.company_id:
-            return DeletionOutcome(proposal=DeletionProposal(company=row,
-                                                             confirm_company_id=row.company_id))
+        subject = confirmation_subject(identity_id, row.company_id)
+        token = (confirm_token or "").strip()
+        if not (token and self.confirmations.consume(subject, token, now=self._clock())):
+            fresh = mint_token()
+            self.confirmations.issue(subject, fresh,
+                                     self._clock() + self._confirmation_ttl_s)
+            return DeletionOutcome(proposal=DeletionProposal(company=row, confirm_token=fresh))
         try:
             gone = self.store.delete(row.company_id)
         except Exception as exc:  # noqa: BLE001
