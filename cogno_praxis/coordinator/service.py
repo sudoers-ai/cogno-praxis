@@ -16,6 +16,7 @@ import calendar
 import logging
 import re
 import unicodedata
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from difflib import SequenceMatcher
 from typing import Callable, Optional
@@ -133,14 +134,50 @@ def _resolve_month(raw: str) -> Optional[tuple[int, int]]:
         return None
     if len(s) >= 7 and s[4] == "-":                       # "YYYY-MM"
         try:
-            return int(s[5:7]), int(s[:4])
+            m, y = int(s[5:7]), int(s[:4])
         except ValueError:
             return None
+        # The SAME bound the bare-number branch below has always had, and it was missing here.
+        # Two readings of one predicate that disagree: "13" answered None (no filter), while
+        # "2026-13" answered (13, 2026) and travelled on — the filter then matched no class, and
+        # ``_month_is_over`` asked ``calendar.monthrange`` for month 13 and raised
+        # ``IllegalMonthError``, which is not a ``CoordinatorError`` and therefore reached the
+        # bridge as a crash rather than as an answer. Measured on ``origin/main`` (6d887ec) for
+        # both ``"2026-13"`` and ``"2026-00"``.
+        return (m, y) if 1 <= m <= 12 else None
     if s.isdigit():                                       # "3" / "03"
         m = int(s)
         return (m, 0) if 1 <= m <= 12 else None
     named = _MONTH_NAMES.get(_norm(s))                    # "março" / "mar" / "September"
     return (named, 0) if named else None
+
+
+# English month names, written out rather than read from ``calendar.month_name``: that table is
+# LOCALE-dependent (it renders through ``strftime('%B')``), so a host whose process happens to
+# carry a ``LC_TIME`` would have this vertical's tool output change language behind it. The tool
+# surface of this repo is English; a proposal that silently switched to another one would be read
+# by the model as data it did not recognise.
+_MONTH_LABELS = ("", "January", "February", "March", "April", "May", "June", "July", "August",
+                 "September", "October", "November", "December")
+
+
+def month_label(raw: str) -> str:
+    """The period a ``month`` argument ACTUALLY filtered by, as words — ``""`` when it filtered
+    by nothing.
+
+    Derived from :func:`_resolve_month`, never from the caller's string, and that is the whole
+    point: the filter and the sentence describing it must be the same fact. ``"2026-09"`` filtered
+    September 2026 and says so; ``"setembro"`` filtered September of ANY year, so the year is
+    absent from the words too — inventing ``2026`` there would name a year the reader never asked
+    for and the read never applied. A string the resolver could not understand (``"de"``, a
+    typo, empty) applied NO filter at all, and the honest label for no filter is nothing: a
+    proposal that cannot say the period simply does not claim one.
+    """
+    mspec = _resolve_month(raw)
+    if not mspec:
+        return ""
+    month, year = mspec
+    return f"{_MONTH_LABELS[month]} {year}" if year else _MONTH_LABELS[month]
 
 
 def _month_is_over(mspec: tuple[int, int], today: date) -> bool:
@@ -215,6 +252,37 @@ def _ambiguous_year(matches: "list[ClassEntry]", raw: str) -> bool:
         return False
     years = {e.when.year for e in matches if e.when}
     return len(years) > 1
+
+
+@dataclass(frozen=True)
+class CalendarProposal:
+    """What ONE calendar send WOULD put in the mail, read and NOT sent.
+
+    Every field is something the read actually produced. There is no field for a fact the
+    vertical does not hold, because a proposal is only useful if the person reading it can act
+    on it: a count that is off by one, or a month nobody filtered by, is worse than saying
+    nothing — the professor agrees to something other than what arrives.
+
+    ``period`` is empty exactly when the read filtered by no month at all (see
+    :func:`month_label`), and the renderer omits the clause rather than inventing one.
+    """
+
+    events: list[CalendarEvent] = field(default_factory=list)
+    recipient: str = ""
+    target: str = ""
+    period: str = ""
+    dropped: int = 0
+
+    @property
+    def count(self) -> int:
+        """How many calendar entries would go — the number the proposal may state.
+
+        Derived from the events that were actually BUILT, never from the rows that were read:
+        a row whose date this system cannot parse produces no event, and it is counted in
+        :attr:`dropped` instead. Announcing "12 classes" and mailing 11 is the same defect as
+        announcing a send that did not happen, one digit smaller.
+        """
+        return len(self.events)
 
 
 class CoordinatorService:
@@ -565,26 +633,29 @@ class CoordinatorService:
                     return value.strip()
         return ""
 
-    async def send_schedule_to_calendar(
-            self, *, sender: Optional[CalendarSender], professor: str = "", role: str = "",
-            identity_label: str = "", identity_email: str = "", month: str = "",
-            turma: str = "", tz_name: str = "", subject_line: str = "",
-            describe: Optional[Callable[[ClassEntry], str]] = None,
-            sequence: Optional[int] = None,
-            report: Optional[ReadReport] = None) -> tuple[int, str, int]:
-        """Mail the target professor's upcoming classes as ONE ``.ics``. Returns
-        ``(events_sent, recipient, classes_dropped)``.
+    def _prepare_calendar(
+            self, *, sender: Optional[CalendarSender], professor: str, role: str,
+            identity_label: str, identity_email: str, month: str, turma: str,
+            describe: Optional[Callable[[ClassEntry], str]],
+            report: Optional[ReadReport]
+    ) -> tuple[CalendarSender, list[CalendarEvent], str, str, int]:
+        """Everything a calendar send needs, READ and not yet sent:
+        ``(sender, events, recipient, target, dropped)``.
 
-        **It RAISES on every path that did not send**, and that is a contract, not a style: a
-        FastMCP tool that RETURNS a sentence is a successful call, and a successful call on a
-        tool the server marks non-read-only is stamped ``side_effect=True`` by the MCP bridge —
-        so a polite "there is no e-mail configured" would make the turn count as a WRITE that
-        never happened, in the very accounting (``committed_this_turn``) the house uses to
-        decide whether a promise was kept. Raising lands as ``isError`` → ``ok=False`` →
-        ``side_effect=False``. The one non-error return of this method IS a completed send.
+        ONE method behind the proposal and behind the send, and that is the property, not a
+        refactor: a proposal is worth something only if it describes the send that would
+        actually happen. Two copies of this sequence are two chances for the sentence a
+        professor agrees to to stop matching the e-mail that arrives — a wrong count is the
+        same defect as an announced send that did not happen, one digit smaller.
 
-        The read underneath is :meth:`get_professor_schedule` — the same call, the same
-        ``_visible`` scoping, the same today-onward window. Nothing here can widen it.
+        **It RAISES on every path that cannot send**, and the proposal inherits every one of
+        those refusals unchanged: the sentences already end in "Nothing was sent", which is
+        true of a proposal too. A preview that offered to send a calendar this deployment has
+        no mail server for would be a promise nobody can keep.
+
+        ``sender`` comes back NARROWED (never ``None``) because the check that rules it out
+        lives here; returning it is how the caller uses it without re-testing what this method
+        already decided.
         """
         entries = self.get_professor_schedule(
             professor=professor, role=role, identity_label=identity_label, month=month,
@@ -621,15 +692,69 @@ class CoordinatorService:
             raise CoordinatorError(
                 "No e-mail is configured for this institution, so the calendar cannot be sent "
                 "from here. Nothing was sent — offer to read the classes out instead.")
-        org_email, org_name = sender.organizer()
+        return sender, events, recipient, target, dropped
+
+    def preview_schedule_to_calendar(
+            self, *, sender: Optional[CalendarSender], professor: str = "", role: str = "",
+            identity_label: str = "", identity_email: str = "", month: str = "",
+            turma: str = "", describe: Optional[Callable[[ClassEntry], str]] = None,
+            report: Optional[ReadReport] = None) -> CalendarProposal:
+        """What the SAME arguments would send — read, described, and NOT sent.
+
+        This is the proposal half of a two-step send, and it exists because the question the
+        contact is asked has to be GROUNDED in what was read. The alternative was measured on
+        2026-09-06: the executor picked the send, a confirmation gate held it by NAME before it
+        could read anything, and the only thing any layer downstream had left to render was the
+        call's own argument — the contact was asked *"Confirmo: esta ação — 2026-09. Posso
+        seguir?"*, which names no count, no destination and no month a person would recognise.
+        A gate that stops the call cannot ask the skill's question for it; a read that runs can.
+
+        It builds no ``.ics`` and touches no mailer — the events are built (that is where the
+        COUNT comes from, and how a row this system cannot date is excluded from it) and then
+        described. Nothing about this method can put a message in the mail; the send is a
+        separate call the user still has to agree to.
+        """
+        _snd, events, recipient, target, dropped = self._prepare_calendar(
+            sender=sender, professor=professor, role=role, identity_label=identity_label,
+            identity_email=identity_email, month=month, turma=turma, describe=describe,
+            report=report)
+        return CalendarProposal(events=events, recipient=recipient, target=target,
+                                period=month_label(month), dropped=dropped)
+
+    async def send_schedule_to_calendar(
+            self, *, sender: Optional[CalendarSender], professor: str = "", role: str = "",
+            identity_label: str = "", identity_email: str = "", month: str = "",
+            turma: str = "", tz_name: str = "", subject_line: str = "",
+            describe: Optional[Callable[[ClassEntry], str]] = None,
+            sequence: Optional[int] = None,
+            report: Optional[ReadReport] = None) -> tuple[int, str, int]:
+        """Mail the target professor's upcoming classes as ONE ``.ics``. Returns
+        ``(events_sent, recipient, classes_dropped)``.
+
+        **It RAISES on every path that did not send**, and that is a contract, not a style: a
+        FastMCP tool that RETURNS a sentence is a successful call, and a successful call on a
+        tool the server marks non-read-only is stamped ``side_effect=True`` by the MCP bridge —
+        so a polite "there is no e-mail configured" would make the turn count as a WRITE that
+        never happened, in the very accounting (``committed_this_turn``) the house uses to
+        decide whether a promise was kept. Raising lands as ``isError`` → ``ok=False`` →
+        ``side_effect=False``. The one non-error return of this method IS a completed send.
+
+        The read underneath is :meth:`get_professor_schedule` — the same call, the same
+        ``_visible`` scoping, the same today-onward window. Nothing here can widen it.
+        """
+        snd, events, recipient, _target, dropped = self._prepare_calendar(
+            sender=sender, professor=professor, role=role, identity_label=identity_label,
+            identity_email=identity_email, month=month, turma=turma, describe=describe,
+            report=report)
+        org_email, org_name = snd.organizer()
         ics = build_ics_calendar(
             events, organizer_email=org_email, organizer_name=org_name, attendee=recipient,
             tz_name=tz_name, sequence=sequence_now() if sequence is None else sequence,
             duration_minutes=self.cfg.class_duration_minutes)
         body = (f"{len(events)} aula(s) em anexo, no formato de calendário (.ics). "
                 f"Abra o anexo para importar tudo de uma vez.")
-        ok = await sender.send(to=recipient, subject=subject_line or "Suas aulas",
-                               body=body, ics=ics)
+        ok = await snd.send(to=recipient, subject=subject_line or "Suas aulas",
+                            body=body, ics=ics)
         if not ok:
             raise CoordinatorError(
                 "The e-mail server did NOT accept the message, so the calendar was not "

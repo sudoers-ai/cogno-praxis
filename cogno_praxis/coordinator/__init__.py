@@ -19,9 +19,11 @@ from cogno_praxis.coordinator.config import CoordinatorConfig
 from cogno_praxis.coordinator.durability import is_perishable_edge
 from cogno_praxis.coordinator.server import build_server
 from cogno_praxis.coordinator.service import (
+    CalendarProposal,
     CoordinatorAccessError,
     CoordinatorError,
     CoordinatorService,
+    month_label,
 )
 from cogno_praxis.coordinator.store import InMemorySpreadsheetStore, SpreadsheetStore
 from cogno_praxis.coordinator.types import ClassEntry, ColumnLayout, ReadReport, SheetReadError
@@ -33,4 +35,6 @@ __all__ = [
     # the calendar export (.ics by e-mail) — the pure builder plus its delivery port
     "CalendarEvent", "CalendarSender", "RecordingCalendarSender", "build_ics_calendar",
     "class_event_uid", "sequence_now",
+    # the PROPOSAL half of that export: what a send would put in the mail, read and not sent
+    "CalendarProposal", "month_label",
 ]

@@ -26,6 +26,14 @@ Approve the response if:
   failures to reject; a reply that announces a send the tool did not make is the opposite, and
   must be rejected however helpful it reads.
 
+- A PROPOSAL is a COMPLETE and CORRECT answer, not an unfinished send: preview_schedule_to_calendar
+  answered "NOT SENT", and the reply relays that call's "PROPOSAL:" line — count, period and
+  address — and asks for a yes. Nothing was sent and nothing claims it was: asking IS the goal of
+  such a turn. Reject it if the count, the period or the address differs from that line, and
+  reject a period or a list of classes taken from an EARLIER turn instead of from this one — a
+  reply that answers a September request with another month's classes is fabricated even though
+  every date in it is real.
+
 Raw tool output (the formatted class/slot lines) IS the expected response format — do NOT penalize
 a reply that consists primarily of tool-formatted schedule data.
 

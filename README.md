@@ -24,7 +24,7 @@ Two layers of "business rules" stay separate: **orchestration** rules live in th
 |---|---|---|
 | **scheduler** | the agenda capability — ships the **SECRETARY** persona, the universal reception/scheduling front door for any client | `list_schedulable_hosts`, `check_availability`, `book_appointment`, `list_appointments`, `confirm_appointment`, `complete_appointment`, `cancel_appointment` |
 | **bookkeeper** | the financial capability — ships the **BOOKKEEPER** persona (parent SaaS ANALYST): records income/expenses, tracks clients, produces summaries. See [`docs/BOOKKEEPER.md`](docs/BOOKKEEPER.md) | `add_income`, `add_outcome`, `get_summary`, `list_clients`, `search`, `remove_by_search`, `get_usage`, `help` |
-| **coordinator** | the academic capability — ships the **COORDINATOR** persona: reads class schedules across a tenant's course spreadsheets, checks grade/attendance deadlines, finds open slots, swaps a class, and mails a professor their classes as a calendar | `get_professor_schedule`, `get_professor_info`, `check_deadlines`, `get_weekly_briefing`, `check_ibope_status`, `find_replacement_slot`, `confirm_swap`, `send_schedule_to_calendar` |
+| **coordinator** | the academic capability — ships the **COORDINATOR** persona: reads class schedules across a tenant's course spreadsheets, checks grade/attendance deadlines, finds open slots, swaps a class, and mails a professor their classes as a calendar | `get_professor_schedule`, `get_professor_info`, `check_deadlines`, `get_weekly_briefing`, `check_ibope_status`, `find_replacement_slot`, `confirm_swap`, `preview_schedule_to_calendar`, `send_schedule_to_calendar` |
 | **companies** | the brand-registration capability — **transversal**: it belongs to no persona's domain, and a front-desk persona carries it beside its own vertical. Rows are keyed by the accent-folded company name, so registering one again UPDATES it. Scoped by identity: staff see the business's companies, anyone else sees the ones they registered | `company_registration`, `company_search`, `list_companies`, `company_update`, `company_delete` |
 
 More verticals (restaurant, veterinary, …) follow the same shape.
@@ -52,6 +52,17 @@ Three things about it are worth knowing before you wire it:
 - **Every path that did not send RAISES**, so the MCP bridge reports `ok=False` /
   `side_effect=False` and the turn is never recorded as a write that did not happen. The one
   non-error answer starts with `SENT:`.
+- **The question is asked by a READ, not by the gate.** `preview_schedule_to_calendar` is the
+  read-only half: same arguments, same rows, same refusals — it answers with the exact count,
+  the period the filter actually applied and the recipient the send would resolve, prefixed
+  `NOT SENT`, and mails nothing. It exists because a confirmation gate stops the send by NAME
+  *before* it can read, so the skill never learns what it would be sending and the only thing
+  left for any layer downstream to show a professor is the raw argument. Measured live on
+  2026-09-06: the contact was asked *"Confirmo: esta ação — 2026-09. Posso seguir?"*. A gate
+  cannot ask the skill's question for it; a read that runs can. Same relationship
+  `find_replacement_slot` has with `confirm_swap`. The period clause is **conditional** — a
+  request that filtered by no month claims none, because echoing the caller's own string back
+  is how a listing spanning two months gets proposed as one of them.
 
 Zones: an hour travels with the tenant's `TZID` (`COGNO_COORDINATOR_TZ`, stamped by the host
 from its own `tenant_tz`). No hour column, or no declared zone → an **all-day** event. Never a

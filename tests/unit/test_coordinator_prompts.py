@@ -186,3 +186,39 @@ def test_the_judge_reads_a_question_about_a_given_listing_as_INCOMPLETE():
     assert 'A question about a listing ALREADY GIVEN ("qual turma é essa?")' in limits
     assert "is INCOMPLETE, however polite" in limits
     assert "With no previous listing, asking is correct." in limits
+
+
+# ── the proposal: the three places that produce or check a grounded question ─────────
+#
+# Measured on a live conversation, 2026-09-06. A professor asked for their September classes to
+# be mailed, said yes, and was answered "Confirmo: esta ação — 2026-09. Posso seguir?" — the
+# call's own argument, printed at a person. The reason is structural and the code half of it is
+# `preview_schedule_to_calendar`: the send is stopped by NAME before it runs, so the skill never
+# reads, and a gate cannot ask the skill's question for it. These pin the prompt half — that the
+# executor is told to make that read, that the voicer is told to take its numbers from THIS
+# turn, and that the judge is told a proposal is a finished answer rather than a half-done send.
+
+def test_the_executor_is_told_to_ground_the_proposal_in_a_read_not_in_memory():
+    system = _flat("system")
+    assert "preview_schedule_to_calendar" in system
+    assert "Do NOT compose that proposal from memory" in system
+    # the three facts travel TOGETHER, because a rewrite that re-pairs them can re-pair them wrong
+    assert 'on ONE "PROPOSAL:" line' in system
+    # ...and WHY the system's own hold cannot stand in for it
+    assert "stops the call BEFORE it reads anything" in system
+
+
+def test_the_voicer_takes_the_proposal_numbers_from_this_turn_not_from_the_history():
+    """The measured failure mode of the same conversation: a September request answered with
+    October classes, lifted out of a listing given six turns earlier."""
+    voice = _flat("voice")
+    assert 'put the preview\'s "PROPOSAL:" line to the contact as ONE sentence' in voice
+    assert "Never re-assemble them from a listing earlier in the conversation" in voice
+
+
+def test_the_judge_is_told_a_proposal_is_a_complete_answer():
+    """The family this persona has already lost turns to: a fail-closed judge reading a correct
+    "here is what would go — may I?" as an incomplete goal and retrying it into a handoff."""
+    limits = _flat("limits")
+    assert "A PROPOSAL is a COMPLETE and CORRECT answer" in limits
+    assert "asking IS the goal of such a turn" in limits
