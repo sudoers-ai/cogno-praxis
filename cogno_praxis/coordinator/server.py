@@ -78,7 +78,38 @@ def _fmt_report(report: ReadReport) -> str:
     Both are conditional, and that is the whole design. A permanent "showing from today onward"
     would train the reader to believe things are being withheld on every turn, including the
     turns where nothing was; a permanent "all spreadsheets read" is noise. They appear when they
-    are TRUE and are silent otherwise."""
+    are TRUE and are silent otherwise.
+
+    **Only ONE of these lines is an incompleteness, and they must not be worded alike.**
+
+    ``errors`` is one: a spreadsheet could not be read, so the answer really is partial and the
+    reader needs to know HOW MUCH is missing. It COUNTS, deliberately.
+
+    ``hidden_past`` is not. The list is whole for the window the tool chose; the window is a
+    default, not a failure. So this line carries ONE BIT — *something lies outside the window,
+    and here is the argument that widens it* — and never a MEASUREMENT of what is outside.
+
+    **That distinction was bought, not designed.** The line used to quantify the outside
+    ("N earlier class(es) matching this request were not listed"). It was written for the
+    EXECUTOR, as the offer of a next step. But a tool result has ONE reader-facing string and no
+    second channel: ``ToolResult.output`` is a single field, and the SUPEREGO judge is handed the
+    same bytes verbatim inside ``<tool_output>``. So the judge read that sentence as the
+    execution admitting it had left work undone. Measured over a live conversation on
+    2026-09-06: of the four occurrences of one ordinary follow-up question, THREE were rejected
+    by the judge, and the critiques quote this line back — "did not clarify that there are N
+    previous classes not listed", and, most plainly, "included a note about omitted earlier
+    classes ... which could be seen as incomplete". The note had become the accusation. Each
+    rejection spent a correction round, and the loop then steered the executor into answering
+    about the past instead of the question actually asked.
+
+    A COUNT is only actionable as a deficit, and the one reader that acts on a deficit is the
+    one grading completeness. A BIT plus an argument name is actionable by the executor and by
+    nobody else — which is as close to addressing a single recipient as this contract allows
+    (inventing a second channel is the core's business, not a skill's). The ``unmatched_turma``
+    line above already speaks this way: it names the argument to change, not the size of the
+    miss. Note also what this line does NOT claim: it never says the list is complete, because a
+    failed spreadsheet can be cut from the SAME read and the two lines would then contradict
+    each other."""
     lines: list[str] = []
     if report.unmatched_turma:
         known = ", ".join(report.known_turmas) or "(none configured)"
@@ -89,8 +120,9 @@ def _fmt_report(report: ReadReport) -> str:
             f"group.")
     if report.hidden_past:
         lines.append(
-            f"(Showing from today onward. {report.hidden_past} earlier class(es) matching this "
-            f"request were not listed — say so explicitly to see past classes.)")
+            "(This list covers today onward — this tool's default window. Earlier classes are "
+            "one argument away: call again with `include_past=true`, but only if the user asks "
+            "about the past.)")
     if report.errors:
         detail = "; ".join(f"{e.sheet_key}: {e.message}" for e in report.errors)
         lines.append(

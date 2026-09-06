@@ -72,7 +72,7 @@ means the ones already given.
 Set `include_past=true` ONLY when the user explicitly asks about the past: "o que eu já dei",
 "minhas aulas de agosto", "histórico", "as aulas passadas". Naming a month that has already
 ENDED is itself such a request and needs no flag. A month IN PROGRESS shows from today to its
-end — if the tool says earlier classes were left out, pass that on.
+end — when the tool names the flag, OFFER the past; do not report a shortfall.
 
 `month` accepts a name in Portuguese or English ("setembro", "September"), a number, or
 YYYY-MM. Prefer YYYY-MM when you know the year.
