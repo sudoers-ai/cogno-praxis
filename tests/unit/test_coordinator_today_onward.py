@@ -141,11 +141,11 @@ def test_the_note_appears_only_when_something_was_actually_cut():
         return "\n".join(b.text for b in res[0] if getattr(b, "type", None) == "text")
 
     cut = asyncio.run(run({"month": "September"}))
-    assert "Showing from today onward" in cut and "1 earlier class" in cut
+    assert "covers today onward" in cut
     nothing_cut = asyncio.run(run({"month": "October"}))
-    assert "Showing from today onward" not in nothing_cut
+    assert "covers today onward" not in nothing_cut
     asked_for = asyncio.run(run({"include_past": True}))
-    assert "Showing from today onward" not in asked_for and "14/04/2026" in asked_for
+    assert "covers today onward" not in asked_for and "14/04/2026" in asked_for
 
 
 def test_an_undated_row_is_never_hidden_by_the_window():
@@ -177,3 +177,123 @@ def test_the_server_takes_today_from_the_host_anchor(monkeypatch):
 
     monkeypatch.delenv("COGNO_COORDINATOR_TODAY")
     assert srv._demo_service()._today() == date.today()      # unset → the real date, as before
+
+
+# ── the footer has ONE string and TWO readers ────────────────────────────────────────
+# `ToolResult.output` is a single field, and the SUPEREGO judge is handed the same bytes the
+# executor gets. So a note written to offer the executor a next step is also evidence in a
+# completeness grading. Measured live on 2026-09-06: the old wording counted what the window had
+# excluded ("N earlier class(es) ... were not listed"), and three of the four occurrences of one
+# ordinary follow-up question were rejected by the judge quoting exactly that — one critique in
+# so many words, "included a note about omitted earlier classes ... which could be seen as
+# incomplete". Every rejection cost a correction round, and the loop then dragged the executor
+# into answering about the past instead of the question asked.
+#
+# The rule these tests pin: the WINDOW line carries one BIT and an argument name; the PARTIAL
+# RESULT line, which reports a genuine incompleteness, keeps its COUNT. A rule that flattened
+# both would buy this fix by blinding the reader to a spreadsheet that failed to load.
+
+
+def _past_rows(n: int) -> list[list[str]]:
+    """``n`` classes already given (August, before the 6th) plus one still to come."""
+    given = [[f"{d:02d}/08/2026", "Qui", "Ana", "Applied Statistics", "101"]
+             for d in range(1, n + 1)]
+    return given + [["17/09/2026", "Qui", "Ana", "Deep Learning", "101"]]
+
+
+def _footer(out: str) -> str:
+    """Whatever ``_fmt_report`` appended after the listing (``""`` when it stayed silent)."""
+    return out.split("\n\n", 1)[1] if "\n\n" in out else ""
+
+
+def _read(svc, **args) -> str:
+    mcp = build_server(svc)
+
+    async def run() -> str:
+        res = await mcp.call_tool("get_professor_schedule",
+                                  {"role": "SUPERVISOR", "identity_label": "Sofia", **args})
+        return "\n".join(b.text for b in res[0] if getattr(b, "type", None) == "text")
+    return asyncio.run(run())
+
+
+def test_the_window_note_carries_a_bit_not_a_measurement():
+    """THE property. One class outside the window and sixteen produce the SAME footer.
+
+    A count is only actionable as a deficit, and the reader that acts on a deficit is the one
+    grading completeness. Restoring the number is the mutation, and it kills this test."""
+    one, sixteen = _svc(_past_rows(1)), _svc(_past_rows(16))
+
+    # Not vacuous: the two reads really do cut different amounts.
+    r1, r16 = ReadReport(), ReadReport()
+    one.get_professor_schedule(role="SUPERVISOR", identity_label="Sofia", report=r1)
+    sixteen.get_professor_schedule(role="SUPERVISOR", identity_label="Sofia", report=r16)
+    assert (r1.hidden_past, r16.hidden_past) == (1, 16)
+
+    foot_one, foot_sixteen = _footer(_read(one)), _footer(_read(sixteen))
+    assert foot_one, "the note must still be there — silence would hide the window, not the count"
+    assert foot_one == foot_sixteen
+
+
+def test_the_note_still_hands_the_executor_its_next_step():
+    """The offer survives the loss of the count: the line names the ARGUMENT that widens the
+    window. That is what only the executor can act on — the judge has no tools."""
+    foot = _footer(_read(_svc(_past_rows(3))))
+    assert "include_past=true" in foot
+
+
+def test_a_real_incompleteness_still_counts_and_the_count_still_moves():
+    """The over-tightening probe. The window line stopped quantifying; the PARTIAL RESULT line
+    must NOT, because a spreadsheet that failed to load really does leave the answer short and
+    the reader has to know how much. Two broken sheets must not read like one."""
+    one_broken = _footer(_read(_flaky(broken=(_SID_B,))))
+    two_broken = _footer(_read(_flaky(broken=(_SID_B, _SID_C))))
+    assert "1 spreadsheet(s) could not be read" in one_broken
+    assert "2 spreadsheet(s) could not be read" in two_broken
+    assert one_broken != two_broken
+
+
+def test_the_window_line_does_not_change_when_a_spreadsheet_fails():
+    """The two lines stay separate facts. The window line never absorbs the read failure — it
+    makes no claim about completeness at all, precisely so it cannot contradict the line below
+    it when both are earned by the same read."""
+    clean = _window_line(_footer(_read(_flaky(broken=()))))
+    broken = _window_line(_footer(_read(_flaky(broken=(_SID_B,)))))
+    assert clean and clean == broken
+    assert "PARTIAL RESULT" in _footer(_read(_flaky(broken=(_SID_B,))))
+
+
+def _window_line(footer: str) -> str:
+    return next((ln for ln in footer.splitlines() if "covers today onward" in ln), "")
+
+
+_SID_B = "1AbCdEfGhIjKlMnOpQrStUvWxYz01234567"
+_SID_C = "1ZyXwVuTsRqPoNmLkJiHgFeDcBa98765432"
+
+
+class _Boom(RuntimeError):
+    pass
+
+
+def _flaky(*, broken: tuple[str, ...], today=date(2026, 9, 6)):
+    """Two spreadsheets, each with one past and one future class; ``broken`` ids raise on read.
+
+    The past rows guarantee the WINDOW line is earned in every variant, so the two footer lines
+    are always compared with both of them present."""
+    rules = (f"SPREADSHEETS:\nTurma A_01 = {_SID_B}\nTurma B_02 = {_SID_C}\n"
+             'TAB_SCHEDULE: "Secretaria"\nRANGE_SCHEDULE: "A4:E200"\n'
+             'COLUMN_DATE: "Data"\nCOLUMN_PROFESSOR: "Professor"\nCOLUMN_SUBJECT: "Disciplina"\n'
+             'FIXED_COLUMNS: "Data, Dia"\nFREE_SLOT_LABELS: "Livre"\nSKIP_LABELS: "Feriado"\n')
+
+    class _FlakyStore(InMemorySpreadsheetStore):
+        def read_range(self, sheet_id, tab, a1_range):
+            if sheet_id in broken:
+                raise _Boom("HTTP 404")
+            return super().read_range(sheet_id, tab, a1_range)
+
+    store = _FlakyStore()
+    rows = [["03/08/2026", "Seg", "Ana", "Applied Statistics", "101"],
+            ["17/09/2026", "Qui", "Ana", "Deep Learning", "101"]]
+    for sid in (_SID_B, _SID_C):
+        store.put(sid, "Secretaria",
+                  [[""] * 5, [""] * 5, [""] * 5, list(_HEADER)] + [list(r) for r in rows])
+    return CoordinatorService(store, CoordinatorConfig(rules), today=lambda: today)
