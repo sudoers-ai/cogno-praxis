@@ -1,0 +1,256 @@
+Portão do gerente. Worktree próprio e limpo, controlo MEDIDO em `4632f20` (`origin/main` no
+momento do rebase — o #112 aterrou a meio deste trabalho e isto está rebasado por cima dele).
+
+## O defeito, medido
+
+Dois turnos vivos do tenant do dono, sessão `9c77ef13…`, 2026-09-06:
+
+| turno | hora (UTC) | pergunta | resposta |
+|---|---|---|---|
+| 65 | 22:35:30 | «como funciona a partr financeira. minhas aulas por exemplo, qto eu receberia por mes?» | «informações sobre remuneração e pagamentos estão **fora do meu escopo**» |
+| 66 | 22:36:27 | «mas vc não saberia o valor hora que um professor recebe e as regras so bonus?» | recitou as regras (valor/hora + faixas) — **sem conta nenhuma** |
+| 67 | 22:39:07 | «baseado nesse calculos, qual seria o q tenho a receber, considerando meu cronograma de setembro e outubro?» | «Desculpe, mas não posso ajudar com **questões financeiras**.» |
+
+**Consegui reconstruir os três — 3/3.** O 68 («traga as minhas informações como professor»)
+seguiu-se e é uma pergunta diferente; não conta como parte do antes/depois.
+
+**As duas recusas vieram de CAMADAS DIFERENTES**, e é a razão de isto tocar quatro prompts e
+não um. Do `turn_traces`:
+
+- **turno 67** — `superego.blocked = true`, `judge_attempts = 0`, `prompt_blocks = []`. O
+  **guarda de entrada** (`check_input_scope`) parou-o antes de qualquer ferramenta correr.
+- **turno 65** — `blocked = false`, `judge_attempts = 1`, `exhaustion_reason =
+  judge_rejected_all`, `exhaustion_outcome = last_draft_voiced`. **Não foi bloqueado.** O
+  executor correu (`ego.ran = true`, 3 passos), chamou `get_professor_info` (→ «No faculty
+  records found.») e `get_professor_schedule` (→ as aulas dele), e escreveu um rascunho honesto.
+  Quem transformou isso numa recusa foi o `## Scope` da própria persona («You do NOT ... handle
+  finances») mais a cláusula de fora-de-escopo do juiz.
+
+**Abrir só a entrada consertava um dos dois.**
+
+E o rascunho do turno 65 é a especificação da conta, escrita pelo próprio executor:
+
+> «The exact monthly amount depends on the workload assigned to each class in the schedule; the
+> schedule read did not return those hour totals.»
+> «The faculty information record did not return workload details, so I can't calculate a
+> reliable monthly total from the number of classes alone.»
+
+Está certo. É essa a falha que se fecha: as horas existem na folha da instituição e **nada as
+estava a ler**.
+
+## O que entra
+
+`estimate_professor_pay(period?, turma?)` — **SÓ LEITURA**, **só do PRÓPRIO**, em todos os
+papéis. `aulas no período × horas da disciplina × valor/hora` + bónus IBOPE, agrupado por
+**turma e mês**, em bloco renderizado (`*negrito*`, linhas sem rótulos repetidos).
+
+**Nada aqui inventa um número**, e cada forma existe porque a alternativa é uma mentira:
+
+- **as horas vêm de uma coluna que o INQUILINO nomeia** — `COLUMN_HOURS`, na `TAB_HOURS` que
+  por omissão é a `TAB_PROFESSORS` que ele já declarou (cair para outra declaração dele não é
+  adivinhar; a coluna não tem esse recurso). **Sem default e sem farejar cabeçalhos**: um header
+  que «parece» horas é como um número de sala vira carga horária.
+- **o valor/hora e as faixas vêm das `custom_rules`** — `PAY_RATE_PER_HOUR`, `PAY_BONUS_TIERS`.
+  Sem eles **não há estimativa nenhuma**, e a recusa **NOMEIA a chave** que falta.
+- **IBOPE não encontrado ⇒ as hipóteses, TODAS, nenhuma escolhida**, com «RESULTADO NÃO
+  ENCONTRADO» à cabeça. A contagem **segue a declaração do inquilino** (as duas faixas dele dão
+  três hipóteses, com a linha «Sem bónus»), não um `3` escrito no código. **Dois resultados que
+  discordam contam como não encontrado** — escolher um é um bónus inventado a vestir um número
+  verdadeiro.
+- **uma disciplina sem horas na folha é NOMEADA e fica fora da soma, nunca zero.** «R$ 0,00»
+  lê-se como uma aula que não paga: é uma afirmação diferente, e falsa.
+
+## Depois (folha SINTÉTICA — nada de dados vivos)
+
+```
+*Remuneração estimada*
+Valor/hora declarado nas regras: R$ 120,00
+
+*Turma AA_01 — 09/2026*
+Bancos NoSQL · 2 aulas · 32 h · R$ 3.840,00
+
+*Turma AA_01 — 10/2026*
+Estatistica Aplicada · 1 aula · 20 h · R$ 2.400,00
+
+*Turma BB_02 — 09/2026*
+Bancos NoSQL · 1 aula · 8 h · R$ 960,00
+
+*Base*
+60 h · R$ 7.200,00
+
+*Bônus IBOPE — RESULTADO NÃO ENCONTRADO*
+O resultado do IBOPE não foi encontrado, então o bônus não pode ser calculado. Estas são as
+hipóteses previstas pelas regras — nenhuma delas foi escolhida e nenhuma foi verificada:
+Sem bônus · sem adicional · R$ 7.200,00
+IBOPE 80–89% · +R$ 30,00/h · R$ 9.000,00
+IBOPE 90%+ · +R$ 40,00/h · R$ 9.600,00
+```
+
+e o gémeo negativo, mesma folha, mesma chamada:
+
+```
+NOT PERMITTED: You can only see your own pay estimate — another professor's remuneration is not
+something this assistant discloses to anyone. This is an access rule working as intended...
+```
+
+## ⚠️ O que isto NÃO entrega ainda, e é a coisa mais importante deste corpo
+
+**As regras deste inquilino, tal como estão HOJE, não declaram nenhuma das duas chaves.** Medido,
+não suposto — corri o parser sobre o texto vivo dos blocos `EMPLOYEE` e `ADMIN`:
+
+```
+EMPLOYEE: spreadsheets=4  column_hours=''  rate=None  tiers=0  ->  pay_undeclared=('PAY_RATE_PER_HOUR', 'COLUMN_HOURS')
+ADMIN   : spreadsheets=4  column_hours=''  rate=None  tiers=0  ->  pay_undeclared=('PAY_RATE_PER_HOUR', 'COLUMN_HOURS')
+```
+
+Os valores **existem** nas regras, mas em **PROSA** (`- Aula - R$ 120,00 por hora`, `Bônus / -
+Ibope > 80% e <89%: Adicional de R$ 30,00 por hora`), e o parser deste config só lê
+`CHAVE: valor` / `CHAVE = valor`. **Recusei-me a fazer parsing dessa prosa**: adivinhar números
+em texto livre sobre dinheiro é exactamente o defeito que o resto deste PR existe para impedir.
+
+Então, para o dono, hoje, a mudança é:
+
+| | antes | depois |
+|---|---|---|
+| turno 67 | bloqueado na entrada, «não posso ajudar com questões financeiras» | **admitido** |
+| turno 65 | «fora do meu escopo» | `NOT CONFIGURED: ... PAY_RATE_PER_HOUR, COLUMN_HOURS are missing from the persona rules` |
+
+Isto é uma recusa sobre a **CONFIGURAÇÃO** em vez de uma recusa sobre o **ASSUNTO**, e nomeia o
+que falta. Não é ainda o número que ele pediu. **O que falta são 3–5 linhas nas `custom_rules`
+da persona** (`COLUMN_HOURS`, `PAY_RATE_PER_HOUR`, `PAY_BONUS_TIERS`, e opcionalmente
+`TAB_IBOPE`/`COLUMN_IBOPE`) — edição de config, não de código. **Falta ainda saber como se chama
+a coluna de horas na aba «Informações Adicionais»**: nos 1198 traços persistidos,
+`get_professor_info` correu 2 vezes e as duas devolveram «No faculty records found.», por isso
+**não tenho evidência nenhuma do cabeçalho real** e não o inventei. Alguém com acesso à folha
+tem de o ler e escrevê-lo na regra.
+
+## (A) PII — verificado, e o que o bloco PODE conter
+
+O formatador da listagem ao lado emite **todas** as colunas não vazias da linha, **verbatim**, e
+o nome do professor sai hoje. **Este bloco é construído ao contrário**: só de campos DERIVADOS —
+chave da turma, mês, disciplina, contagem, total de horas, cifra. **Nunca copia uma linha**, por
+isso nenhuma coluna que o inquilino tenha ao lado (e-mail, telefone, titulação, sala) pode sair
+com ele; e **não nomeia pessoa nenhuma, nem o próprio leitor** — o único humano identificado de
+que este bloco trata é quem está a segurar o telemóvel.
+
+**Não pode levar dado de terceiro**, e por duas razões independentes: a estimativa é
+**self-only por construção** (não há segunda pessoa no âmbito), e o `PayEstimate` **não tem
+campo** onde uma linha caiba. A fixture põe de propósito uma coluna de e-mail ao lado das horas
+para que uma implementação copiadora de linhas fique vermelha — e fica (mutante M8).
+
+**Não construí volta nenhuma e não há nada a parar aqui.** Quanto ao backstop de PII na saída
+do core: este bloco não contém e-mail, telefone, CPF/CNPJ nem morada — as cifras são `R$ …` e as
+outras cadeias são nomes de disciplina e de turma. Não vi interacção com blocos reproduzidos à
+letra **porque não há neste bloco nada que o detector reconheça**; é uma afirmação sobre ESTE
+bloco, não uma verificação do backstop, que continua por fazer.
+
+## (B) O escopo é um GUARDA
+
+**Passou a ser possível:** o professor identificado perguntar o que **ELE** recebe pelas **suas
+próprias** aulas — e obter o cálculo, com a composição por turma e mês.
+
+**Continua a recusar, com gémeo para cada metade:**
+
+- a remuneração de **OUTRO** professor — recusada a **TODOS** os papéis, `SUPERVISOR`/`ADMIN`/
+  `OWNER` incluídos. Este é o **único** read do vertical que **não** alarga para oversight, e é
+  deliberado: a razão pela qual o guarda abriu é que o dinheiro é de **quem pergunta**.
+  (`test_another_professors_pay_is_refused_to_every_role_including_oversight`, 5 papéis)
+- um turno **sem professor identificado** — recusado (`identity_label` vazio: sem ninguém
+  nomeado, «a sua própria remuneração» não tem referente, e um filtro vazio agregaria o corpo
+  docente inteiro numa estimativa só)
+- as contas da instituição, notas fiscais a processar, orçamentos, mensalidades —
+  explicitamente no `scope.txt` (`test_the_intake_still_blocks_the_finance_that_did_NOT_open`)
+- e o gémeo que impede a regra de virar «nunca aceites um nome»: **nomear-se a si próprio é
+  permitido** (`test_naming_YOURSELF_is_allowed_because_it_is_the_same_person`)
+
+**Duas camadas, e não são iguais:** a abertura da entrada é um **prompt** (um modelo decide); o
+«só do próprio» é **código** (`CoordinatorAccessError`, incondicional). Mesmo que a entrada
+deixe passar uma pergunta que não devia, a única cifra alcançável é a de quem pergunta.
+
+**Alcance medido no corpus vivo, com denominador:** dos **98** turnos da persona COORDINATOR que
+têm traço persistido, o guarda de entrada bloqueou **exactamente 1** — o turno 67, a pergunta do
+dono. É o raio de acção inteiro desta abertura: o único turno que este guarda alguma vez recusou
+é o que não devia ter recusado. (Do corpus completo de **1195** turnos, 20 têm forma financeira
+pelo léxico; 11 em 1.ª pessoa, 9 não — e os 9 são de outros verticais ou institucionais.)
+
+## Réguas
+
+| régua | controlo `4632f20` | ramo | delta |
+|---|---|---|---|
+| `grep -rEc '^\s*(async )?def test_'` | 683 | 714 | **+31** |
+| `pytest --collect-only` | 882 | 927 | **+45** |
+| `pytest tests -q` | 857 passed, 25 skipped | 902 passed, 25 skipped | **+45** |
+
+Ambos `-p no:importnb`. **A divergência 45 − 31 = 14 explica-se inteira** por duas
+parametrizações no ficheiro novo: `..._refused_to_every_role_...` com 5 papéis (+4) e
+`test_money_is_read_in_both_locales...` com 11 casos (+10). Os 25 *skipped* são idênticos nos
+dois lados — nenhum gémeo novo se escondeu num skip. `ruff` e `mypy` limpos; cobertura 95,65%
+(portão 90%).
+
+## Mutação — 8, uma por propriedade, todas mortas
+
+| # | mutante | morre em |
+|---|---|---|
+| M1 | IBOPE **arbitra** entre dois resultados que discordam | `..._DISAGREE_are_read_as_not_found_rather_than_arbitrated` |
+| M2 | horas em falta **renderizadas como zero** | `..._hours_the_sheet_does_not_carry_is_NAMED_never_zeroed` |
+| M3 | **APAGA uma entrada** da tabela declarada de hipóteses | 2 testes, incl. `..._carries_EVERY_hypothesis_the_estimate_holds` |
+| M4 | oversight passa a ver a paga alheia | 3 params (`SUPERVISOR`/`ADMIN`/`OWNER`) |
+| M5 | `PAY_RATE_PER_HOUR` ganha um **default** de 120,00 | 3 testes de recusa |
+| M6 | a estimativa volta a ser **cortada aos 30 dias** | 7 testes |
+| M7 | o `scope.txt` perde a metade que **FECHA** | `..._still_blocks_the_finance_that_did_NOT_open` |
+| M8 | a **LINHA da folha viaja** para o bloco (a forma do formatador ao lado) | `..._carries_no_row_verbatim_and_no_third_party_field` |
+
+**M3 é a mutação por APAGAMENTO** que o portão pede: tira uma faixa da tabela em vez de a
+violar. Vale a nota de que ela mata por **dois** caminhos e só um deles é o teste que percorre a
+lista — apagar no *estimate* é invisível para quem percorre `est.hypotheses` (a lista encolhe dos
+dois lados), e é a asserção de **contagem contra a declaração do inquilino** que apanha esse. O
+teste que percorre apanha o apagamento no **renderizador** (M3 aplicado a `est.hypotheses[:2]`).
+
+Um mutante inicial (`hours_total` a devolver `0.0` em vez de `None`) **sobreviveu**, e a
+pergunta era sobre o mutante: é **equivalente** — `PayGroup.hours` já faz `or 0.0`, e somar zero
+é aritmeticamente idêntico a excluir, logo a propriedade real é a **apresentação**. Reescrito
+como M2 (o ramo do renderizador) e como o gémeo que deixa de **nomear** a disciplina em falta,
+morre nos dois.
+
+## Sonda de sobre-aperto (denominador impresso)
+
+O novo ramo `NOT CONFIGURED` em `_guard` decide por substring. **Locais de `raise
+CoordinatorError` no vertical: 14. Dos 14, os que contêm «has not configured»: 1** — o que este
+PR acrescenta. Nenhuma mensagem anterior é capturada.
+
+## Interacção com o #112 (aterrou a meio)
+
+O #112 pôs um horizonte de **30 dias** por omissão nas leituras. A estimativa passa
+`apply_horizon=False` **pela razão que o próprio #112 invoca para a exportação de calendário**:
+o horizonte existe para quem **LÊ uma lista** não ter de rolar, e isto não é uma lista. Uma
+estimativa cortada em silêncio aos 30 dias responde «quanto eu recebo» com parte dos meses e sem
+sinal nenhum — o defeito «exportou 3 de 6» dito sobre dinheiro, onde o leitor não tem como
+reparar na falta. Gémeo: um `period` nomeado continua a filtrar. (Segundo commit, e é o mutante
+M6.)
+
+O conflito de rebase foi um só, em `limits.txt`, resolvido **aditivamente**: a cláusula da paga
+por cima, o parágrafo reescrito por eles intacto por baixo. **Não toquei nos ficheiros deles.**
+
+## O que este PR NÃO toca
+
+`_fmt_entry` / `_fmt_list` / `_fmt_report` / `_fmt_professors` e o resto da listagem (o outro
+executor) · `confirm_swap`, `send_schedule_to_calendar`, `preview_schedule_to_calendar` (as
+escritas e o envio) · o RBAC dos reads existentes (`_visible`, `get_professor_info`) · os
+verticais `scheduler` / `bookkeeper` / `companies` / `closer` / `interviewer` · o host, o
+`cogno-anima` e o backstop de PII na saída · base de dados (só `SELECT`) · nenhuma folha viva
+lida ou escrita · nenhum pino montado, nenhum merge.
+
+## A frase honesta
+
+- **Código (portão):** a aritmética, o self-only, a recusa que nomeia a chave, as hipóteses e a
+  sua contagem, o «não encontrado», as horas em falta nomeadas, a saída do horizonte, e o que o
+  bloco pode conter. Tudo isto está pinado e mutado — 902 verdes, 8 mutantes mortos.
+- **Modelo (corrida viva):** que o executor chame a ferramenta em vez de multiplicar uma
+  listagem à mão; que o juiz aceite «não sabemos o bónus» como resposta COMPLETA; que a voz
+  relate o bloco inteiro sem escolher uma hipótese. São asserções de **presença** nos prompts —
+  pinam que a instrução existe e que ninguém a apaga em silêncio. **Se obedecem, mede-se vivo, e
+  não medi.** Nada aqui falou com o Ollama nem com a caixa.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+https://claude.ai/code/session_01VgdHaYPKoLTaiDSPzrAR7j
