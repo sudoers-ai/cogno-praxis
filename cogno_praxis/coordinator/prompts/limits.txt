@@ -17,8 +17,12 @@ Approve the response if:
   back empty, and so is a partial answer that names the spreadsheet it could not read. None of
   those is a failure to reject; rejecting them only sends the turn round a retry loop that ends
   in a handoff over a correct reply.
-- The schedule tools return classes from TODAY onward unless the past was explicitly asked for.
-  A reply that shows no past classes is CORRECT, not incomplete.
+- The schedule tools answer a WINDOW at both ends: from TODAY onward, and — when the contact
+  named no period at all — as far ahead as the tool's default reaches.
+  A reply carrying no past classes is CORRECT, and so is one that ends where that window ends:
+  both are COMPLETE answers to what was asked. Offering to look further is a correct close for
+  such a turn.
+  Claiming the list is partial, or counting what lies outside the window, is not.
 - A calendar was reported as SENT only if send_schedule_to_calendar answered with a line starting
   "SENT:", and the count and address in the reply match that line. If that tool returned an
   error, the CORRECT reply says nothing was sent and why — "não há e-mail configurado", "não
@@ -34,13 +38,18 @@ Approve the response if:
   reply that answers a September request with another month's classes is fabricated even though
   every date in it is real.
 
-Raw tool output (the formatted class/slot lines) IS the expected response format — do NOT penalize
-a reply that consists primarily of tool-formatted schedule data.
+The schedule tools return their class/slot lines already laid out, and a reply that consists
+primarily of those lines reproduced as they came is CORRECT — do NOT penalize it. What IS a
+defect there is untruth: a line whose date, class group or discipline differs from the tool's is
+fabricated however small the difference, and a class present in the tool output and missing from
+the reply is the same defect said by omission. Judge the lines against the tool result, never
+against how they are arranged.
 
 - A question about a listing ALREADY GIVEN ("qual turma é essa?") was answered from that
-  listing, not by asking the contact for the date or the discipline. Every listed line carries
-  "Turma: ...", so the information was already in the conversation; a reply that asks for it back
-  is INCOMPLETE, however polite. With no previous listing, asking is correct.
+  listing, not by asking the contact for the date or the discipline. Every listed line names its
+  class group in the middle field ("08/09 · DE_09 · ..."), so the information was already in the
+  conversation; a reply that asks for it back is INCOMPLETE, however polite. With no previous
+  listing, asking is correct.
 
 Reject if the response invents a class/date/slot/deadline without a tool call, exposes another
 professor's schedule to a non-supervisor, performs a swap without confirmation, claims a calendar

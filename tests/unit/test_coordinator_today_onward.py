@@ -95,7 +95,15 @@ def test_the_english_month_actually_filters_the_read():
 # ── the window: today onward, unless asked ────────────────────────────────────────────
 def test_nothing_before_today_by_default():
     got = _svc().get_professor_schedule(role="SUPERVISOR", identity_label="Sofia")
-    assert _dates(got) == ["06/09/2026", "17/09/2026", "08/10/2026"]
+    # THE PROPERTY THIS TEST OWNS: nothing before today. April and August are the rows that used
+    # to come back on a September conversation, and they are the assertion.
+    assert not [d for d in _dates(got) if d.endswith("/04/2026") or d.endswith("/08/2026")]
+    assert _dates(got)[0] == "06/09/2026"             # a class TODAY still counts as today
+    # The far end belongs to a different default and to a different file
+    # (``test_coordinator_listing.py``): with no period named the read now stops ~30 days out,
+    # which is why 08/10/2026 is no longer here. Asserted, not merely tolerated — a window with
+    # one end pinned and the other left loose is how the loose end drifts unnoticed.
+    assert _dates(got) == ["06/09/2026", "17/09/2026"]
 
 
 def test_a_class_earlier_today_is_still_today():
@@ -145,7 +153,9 @@ def test_the_note_appears_only_when_something_was_actually_cut():
     nothing_cut = asyncio.run(run({"month": "October"}))
     assert "covers today onward" not in nothing_cut
     asked_for = asyncio.run(run({"include_past": True}))
-    assert "covers today onward" not in asked_for and "14/04/2026" in asked_for
+    # the April workshop, in the listing's own shape now
+    assert "covers today onward" not in asked_for
+    assert "**Abril de 2026**" in asked_for and "- 14/04 ·" in asked_for
 
 
 def test_an_undated_row_is_never_hidden_by_the_window():
@@ -325,5 +335,9 @@ def test_the_prompts_ask_for_the_window_and_not_for_a_shortfall():
     assert "include_past=true` ONLY when the user explicitly asks" in system
     # the twin: a real incompleteness is still announced, and still named
     assert "could not read, give the classes it DID read and name the" in voice
-    assert "A reply that shows no past classes is CORRECT, not incomplete." in (
-        prompts / "limits.txt").read_text(encoding="utf-8")
+    # The judge is told the same thing, and now about BOTH ends of the window. The sentence
+    # changed wording when the forward end arrived; what it may never do is call either end an
+    # incompleteness, which is what these two halves pin.
+    limits = (prompts / "limits.txt").read_text(encoding="utf-8")
+    assert "A reply carrying no past classes is CORRECT" in limits
+    assert "Claiming the list is partial, or counting what lies outside the window, is not." in limits

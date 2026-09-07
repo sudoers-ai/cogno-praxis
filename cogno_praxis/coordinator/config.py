@@ -105,6 +105,22 @@ class CoordinatorConfig:
         # raising, because a typo in the rules must not take the vertical down.
         self.class_duration_minutes: int = _find_int(rules, "CLASS_DURATION_MINUTES", 60)
 
+        # The STATUS column, and the values in it that say nothing a reader needs.
+        #
+        # A schedule sheet marks most rows with the ordinary, expected state ("Confirmado") and
+        # a few with something a professor must ACT on. Printing the ordinary one on every line
+        # spends a column of every row saying "normal", which is how the one row that says
+        # something else stops standing out. So the listing prints a status only when it is NOT
+        # one of these — the exception is the information, the rule is noise.
+        #
+        # DECLARED, not inferred: which words mean "nothing to see here" is the tenant's
+        # vocabulary, and a system that guessed would eventually swallow a real warning because
+        # it looked routine. A tenant whose sheet says "OK" adds it here; deleting a value from
+        # this list makes that value print again, which is the safe direction to be wrong in.
+        self.column_status: str = _find(rules, "COLUMN_STATUS", "Status")
+        self.status_default_labels: tuple[str, ...] = _find_list(
+            rules, "STATUS_DEFAULT_LABELS", ("Confirmado", "Confirmada"))
+
         # Columns that DON'T move during a swap (dates stay put; content columns are exchanged).
         self.fixed_columns: tuple[str, ...] = _find_list(rules, "FIXED_COLUMNS", ("Data", "Dia"))
 

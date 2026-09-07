@@ -388,7 +388,13 @@ def test_a_YYYY_MM_outside_1_to_12_is_not_a_month_either(raw):
     report = ReadReport()
     got = _service().get_professor_schedule(identity_label="Ana", role="EMPLOYEE",
                                             month=raw, report=report)
-    # no filter ran, so the answer is the unfiltered window — an answer, not an exception
-    assert [e.date_str for e in got] == ["01/09/2026", "08/09/2026", "29/09/2026",
-                                         "05/10/2026", "14/10/2026", "07/09/2027"]
+    # No filter ran, so the answer is the read's own no-period window — an answer, not an
+    # exception. That window now has a forward end as well as a back one, and asserting it here
+    # is the point rather than a concession: "2026-13" must behave EXACTLY like month="", and a
+    # test that pinned the old unbounded tail would have gone on passing while the two drifted
+    # apart. The equality below says the same thing without naming a horizon it does not own.
+    assert [e.date_str for e in got] == [
+        e.date_str for e in _service().get_professor_schedule(identity_label="Ana",
+                                                              role="EMPLOYEE", month="")]
+    assert [e.date_str for e in got] == ["01/09/2026", "08/09/2026", "29/09/2026"]
     assert " of " not in _proposal_line(_calendar_proposal_text(_proposal(_service(), month=raw)))
