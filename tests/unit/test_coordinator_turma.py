@@ -125,16 +125,19 @@ def test_every_line_names_its_class_group():
     out = _tool(_service())
     lines = [ln for ln in out.splitlines() if ln.startswith("- ")]
     assert len(lines) == 4
-    assert all(ln.startswith("- Turma: Turma ") for ln in lines), out
+    # The group moved from a LABELLED first field to the MIDDLE of "DD/MM · TURMA · Disciplina".
+    # The property is unchanged and is what this asserts: every line still names it, and the
+    # name is still the tenant's own. Only the label went.
+    assert all(len(ln.split(" · ")) >= 3 for ln in lines), out
     assert {"Turma SMP_33", "Turma SMP_34", "Turma EM_09", "Turma EM_10"} == {
-        ln.split("Turma: ", 1)[1].split(" | ", 1)[0] for ln in lines}
+        ln.split(" · ")[1] for ln in lines}
 
 
 def test_the_group_is_the_tenants_own_label_not_a_derived_one():
     """The name a human recognises is the one the tenant typed — the doubled space collapses in
     the config parser (#97) and nothing downstream re-spells it."""
     out = _tool(_service(), turma="SMP_34")
-    assert "Turma: Turma SMP_34" in out
+    assert "· Turma SMP_34 ·" in out
     assert "SMP34" not in out and "smp_34" not in out
 
 
@@ -149,17 +152,18 @@ def test_the_group_reaches_the_other_read_tools_too():
                                   {"role": "SUPERVISOR", "identity_label": "Sofia"})
         return "\n".join(b.text for b in res[0] if getattr(b, "type", None) == "text")
     out = asyncio.run(run())
-    assert "Turma: Turma SMP_33" in out
+    assert "· Turma SMP_33 ·" in out
 
 
 # ── property 5: one date, not three ──────────────────────────────────────────────────
 def test_the_date_is_said_once_and_normalized():
     out = _tool(_service(), turma="SMP_33")
     line = next(ln for ln in out.splitlines() if ln.startswith("- "))
-    assert line == ("- Turma: Turma SMP_33 | Data: 10/09/2026 | "
-                    "Disciplina: Redes | Professor: Ana"), line
+    assert line == "- 10/09 · Turma SMP_33 · Redes", line
     assert "00:00:00" not in out                      # the raw spreadsheet stamp is gone
-    assert out.count("10/09/2026") == 1               # said once, not three times
+    # Said once, and now the YEAR is said once too — by the month header, for the whole group.
+    assert out.count("10/09") == 1 and out.count("2026") == 1
+    assert out.splitlines()[0] == "**Setembro de 2026**"
 
 
 def test_a_column_that_is_not_the_same_date_survives():
@@ -169,10 +173,21 @@ def test_a_column_that_is_not_the_same_date_survives():
     store = InMemorySpreadsheetStore()
     store.put(_ID_A, "Secretaria",
               _grid([["Setembro", "Quinta", "2026-09-10 00:00:00", "Redes", "Ana"]]))
+    # The LISTING no longer carries the extra columns at all — it renders three chosen fields —
+    # so the collapse is asserted where the labelled form still lives: ``_fmt_entry``, which
+    # renders a calendar event's description. That is the surviving consumer of
+    # ``_says_the_same_date``, and dropping this assertion instead of moving it would have left
+    # that helper with nothing exercising the distinction it exists to make.
+    from cogno_praxis.coordinator.server import _fmt_entry
+    entries = CoordinatorService(store, cfg, today=lambda: _TODAY).get_professor_schedule(
+        role="SUPERVISOR", identity_label="Sofia", turma="SMP_33")
+    described = _fmt_entry(entries[0])
+    assert "Mes: Setembro" in described and "Dia: Quinta" in described
+    assert "Data: 10/09/2026" in described
+    assert described.count("10/09/2026") == 1
+    # and the listing, which chose its fields, shows the date once and no stray column
     out = _tool(CoordinatorService(store, cfg, today=lambda: _TODAY), turma="SMP_33")
-    assert "Mes: Setembro" in out and "Dia: Quinta" in out
-    assert "Data: 10/09/2026" in out
-    assert out.count("10/09/2026") == 1
+    assert out.count("10/09") == 1 and "Quinta" not in out
 
 
 def test_an_unparseable_date_is_still_shown_once():

@@ -79,5 +79,12 @@ class ReadReport:
     exactly today's behaviour."""
     errors: list[SheetReadError] = field(default_factory=list)
     hidden_past: int = 0         # classes dropped by the "today onward" default (0 = nothing cut)
+    #: Did the DEFAULT FORWARD HORIZON cut anything? A BIT, never a count, and the asymmetry
+    #: with ``hidden_past`` above it is deliberate — both are windows, both are defaults, and
+    #: neither is an incompleteness. ``errors`` is the only field here that measures, because
+    #: only there is the answer really partial. See ``server._fmt_report`` for the price a
+    #: COUNT was measured to carry: the judge reads a quantified outside as the execution
+    #: admitting unfinished work, and spends the turn's correction budget on it.
+    beyond_horizon: bool = False
     unmatched_turma: str = ""    # a `turma` filter that matched NO configured class group
     known_turmas: tuple[str, ...] = ()   # the configured group names, so the reply can name them

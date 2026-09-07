@@ -30,6 +30,7 @@ from cogno_praxis.coordinator.service import (
     CoordinatorAccessError,
     CoordinatorError,
     CoordinatorService,
+    _norm,
     _parse_date,
 )
 from cogno_praxis.coordinator.store import InMemorySpreadsheetStore
@@ -81,12 +82,14 @@ def _fmt_report(report: ReadReport) -> str:
     turns where nothing was; a permanent "all spreadsheets read" is noise. They appear when they
     are TRUE and are silent otherwise.
 
-    **Only ONE of these lines is an incompleteness, and they must not be worded alike.**
+    **Only ONE of these lines is an incompleteness, and they must not be worded alike.** Three
+    of the four are windows and filters working; ``errors`` is the one that is not.
 
     ``errors`` is one: a spreadsheet could not be read, so the answer really is partial and the
     reader needs to know HOW MUCH is missing. It COUNTS, deliberately.
 
-    ``hidden_past`` is not. The list is whole for the window the tool chose; the window is a
+    ``hidden_past`` is not, and neither is ``beyond_horizon`` — they are the same fact said at
+    the two ends of one window. The list is whole for the window the tool chose; the window is a
     default, not a failure. So this line carries ONE BIT — *something lies outside the window,
     and here is the argument that widens it* — and never a MEASUREMENT of what is outside.
 
@@ -124,6 +127,12 @@ def _fmt_report(report: ReadReport) -> str:
             "(This list covers today onward — this tool's default window. Earlier classes are "
             "one argument away: call again with `include_past=true`, but only if the user asks "
             "about the past.)")
+    if report.beyond_horizon:
+        lines.append(
+            "(This list covers the next 30 days — this tool's default window when no period was "
+            "asked for. Later classes are one argument away: call again with `month` set to the "
+            "month the user names. Offer to look further ahead; do not say how many are out "
+            "there.)")
     if report.errors:
         detail = "; ".join(f"{e.sheet_key}: {e.message}" for e in report.errors)
         lines.append(
@@ -132,9 +141,117 @@ def _fmt_report(report: ReadReport) -> str:
     return "\n".join(lines)
 
 
+#: Month names for the listing header, in the contact's language.
+#:
+#: Portuguese, and DECLARED here rather than read from ``calendar.month_name`` — the same carve-
+#: out the repo grants Portuguese domain data (the slang map, the birth-context regex): this
+#: string is not internal prose, it is the text a professor reads. ``calendar.month_name``
+#: answers in the SERVER's locale, which on this deployment is the container's, which is C —
+#: "September" in the middle of a Portuguese reply.
+#:
+#: One entry per month, index = month number. Delete one and that month loses its name, which is
+#: what ``test_coordinator_listing.py`` exists to catch.
+_MONTH_LABELS_PT: tuple[str, ...] = (
+    "", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+)
+
+
+def _month_header(when: date) -> str:
+    """``**Setembro de 2026**`` — the group header for one month, bold.
+
+    Bold is ``*…*``-free on purpose: WhatsApp and Telegram both render ``**text**`` from the
+    Markdown the rest of the system already emits, and the voicer that reproduces this block is
+    the same one that writes the surrounding sentences. A month the table does not name falls
+    back to its number rather than raising — a listing is not the place to discover a bad
+    constant, and ``09/2026`` is still readable."""
+    name = _MONTH_LABELS_PT[when.month] if when.month < len(_MONTH_LABELS_PT) else ""
+    return f"**{name} de {when.year}**" if name else f"**{when.month:02d}/{when.year}**"
+
+
+def _entry_status(e: ClassEntry, defaults: tuple[str, ...], column: str) -> str:
+    """This row's status, but ONLY when it is not the ordinary one — else ``""``.
+
+    Read by HEADER NAME (the tenant's ``COLUMN_STATUS``), never by position, and compared with
+    ``_norm`` so accents and case do not decide whether a professor is warned."""
+    want = _norm(column)
+    if not want:
+        return ""
+    for h, c in zip(e.header, e.cells):
+        if _norm(h) != want:
+            continue
+        val = c.strip()
+        if not val or any(_norm(val) == _norm(d) for d in defaults):
+            return ""
+        return val
+    return ""
+
+
+def _fmt_line(e: ClassEntry, *, defaults: tuple[str, ...] = (), status_column: str = "") -> str:
+    """One class as the line a professor actually reads: ``08/09 · DE_09 · Bancos NoSQL``.
+
+    Three facts, in the order the eye needs them under a header that already fixed the month:
+    the DAY, the class GROUP, the DISCIPLINE. Plus the status, and only when it is not the
+    ordinary one.
+
+    **What this drops is the point.** The old line was ``Turma: X | Data: Y | Disciplina: Z``
+    with every remaining non-empty column appended as ``Header: value`` — a label on every field
+    of every row, repeating on all 33 lines the words the reader learned on the first one, and
+    the year repeating under a header that just said it. The class group loses its ``Turma``
+    prefix here because the header of the line beside it never needed one either.
+
+    ``_fmt_entry`` above keeps the labelled form, and that is not an oversight: it renders the
+    DESCRIPTION of a calendar event, where there is no listing around the line to give a bare
+    field its meaning."""
+    day = e.when.strftime("%d/%m") if e.when else e.date_str.strip()
+    parts = [p for p in (day, e.sheet_key.strip(), e.subject.strip()) if p]
+    status = _entry_status(e, defaults, status_column)
+    if status:
+        parts.append(status)
+    return " · ".join(parts) if parts else e.date_str
+
+
+def _status_args(svc: CoordinatorService) -> dict:
+    """The tenant's status vocabulary, as the two keyword arguments the listing takes.
+
+    One reader of ``cfg`` instead of six: the six read tools all render the same lines, and a
+    seventh arriving later must not have to remember to pass this."""
+    return {"defaults": svc.cfg.status_default_labels, "status_column": svc.cfg.column_status}
+
+
 def _fmt_list(entries: list[ClassEntry], *, empty: str,
-              report: Optional[ReadReport] = None) -> str:
-    body = "\n".join(f"- {_fmt_entry(e)}" for e in entries) if entries else empty
+              report: Optional[ReadReport] = None,
+              defaults: tuple[str, ...] = (), status_column: str = "") -> str:
+    """The listing: classes grouped under a bold month header, in date order.
+
+    **This function is not adding a shape — it is refusing to destroy one.** Measured on the
+    box's own turns for 2026-09-06: handed the flat labelled block, the executor's own draft came
+    back grouped by month, bold, one line per class, and had even folded four same-discipline
+    dates onto one line. Nothing asked it to; that is simply what this data wants to look like.
+    Then the voicer discarded that draft's shape and reproduced the flat block instead, because
+    ``limits.txt`` told it the raw tool output IS the expected format. The model was right and
+    the prompt overruled it. Rendering the shape HERE is what makes the instruction and the
+    result the same thing, so nothing downstream has to choose between them.
+
+    Entries whose date could not be parsed keep the labelled ``_fmt_entry`` form and go last,
+    with no header of their own: the read deliberately never hides what it cannot date, and a
+    row that reached here without a month is exactly the row whose every column is worth
+    showing."""
+    if not entries:
+        body = empty
+    else:
+        chunks: list[str] = []
+        current: Optional[tuple[int, int]] = None
+        for e in entries:
+            if e.when is None:
+                chunks.append(f"- {_fmt_entry(e)}")
+                continue
+            key = (e.when.year, e.when.month)
+            if key != current:
+                chunks.append(("\n" if chunks else "") + _month_header(e.when))
+                current = key
+            chunks.append(f"- {_fmt_line(e, defaults=defaults, status_column=status_column)}")
+        body = "\n".join(chunks)
     footer = _fmt_report(report) if report else ""
     return f"{body}\n\n{footer}" if footer else body
 
@@ -266,7 +383,7 @@ def build_server(service: Optional[CoordinatorService] = None, *,
             svc.get_professor_schedule(professor=professor, month=month, discipline=discipline,
                                        turma=turma, include_past=include_past, report=report,
                                        identity_label=identity_label, role=role),
-            empty="No classes found.", report=report))
+            empty="No classes found.", report=report, **_status_args(svc)))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_professor_info(professor: str = "", identity_label: str = "", role: str = "") -> str:
@@ -286,7 +403,7 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         return _guard(lambda: _fmt_list(
             svc.check_deadlines(professor=professor, identity_label=identity_label, role=role,
                                 report=report),
-            empty="No disciplines within the grade/attendance deadline window.", report=report))
+            empty="No disciplines within the grade/attendance deadline window.", report=report, **_status_args(svc)))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_weekly_briefing(professor: str = "", identity_label: str = "", role: str = "") -> str:
@@ -296,7 +413,7 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         return _guard(lambda: _fmt_list(
             svc.weekly_briefing(professor=professor, identity_label=identity_label, role=role,
                                 report=report),
-            empty="No classes in the next 7 days.", report=report))
+            empty="No classes in the next 7 days.", report=report, **_status_args(svc)))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def check_ibope_status(professor: str = "", identity_label: str = "", role: str = "") -> str:
@@ -306,7 +423,7 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         return _guard(lambda: _fmt_list(
             svc.ibope_status(professor=professor, identity_label=identity_label, role=role,
                              report=report),
-            empty="No last classes today — no survey reminders needed.", report=report))
+            empty="No last classes today — no survey reminders needed.", report=report, **_status_args(svc)))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def find_replacement_slot(professor: str = "", identity_label: str = "", role: str = "") -> str:
@@ -316,7 +433,7 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         return _guard(lambda: _fmt_list(
             svc.find_replacement_slot(professor=professor, identity_label=identity_label,
                                       role=role, report=report),
-            empty="No open slots in the next 21 days.", report=report))
+            empty="No open slots in the next 21 days.", report=report, **_status_args(svc)))
 
     # READ-ONLY, and that annotation is the point rather than a detail. ``send_schedule_to_
     # calendar`` is held before it runs — by its own ``destructiveHint`` and, on a host that

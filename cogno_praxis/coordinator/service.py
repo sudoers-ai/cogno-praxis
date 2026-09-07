@@ -37,6 +37,19 @@ _log = logging.getLogger(__name__)
 
 _OVERSIGHT_ROLES = frozenset({"SUPERVISOR", "ADMIN", "OWNER"})
 GRADE_GRACE_DAYS = 14           # parent parity: grades/attendance due within 14d of the last class
+
+#: How far ahead a schedule read looks when the caller named NO period at all.
+#:
+#: The old default was ``[today, ∞)``, which on the box's own data answered "traga minhas aulas"
+#: with **33 classes running to June 2027** — the whole academic year, in one wall of lines a
+#: professor has to scroll past to find this week. The window is not a limit on what may be
+#: asked for; it is the answer to the question that was actually asked, and every wider read is
+#: one argument away (``month``, ``include_past``), named in the footer the cut raises.
+#:
+#: This is a UX default and NOTHING ELSE. It is emphatically not the repair for a class that
+#: went missing from a listing on 2026-09-06: that class was 24 days out, INSIDE this horizon,
+#: and the same unfiltered read returned it seven minutes later. See the PR body.
+DEFAULT_HORIZON_DAYS = 30
 BRIEFING_HORIZON_DAYS = 7
 REPLACEMENT_HORIZON_DAYS = 21
 _DISCIPLINE_FUZZY_THRESHOLD = 0.75    # parent parity: per-token SequenceMatcher ratio floor
@@ -287,10 +300,15 @@ class CalendarProposal:
 
 class CoordinatorService:
     def __init__(self, store: SpreadsheetStore, config: CoordinatorConfig,
-                 *, today: Optional[Callable[[], date]] = None) -> None:
+                 *, today: Optional[Callable[[], date]] = None,
+                 horizon_days: Optional[int] = None) -> None:
         self.store = store
         self.cfg = config
         self._today: Callable[[], date] = today or (lambda: datetime.now().date())
+        # Injectable so a test can state the horizon it is exercising instead of arithmetic
+        # against a module constant; 0 disables the forward cut entirely (the old behaviour).
+        self.horizon_days: int = (DEFAULT_HORIZON_DAYS if horizon_days is None
+                                  else max(0, int(horizon_days)))
 
     # ── layout + row helpers ─────────────────────────────────────────────────────────
     def _resolve_columns(self, header: list[str]) -> ColumnLayout:
@@ -391,7 +409,7 @@ class CoordinatorService:
     def get_professor_schedule(self, *, professor: str = "", role: str = "",
                                identity_label: str = "", month: str = "",
                                discipline: str = "", turma: str = "",
-                               include_past: bool = False,
+                               include_past: bool = False, apply_horizon: bool = True,
                                report: Optional[ReadReport] = None) -> list[ClassEntry]:
         """A professor's (or, for oversight, anyone's) classes, optionally narrowed by ``month``
         (``'2026-03'``, ``'03'``, or a month name in Portuguese or English — ``'março'``,
@@ -405,11 +423,31 @@ class CoordinatorService:
         THAT (guessing which group was meant) is how a wrong list of dates gets a professor to
         the wrong classroom.
 
-        **The window is ``[today, ∞)`` by default.** A schedule spreadsheet holds the whole
-        academic year, and the question a professor asks is almost always about what is COMING:
-        returning the year and leaving the model to choose is how an April opening workshop got
-        read back on a conversation held in September. Past classes come back only when the
-        caller asks — ``include_past=True``, or by naming a month that has already ENDED, which
+        **The window is ``[today, today + horizon_days]`` when the caller named no period.** Both
+        ends exist for the same reason and neither is a limit on what may be asked. A schedule
+        spreadsheet holds the whole academic year, and the question a professor asks is almost
+        always about what is COMING: returning the year and leaving the model to choose is how an
+        April opening workshop got read back on a conversation held in September, and — measured
+        on the box's own turns — how "traga minhas aulas" answered with 33 classes running into
+        June 2027.
+
+        **The forward cut yields to any period the caller NAMED**, because then the period IS the
+        question: a ``month`` (even a far one) and ``include_past`` both suppress it. So does a
+        ``discipline``, which is a LOOKUP for one named thing — "when is the opening workshop?"
+        must not be answered "nothing" by a horizon when the answer exists two months out. A
+        ``turma`` does not: it narrows WHOSE upcoming classes, not WHEN, so the default stands.
+        ``report.beyond_horizon`` records that the cut acted, so the footer can name the argument
+        that widens it — a BIT, never a count (see ``server._fmt_report``).
+
+        **``apply_horizon=False`` is for a caller that is not READING a list**, and the calendar
+        export is the whole of it. A default that exists so a professor does not have to scroll
+        past June has no business deciding what lands in their calendar: a "send me my classes"
+        that quietly exported 3 of 6 would be the same wrong answer this window was meant to
+        stop, delivered somewhere the contact cannot see it. The forward end is a READING
+        comfort; the past end (``include_past``) is a real question about scope and is NOT
+        waived here.
+
+        Past classes come back only when the caller asks — ``include_past=True``, or by naming a month that has already ENDED, which
         is the same request said differently. The cut is by DAY, not by clock: a class earlier
         TODAY still counts as today, because "what do I have today" asked at 3pm must not answer
         an empty list. Entries whose date could not be parsed are never cut — the filter refuses
@@ -442,6 +480,13 @@ class CoordinatorService:
                 if report is not None:
                     report.hidden_past += len(entries) - len(kept)
                 entries = kept
+            if (apply_horizon and self.horizon_days > 0 and not mspec
+                    and not discipline.strip()):
+                horizon = today + timedelta(days=self.horizon_days)
+                near = [e for e in entries if e.when is None or e.when <= horizon]
+                if report is not None and len(near) != len(entries):
+                    report.beyond_horizon = True
+                entries = near
         return entries
 
     def check_deadlines(self, *, professor: str = "", role: str = "",
@@ -659,7 +704,7 @@ class CoordinatorService:
         """
         entries = self.get_professor_schedule(
             professor=professor, role=role, identity_label=identity_label, month=month,
-            turma=turma, report=report)
+            turma=turma, apply_horizon=False, report=report)
         # WHO the calendar is about, resolved exactly as ``_visible`` resolves it: an oversight
         # caller means whoever they named (empty = the whole master schedule), everyone else is
         # pinned to themselves. Reading it as "the named one, else me" would quietly turn a
