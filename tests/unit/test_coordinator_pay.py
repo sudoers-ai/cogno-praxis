@@ -146,6 +146,27 @@ def test_the_same_discipline_may_carry_DIFFERENT_hours_in_different_class_groups
     assert by_key[("Turma BB_02", "09/2026")].lines[0].hours_each == 8
 
 
+def test_the_estimate_is_not_cut_by_the_listing_horizon():
+    """The 30-day default window is a READING convenience — it exists so a professor scanning a
+    list does not have to scroll. An estimate is not a list, and one silently cut at 30 days
+    answers "quanto eu recebo" with some of the months and no sign that it did. That is the
+    calendar export's own "quietly exported 3 of 6" defect said about money, where the reader
+    has no way to notice the shortfall. The export opts out for that reason; so does this."""
+    from cogno_praxis.coordinator.service import DEFAULT_HORIZON_DAYS
+    est = _svc().estimate_professor_pay(identity_label=ME)      # today = 01/09/2026
+    months = {g.month for g in est.groups}
+    assert "10/2026" in months, (
+        f"October is {DEFAULT_HORIZON_DAYS}+ days out and belongs in the estimate")
+    assert est.hours == pytest.approx(60)
+
+
+def test_a_NAMED_period_still_narrows_the_estimate():
+    """The twin: opting out of the default window is not opting out of filtering."""
+    est = _svc().estimate_professor_pay(identity_label=ME, period="2026-10")
+    assert [(g.turma, g.month) for g in est.groups] == [("Turma AA_01", "10/2026")]
+    assert est.hours == pytest.approx(20)
+
+
 def test_a_discipline_whose_hours_the_sheet_does_not_carry_is_NAMED_never_zeroed():
     """Zero is a figure and it is false: it reads as "that class pays nothing". The honest
     answer names the discipline and leaves it out of the sum."""

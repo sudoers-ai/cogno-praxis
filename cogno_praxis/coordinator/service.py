@@ -720,8 +720,15 @@ class CoordinatorService:
         rate = self.cfg.pay_rate_per_hour
         assert rate is not None                        # pay_undeclared already refused a None
 
+        # ``apply_horizon=False``, for the reason the calendar export already opts out: the
+        # 30-day default exists so a professor READING a list does not have to scroll, and this
+        # is not a list. An estimate silently cut at 30 days answers "quanto eu recebo" with
+        # part of the months and no sign that it did — which is the export's "3 of 6" defect
+        # said about money, where the reader has no way at all to notice the shortfall. A named
+        # ``period`` still filters exactly as it does everywhere else.
         entries = self.get_professor_schedule(
-            professor="", role=role, identity_label=me, month=period, turma=turma, report=report)
+            professor="", role=role, identity_label=me, month=period, turma=turma,
+            apply_horizon=False, report=report)
         hours_by_sheet: dict[str, dict[str, float]] = {}
         # keyed by (class group, sortable year-month) so the two grouping axes the answer
         # promises are the two axes it is actually ordered by. Chronological order across the
