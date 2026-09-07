@@ -25,6 +25,7 @@ from datetime import date
 
 from cogno_praxis.coordinator.ics import CalendarEvent, CalendarSender
 from cogno_praxis.coordinator.config import CoordinatorConfig
+from cogno_praxis.coordinator.pay import render_pay_block
 from cogno_praxis.coordinator.service import (
     CalendarProposal,
     CoordinatorAccessError,
@@ -355,6 +356,14 @@ def build_server(service: Optional[CoordinatorService] = None, *,
             return (f"NOT PERMITTED: {exc} This is an access rule working as intended, not a "
                     f"failure — state the limit plainly and offer what IS allowed.")
         except CoordinatorError as exc:
+            # A tenant that has not DECLARED something is not a system that BROKE, and the two
+            # must not share a word. "ERROR" is what a model relays as "não consegui acessar";
+            # this one has to reach the contact as a configuration that is missing, which is a
+            # true sentence somebody can act on. The distinction is the same one ``NOT
+            # PERMITTED`` above draws for a rule that worked.
+            if "has not configured" in str(exc):
+                return (f"NOT CONFIGURED: {exc} This is missing configuration, not a "
+                        f"malfunction — say so plainly and estimate nothing.")
             return f"ERROR: {exc}"
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -426,6 +435,43 @@ def build_server(service: Optional[CoordinatorService] = None, *,
             svc.ibope_status(professor=professor, identity_label=identity_label, role=role,
                              report=report),
             empty="No last classes today — no survey reminders needed.", report=report, **_status_args(svc)))
+
+    # READ-ONLY, and self-only inside the service. The scope this opened is "a professor may
+    # ask what THEY earn"; there is no argument here that reaches anybody else's figure, and
+    # ``professor`` exists only so a model that tries gets a stated refusal rather than being
+    # quietly handed its own numbers under someone else's name.
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    def estimate_professor_pay(period: str = "", turma: str = "", professor: str = "",
+                               identity_label: str = "", role: str = "") -> str:
+        """Estimate what the CALLER'S OWN classes come to: classes × the discipline's hour total
+        × the institution's declared hourly rate, plus the IBOPE bonus when a survey result
+        exists. Use it for "quanto eu recebo/vou receber", "qual minha remuneração", "quanto dá
+        o meu mês". ``period`` is a month exactly like get_professor_schedule's ``month``
+        ("setembro", "September", "09", "2026-09"); leave it EMPTY for everything from today
+        onward, and call once per month when the user names two. ``turma`` narrows to one class
+        group. Nothing is written and nothing is sent.
+        This is ONLY ever about the person asking: leave ``professor`` EMPTY. Another
+        professor's remuneration is not available here to anyone, whatever their role.
+        Its answer is a READY-MADE BLOCK — relay it as it came, keeping the bold headers and the
+        lines; do not re-add up, re-round or re-order it. If it says the IBOPE result was NOT
+        FOUND, that sentence and the hypotheses under it must survive into the reply, all of
+        them: they are what stops a single figure being read as the amount that will be paid.
+        If it comes back NOT CONFIGURED, this institution has not declared the pay figures —
+        say exactly that and do not estimate anything from memory."""
+        report = ReadReport()
+
+        def _run() -> str:
+            est = svc.estimate_professor_pay(professor=professor, period=period, turma=turma,
+                                             identity_label=identity_label, role=role,
+                                             report=report)
+            if not est.groups:
+                return ("No classes found for this period, so there is nothing to estimate. "
+                        "Say that plainly — it is an answer, not a failure.")
+            footer = _fmt_report(report)
+            block = render_pay_block(est)
+            return f"{block}\n\n{footer}" if footer else block
+
+        return _guard(_run)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def find_replacement_slot(professor: str = "", identity_label: str = "", role: str = "") -> str:

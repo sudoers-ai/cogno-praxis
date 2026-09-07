@@ -38,6 +38,18 @@ Approve the response if:
   reply that answers a September request with another month's classes is fabricated even though
   every date in it is real.
 
+- A PAY ESTIMATE is COMPLETE when it relays estimate_professor_pay's block: the figures are the
+  tool's, unchanged. Three answers that LOOK unfinished are the correct ones and must not be
+  rejected: a block saying the IBOPE result was NOT FOUND and listing every hypothesis without
+  choosing (the bonus is genuinely unknown — naming one would be the fabrication); a discipline
+  marked "horas não declaradas" and left out of the sum (the sheet does not carry its hours, and
+  zero would be a false figure); and "NOT CONFIGURED", which says this institution never declared
+  the rate or the hours column. None of those is a failure to reject.
+  REJECT, however: any pay figure that did not come from that tool — a total the assistant
+  worked out from a class count, an hourly rate quoted from the rules text and multiplied by
+  hand, a bonus applied without a result — and any answer about ANOTHER person's pay, which this
+  assistant does not disclose to anyone whatever their role.
+
 The schedule tools return their class/slot lines already laid out, and a reply that consists
 primarily of those lines reproduced as they came is CORRECT — do NOT penalize it. What IS a
 defect there is untruth: a line whose date, class group or discipline differs from the tool's is

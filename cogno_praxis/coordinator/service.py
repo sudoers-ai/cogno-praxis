@@ -30,6 +30,12 @@ from cogno_praxis.coordinator.ics import (
     sequence_now,
 )
 from cogno_praxis.coordinator.config import CoordinatorConfig
+from cogno_praxis.coordinator.pay import (
+    PayEstimate,
+    PayGroup,
+    PayLine,
+    parse_money,
+)
 from cogno_praxis.coordinator.store import SpreadsheetStore
 from cogno_praxis.coordinator.types import ClassEntry, ColumnLayout, ReadReport, SheetReadError
 
@@ -587,6 +593,166 @@ class CoordinatorService:
                 last_of[k] = e.when
         return [e for e in entries if e.when == today and not e.is_free_slot
                 and last_of.get((e.sheet_id, _norm(e.professor), _norm(e.subject))) == today]
+
+    # ── the professor's OWN pay (read-only, self-only) ───────────────────────────────
+    def _hours_by_subject(self, sheet_id: str, sheet_key: str,
+                          report: Optional[ReadReport]) -> dict[str, float]:
+        """``{normalised discipline: hours}`` from the tenant's declared hours column.
+
+        The tab, the range and the column all come from the config. Nothing here looks for a
+        header that "seems like" hours: only :attr:`CoordinatorConfig.column_hours`, matched the
+        same way :meth:`_resolve_columns` matches the other three roles. A tenant who has not
+        declared it never reaches this method — :meth:`estimate_professor_pay` refuses first.
+
+        A row this cannot read is simply absent from the map, which downstream becomes "horas
+        não declaradas" for that discipline. It never becomes a zero.
+        """
+        try:
+            rows = self.store.read_range(sheet_id, self.cfg.tab_hours, self.cfg.range_hours)
+        except Exception as exc:                       # noqa: BLE001 — the store is a PORT
+            _log.warning("coordinator: hours tab of %r (%s) could not be read: %r",
+                         sheet_key, sheet_id, exc)
+            if report is not None:
+                report.errors.append(_read_error(sheet_key, sheet_id, exc))
+            return {}
+        if not rows:
+            return {}
+        header = [c.strip().lower() for c in rows[0]]
+        h_idx = next((i for i, c in enumerate(header)
+                      if c == self.cfg.column_hours.strip().lower()), None)
+        s_idx = next((i for i, c in enumerate(header)
+                      if c == self.cfg.column_subject.strip().lower()), None)
+        if h_idx is None or s_idx is None:
+            _log.warning("coordinator: hours tab %r of %r has no %r/%r column — no hours read",
+                         self.cfg.tab_hours, sheet_key, self.cfg.column_hours,
+                         self.cfg.column_subject)
+            return {}
+        out: dict[str, float] = {}
+        for row in rows[1:]:
+            subject = self._cell(row, s_idx)
+            hours = parse_money(self._cell(row, h_idx))
+            if subject and hours is not None and hours > 0:
+                out.setdefault(_norm(subject), hours)
+            elif subject:
+                _log.debug("coordinator: %r on %r carries no readable hour total", subject,
+                           sheet_key)
+        return out
+
+    def _ibope_result(self, *, identity_label: str,
+                      report: Optional[ReadReport]) -> Optional[float]:
+        """The caller's own IBOPE percentage, or ``None`` — and ``None`` means NOT FOUND.
+
+        ``None`` covers four different worlds on purpose, because they all license the same
+        answer and none of them licenses a figure: the tenant declared no IBOPE tab, the tab was
+        unreadable, no row names this professor, or SEVERAL rows do and disagree. That last one
+        is the reason this returns rather than picks. Two results and a choice between them is
+        an invented bonus wearing a real number, and the professor cannot tell which it was.
+        """
+        tab, col = self.cfg.tab_ibope.strip(), self.cfg.column_ibope.strip()
+        if not tab or not col:
+            return None
+        found: set[float] = set()
+        for key, sid in self.cfg.spreadsheets.items():
+            try:
+                rows = self.store.read_range(sid, tab, self.cfg.range_ibope)
+            except Exception as exc:                   # noqa: BLE001 — the store is a PORT
+                _log.warning("coordinator: IBOPE tab of %r (%s) could not be read: %r",
+                             key, sid, exc)
+                if report is not None:
+                    report.errors.append(_read_error(key, sid, exc))
+                continue
+            if not rows:
+                continue
+            header = [c.strip().lower() for c in rows[0]]
+            v_idx = next((i for i, c in enumerate(header) if c == col.lower()), None)
+            p_idx = next((i for i, c in enumerate(header)
+                          if c == self.cfg.column_professor.strip().lower()), None)
+            if v_idx is None or p_idx is None:
+                continue
+            want = _norm(identity_label)
+            for row in rows[1:]:
+                if want and want not in _norm(self._cell(row, p_idx)):
+                    continue
+                pct = parse_money(self._cell(row, v_idx).rstrip("%"))
+                if pct is not None:
+                    found.add(pct)
+        return found.pop() if len(found) == 1 else None
+
+    def estimate_professor_pay(self, *, professor: str = "", role: str = "",
+                               identity_label: str = "", period: str = "", turma: str = "",
+                               report: Optional[ReadReport] = None) -> PayEstimate:
+        """What the caller's OWN classes in ``period`` come to, grouped by class group and month.
+
+        **Self-only, for every role, and that is the whole shape of this capability.** Every
+        other read here scopes by role — a supervisor sees the master schedule — and this one
+        does not: an oversight role gets exactly the same refusal a professor gets for asking
+        about somebody else. The scope this tool opened is "a professor may ask what THEY earn",
+        and a capability whose stated reason is *the money is yours* has no branch where the
+        money is somebody else's. Passing ``professor`` with anyone but the caller's own name
+        raises :class:`CoordinatorAccessError`; an unauthenticated caller (no
+        ``identity_label``) raises too, because with nobody named "their own" has no referent.
+
+        Refuses with :class:`CoordinatorError` when the tenant's rules do not declare the rate
+        or the hours column, NAMING the keys — see :attr:`CoordinatorConfig.pay_undeclared`.
+        There is no branch that estimates without them.
+
+        The arithmetic is ``classes × hours-per-discipline × rate``, plus an IBOPE bonus when —
+        and only when — a survey result was actually read. It is READ-ONLY: nothing here writes
+        to a spreadsheet, sends anything, or records a figure.
+        """
+        me = identity_label.strip()
+        if not me:
+            raise CoordinatorAccessError(
+                "This estimate is only ever about the person asking, and this turn carries no "
+                "identified professor.")
+        target = professor.strip()
+        if target and _norm(target) != _norm(me):
+            raise CoordinatorAccessError(
+                "You can only see your own pay estimate — another professor's remuneration is "
+                "not something this assistant discloses to anyone.")
+        missing = self.cfg.pay_undeclared
+        if missing:
+            raise CoordinatorError(
+                f"This institution has not configured the pay figures: {', '.join(missing)} "
+                f"{'is' if len(missing) == 1 else 'are'} missing from the persona rules. "
+                f"Nothing can be estimated without {'it' if len(missing) == 1 else 'them'}, "
+                f"and nothing here will be assumed.")
+        rate = self.cfg.pay_rate_per_hour
+        assert rate is not None                        # pay_undeclared already refused a None
+
+        entries = self.get_professor_schedule(
+            professor="", role=role, identity_label=me, month=period, turma=turma, report=report)
+        hours_by_sheet: dict[str, dict[str, float]] = {}
+        # keyed by (class group, sortable year-month) so the two grouping axes the answer
+        # promises are the two axes it is actually ordered by. Chronological order across the
+        # whole read interleaves the groups, which reads as one list that keeps changing subject.
+        buckets: dict[tuple[str, tuple[int, int]], dict[str, int]] = {}
+        missing_hours: list[str] = []
+        for e in entries:
+            if e.is_free_slot or e.when is None or not e.subject.strip():
+                continue
+            if e.sheet_key not in hours_by_sheet:
+                hours_by_sheet[e.sheet_key] = self._hours_by_subject(e.sheet_id, e.sheet_key,
+                                                                     report)
+            k = (e.sheet_key, (e.when.year, e.when.month))
+            buckets.setdefault(k, {})
+            buckets[k][e.subject.strip()] = buckets[k].get(e.subject.strip(), 0) + 1
+
+        groups: list[PayGroup] = []
+        for (turma_key, (year, month)) in sorted(buckets):
+            lines: list[PayLine] = []
+            for subject, count in buckets[(turma_key, (year, month))].items():
+                hours = hours_by_sheet.get(turma_key, {}).get(_norm(subject))
+                if hours is None and subject not in missing_hours:
+                    missing_hours.append(subject)
+                lines.append(PayLine(subject=subject, classes=count, hours_each=hours))
+            groups.append(PayGroup(turma=turma_key, month=f"{month:02d}/{year}", lines=lines))
+
+        pct = self._ibope_result(identity_label=me, report=report)
+        return PayEstimate(
+            rate=rate, groups=groups, hours_missing=tuple(missing_hours),
+            tiers=self.cfg.pay_bonus_tiers, ibope_found=pct is not None, ibope_pct=pct,
+            ibope_tab=self.cfg.tab_ibope.strip(), period=month_label(period))
 
     def get_professor_info(self, *, professor: str = "", role: str = "",
                            identity_label: str = "",

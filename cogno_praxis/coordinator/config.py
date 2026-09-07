@@ -26,12 +26,27 @@ Format (all sections optional; sensible defaults shown)::
     FIXED_COLUMNS: "Data, Dia"
     FREE_SLOT_LABELS: "Livre, Reposição"
     SKIP_LABELS: "Recesso, Feriado, Férias"
+
+    # The professor-pay estimate. NONE of these has a business default: every one of them
+    # is a number or a column name only the tenant knows, and a default here would be this
+    # library guessing at somebody's pay. Absent → the estimate refuses and names the key.
+    COLUMN_HOURS: "Carga Horária"       # the per-discipline hour total, on TAB_HOURS
+    TAB_HOURS: "Informações Adicionais" # optional — defaults to TAB_PROFESSORS
+    RANGE_HOURS: "A1:E50"               # optional — defaults to RANGE_PROFESSORS
+    PAY_RATE_PER_HOUR: 120,00           # the hourly rate
+    PAY_BONUS_TIERS: "80-89 = 30, 90+ = 40"   # optional IBOPE bonus bands, R$/hour
+    TAB_IBOPE: "IBOPE"                  # where a survey RESULT is recorded, if anywhere
+    RANGE_IBOPE: "A1:Z200"              # optional — defaults to A1:Z200
+    COLUMN_IBOPE: "Resultado"           # the percentage column on that tab
 """
 
 from __future__ import annotations
 
 import logging
 import re
+from typing import Optional
+
+from cogno_praxis.coordinator.pay import BonusTier, parse_bonus_tiers, parse_money
 
 _log = logging.getLogger(__name__)
 
@@ -132,6 +147,31 @@ class CoordinatorConfig:
             ("Recesso", "Feriado", "Emenda", "Férias", "Reservado",
              "Feriado Nacional", "Recesso Escolar"))
 
+        # ── the professor-pay estimate ───────────────────────────────────────────────
+        # Read here, and DELIBERATELY WITHOUT DEFAULTS, unlike every field above. The others
+        # default because a wrong guess costs a mis-labelled column; these are a person's pay.
+        # A missing key must reach the professor as "this institution has not declared it",
+        # which is a true sentence they can act on, and never as a number this library chose.
+        #
+        # WHERE the hours live is two questions, and only the second one is required. The TAB
+        # falls back to the professors tab because that tab is itself a tenant declaration —
+        # falling back to another of the tenant's own answers is not a guess. The COLUMN has no
+        # such fallback: it is the one name nothing else in this config can stand in for.
+        self.tab_hours: str = _find(rules, "TAB_HOURS", self.tab_professors)
+        self.range_hours: str = _find(rules, "RANGE_HOURS", self.range_professors)
+        self.column_hours: str = _find(rules, "COLUMN_HOURS", "")
+        # The money. ``None``/``()`` mean UNDECLARED, and the two are not the same thing: no
+        # rate means no estimate at all, while no tier means the rules declare no bonus — a
+        # complete answer with nothing hypothetical in it.
+        self.pay_rate_per_hour: Optional[float] = parse_money(_find(rules, "PAY_RATE_PER_HOUR", ""))
+        self.pay_bonus_tiers: tuple[BonusTier, ...] = parse_bonus_tiers(
+            _find(rules, "PAY_BONUS_TIERS", ""))
+        # WHERE a survey RESULT would be, when the tenant records one anywhere. Absent is the
+        # ordinary case and is not a defect: it produces the hypotheses, named as hypotheses.
+        self.tab_ibope: str = _find(rules, "TAB_IBOPE", "")
+        self.range_ibope: str = _find(rules, "RANGE_IBOPE", "A1:Z200")
+        self.column_ibope: str = _find(rules, "COLUMN_IBOPE", "")
+
     # ── SPREADSHEETS parsing ─────────────────────────────────────────────────────────
     @staticmethod
     def _parse_spreadsheets(rules: str) -> dict[str, str]:
@@ -194,3 +234,18 @@ class CoordinatorConfig:
     def configured(self) -> bool:
         """True iff at least one spreadsheet is declared (else the service short-circuits)."""
         return bool(self.spreadsheets)
+
+    @property
+    def pay_undeclared(self) -> tuple[str, ...]:
+        """The pay keys this tenant has NOT declared — ``()`` when an estimate is possible.
+
+        One place answers "may this be attempted at all", and it answers by NAMING what is
+        missing rather than with a bare no: the refusal a professor reads has to tell whoever
+        administers the tenant which line to add, or it is a dead end wearing a sentence.
+        """
+        missing: list[str] = []
+        if self.pay_rate_per_hour is None:
+            missing.append("PAY_RATE_PER_HOUR")
+        if not self.column_hours.strip():
+            missing.append("COLUMN_HOURS")
+        return tuple(missing)
