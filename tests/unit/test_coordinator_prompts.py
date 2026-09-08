@@ -222,3 +222,38 @@ def test_the_judge_is_told_a_proposal_is_a_complete_answer():
     limits = _flat("limits")
     assert "A PROPOSAL is a COMPLETE and CORRECT answer" in limits
     assert "asking IS the goal of such a turn" in limits
+
+
+def test_the_executor_is_told_a_bare_yes_is_not_an_answer_to_an_invitation():
+    """The one rule the tool cannot enforce for itself, and the reason it is here.
+
+    ``record_class_response`` refuses a call with no date — but it never sees the message, so
+    nothing in the vertical can stop the MODEL from supplying a date the contact did not give.
+    This house has already measured what that costs on a neighbouring flow: a proposal, one
+    unrelated question, then "sim", and the yes belonged to the question in the middle. The
+    instruction is the only lever there is, and a presence assertion is what keeps it from being
+    deleted silently."""
+    system = _flat("system")
+    assert "record_class_response(class_date, answer, turma?)" in system
+    assert 'A bare "sim" is NOT an answer to this' in system
+    assert "Never supply a date the contact did not give in this message" in system
+    # the closed field, spelled out, so the model does not pass the contact's own word
+    assert "exactly ACCEPTED or DECLINED" in system
+
+
+def test_the_executor_is_told_that_answering_twice_is_one_answer():
+    """The other half of the idempotency, on the side the code cannot reach: the tool reports
+    "already recorded", and a model that reads that as a failure retries it into a loop."""
+    system = _flat("system")
+    assert "Two identical answers are ONE answer" in system
+    assert "no change was made and none is needed" in system
+
+
+def test_the_judge_is_told_an_invitation_left_open_is_a_complete_answer():
+    """Same family as the PROPOSAL clause above, and the same measured cost: a fail-closed judge
+    reading "I could not tell which class — which one did you mean?" as an unfinished goal, and
+    spending the correction budget until the turn ships a handoff over a correct reply."""
+    limits = _flat("limits")
+    assert "record_class_response" in limits
+    assert "an invitation left open is a real answer" in limits
+    assert 'was ALREADY recorded ... no change was made' in limits

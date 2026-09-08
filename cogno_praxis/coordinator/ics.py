@@ -8,13 +8,20 @@ two are not a parameter apart. A booking has an appointment id and a guest; a cl
 NEW entry point beside that one, and the booking invite is not touched by it:
 ``build_ics_event`` still renders the same bytes it rendered yesterday.
 
-**The reply is not read, and this file will not pretend otherwise.** Since 2026-09-08 the
-events carry ``RSVP=TRUE``, so the professor's own calendar offers them accept and decline —
-and NOTHING IN THIS SYSTEM EVER LEARNS WHICH THEY CHOSE. There is no IMAP or POP path in, no
-``METHOD:REPLY`` parser, no ``PARTSTAT`` reader, and no column in any table that records an
-acceptance. A reply is delivered to the ``ORGANIZER`` mailbox and read by whoever reads that
-mailbox, which is a person, not this code. Anyone building on top of this should assume the
-loop is OPEN: a professor may decline every class in the file and the schedule will not move.
+**The CALENDAR reply is still not read, and this file will not pretend otherwise.** Since
+2026-09-08 the events carry ``RSVP=TRUE``, so the professor's own calendar offers them accept
+and decline — and NOTHING IN THIS SYSTEM EVER LEARNS WHICH BUTTON THEY PRESSED. There is no
+IMAP or POP path in, no ``METHOD:REPLY`` parser, no ``PARTSTAT`` reader. A reply is delivered
+to the ``ORGANIZER`` mailbox and read by whoever reads that mailbox, which is a person, not
+this code. Assume THIS loop is open: a professor may decline in their client and the schedule
+will not move.
+
+**The CHAT reply is read, and it is a different path end to end.** Later the same day
+``coordinator/rsvp.py`` and ``service.record_class_response`` gave the answer somewhere to
+land: the professor tells the assistant, naming the class by DATE, and the state goes into the
+tenant's own ``COLUMN_STATUS`` cell. Nothing about that route touches this file — no ``.ics``
+is parsed and no mailbox is polled — and the two must not be confused: the accept button in a
+calendar client still reaches nobody.
 
 ``PARTSTAT`` stays ``ACCEPTED`` beside that ``RSVP=TRUE``, which is a contradiction on purpose
 — see the note at the ``ATTENDEE`` line for the thirty-unanswered-invitations reason.
@@ -278,10 +285,12 @@ def build_ics_calendar(
             # close an incoherence nobody sees.
             #
             # And the incoherence is smaller than it looks, because of what is NOT built:
-            # NOTHING EVER READS THE REPLY. There is no IMAP/POP path into this system, no
-            # METHOD:REPLY parser, no PARTSTAT reader, no column anywhere that records an
-            # acceptance. The professor can now accept or decline in their own calendar and we
-            # will not know. See the module docstring.
+            # NOTHING READS THIS REPLY. There is no IMAP/POP path into this system, no
+            # METHOD:REPLY parser, no PARTSTAT reader. The professor can accept or decline in
+            # their own calendar and we will not know. An answer given over CHAT is recorded
+            # (``rsvp.py``), which is a different route that never comes through here — so the
+            # PARTSTAT this line writes is still telling a calendar client something nothing on
+            # the way back will contradict. See the module docstring.
             lines.append(f"ATTENDEE;RSVP=TRUE;PARTSTAT=ACCEPTED:mailto:{attendee}")
         lines.append("END:VEVENT")
     lines.append("END:VCALENDAR")

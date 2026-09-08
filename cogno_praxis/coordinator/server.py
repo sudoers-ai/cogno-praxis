@@ -680,6 +680,43 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         return (f"Swapped: {src.professor}'s {src.subject} moved from {src.date_str} "
                 f"to {dst.date_str}.")
 
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
+    def record_class_response(class_date: str, answer: str, professor: str = "",
+                              turma: str = "", identity_label: str = "", role: str = "") -> str:
+        """Record a professor's answer to ONE class invitation (accept / decline).
+
+        ``class_date`` is the DATE OF THE CLASS being answered about (DD/MM or DD/MM/YYYY) and it
+        is REQUIRED: a bare "yes" says nothing about which class, and this tool will refuse it
+        rather than pick one. ``answer`` is exactly ACCEPTED or DECLINED — translate what the
+        contact said into one of those two, and if you cannot tell, ASK instead of calling.
+        ``turma`` narrows to one class group when the same date carries more than one class.
+
+        Answering twice the same way changes nothing and says so. Changing an earlier answer is
+        allowed and is recorded. If it refuses, the invitation is simply still open — report the
+        refusal and ask the professor again.
+        """
+        # NOT ``_guard``, for the reason written at ``confirm_swap`` above: this tool is MUTATING,
+        # so a RETURNED refusal is a successful call that the MCP bridge stamps as a write. The
+        # wording is kept verbatim from ``_guard`` because a refusal is a rule working.
+        try:
+            entry, state, changed = svc.record_class_response(
+                class_date=class_date, answer=answer, professor=professor, turma=turma,
+                identity_label=identity_label, role=role)
+        except CoordinatorAccessError as exc:
+            raise CoordinatorError(
+                f"NOT PERMITTED — nothing was recorded. {exc} This is an access rule working as "
+                f"intended, not a failure — state the limit plainly and offer what IS allowed."
+            ) from exc
+        what = f"{entry.date_str} · {entry.sheet_key} · {entry.subject}".strip(" ·")
+        if not changed:
+            # The no-op says so in the words the house's judge criteria already name, because the
+            # alternative reads as a failure: a second "sim" to the same invitation is the SAME
+            # answer, and reporting it as one is what stops a re-execution loop from hunting for
+            # a change to make. See the NOTHING TO DO clause in the SUPEREGO's criteria.
+            return (f"Already {state} — the class on {what} was ALREADY recorded that way, so no "
+                    f"change was made. Say so plainly; there is nothing left to do here.")
+        return f"Recorded {state} for the class on {what}."
+
     return mcp
 
 

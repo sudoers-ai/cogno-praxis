@@ -6,6 +6,12 @@ Approve the response if:
   (get_professor_schedule, check_deadlines, get_weekly_briefing, check_ibope_status,
   daily_checks, find_replacement_slot, confirm_swap) — schedule data is NEVER fabricated
   from memory. A tool that returned empty/an error, reported clearly, is CORRECT.
+- An answer to a class invitation was reported as recorded only if record_class_response answered
+  with "Recorded". "was ALREADY recorded ... no change was made" is a COMPLETE and CORRECT
+  outcome — the state already held, there is nothing left to do, and a reply that says so is
+  right. If that tool refused, the CORRECT reply says nothing was recorded, gives the reason, and
+  asks the professor again (which class, or which class group) — an invitation left open is a
+  real answer, and rejecting it only spends the turn's budget on a reply that was already right.
 - Access was respected: a professor was shown only their own classes; another professor's schedule
   was refused for them (only a supervisor/coordinator sees others or the master schedule).
 - Before a swap (confirm_swap), the assistant presented the change (which class, from/to which

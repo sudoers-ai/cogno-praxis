@@ -36,6 +36,12 @@ from cogno_praxis.coordinator.pay import (
     PayLine,
     parse_money,
 )
+from cogno_praxis.coordinator.rsvp import (
+    RSVP_PENDING,
+    label_for,
+    parse_answer,
+    state_of,
+)
 from cogno_praxis.coordinator.store import SpreadsheetStore
 from cogno_praxis.coordinator.types import (
     ClassEntry,
@@ -1177,6 +1183,136 @@ class CoordinatorService:
         self.store.swap_rows(src.sheet_id, self.cfg.tab_schedule, self.cfg.range_schedule,
                              src.row_idx, dst.row_idx, content_cols=cols.content_indices)
         return src, dst
+
+    # ── the answer to an invitation ──────────────────────────────────────────────────
+    def status_column_index(self, header: list[str]) -> Optional[int]:
+        """Where the tenant's ``COLUMN_STATUS`` sits in one sheet's header — ``None`` if absent.
+
+        By NAME, never by position, which is the same rule ``server._entry_status`` reads by and
+        the reason ``types.DailyChecks`` refuses to interpret the blank-headered approval column
+        the live corpus carries. A STATE field resolved positionally starts reporting — and here,
+        WRITING — the wrong column the day somebody inserts one, silently."""
+        want = _norm(self.cfg.column_status)
+        if not want:
+            return None
+        return next((i for i, c in enumerate(header) if _norm(c) == want), None)
+
+    def record_class_response(self, *, class_date: str, answer: str, professor: str = "",
+                              role: str = "", identity_label: str = "", turma: str = "",
+                              report: Optional[ReadReport] = None) -> tuple[ClassEntry, str, bool]:
+        """Record a professor's answer to ONE class invitation. Returns ``(entry, state, changed)``.
+
+        ``changed`` is ``False`` when the sheet already said this — the second "sim" to the same
+        invitation is the SAME state, not a second one, and it writes nothing.
+
+        **What links an answer to a class is the DATE the answer names, and nothing else.** There
+        is no message id to hang it on: the invitation goes out as a calendar e-mail, the answer
+        arrives as a chat turn, the vertical is a fresh subprocess every turn, and neither WhatsApp
+        adapter carries a quoted-message reference into the pipeline. So the link is the same one
+        ``confirm_swap`` has always used to write on this data — ``(professor, date)`` resolved
+        against the sheet, with the ambiguity checks that come with it — and it is a TOOL ARGUMENT,
+        not a sentence: the date is a typed field, and a caller who has none has nothing to record.
+
+        **Every refusal below leaves the class PENDING, which is a real answer.** A bare "yes",
+        a date that matches nothing, a date that matches two years or two classes — all of them
+        raise, so the invitation stays unanswered and somebody asks again. That is the whole
+        design: this method has no branch that picks one of several classes, because the cost of
+        guessing is a professor recorded as attending a class they never agreed to, and somebody
+        turning up — or not — because of it.
+
+        **It RAISES on every path that did not record**, the same contract
+        :meth:`send_schedule_to_calendar` states and for the same reason: the MCP bridge stamps a
+        successful call on a non-read-only tool as a WRITE, so a polite sentence about a refusal
+        would enter the house's own commit accounting as a change that never happened.
+        """
+        state = parse_answer(answer)
+        if not state:
+            raise CoordinatorError(
+                f"'{answer}' is not an answer this can record. Ask for one of: ACCEPTED or "
+                f"DECLINED. Nothing was recorded.")
+        if not class_date.strip():
+            raise CoordinatorError(
+                "An answer has to say WHICH class it is about — pass the class date (DD/MM or "
+                "DD/MM/YYYY). Nothing was recorded, so the invitation is still open.")
+        # A REPORT of our own when the caller brought none, exactly like ``confirm_swap``: the
+        # refusal below has to fire whether or not somebody upstream wanted the read record, and
+        # a check written as ``report is not None and report.errors`` is a guard that a caller
+        # switches off by not asking for one.
+        read = report if report is not None else ReadReport()
+        entries = self.aggregate(include_free=False, report=read)
+        if read.errors:
+            unread = ", ".join(f"{e.sheet_key} ({e.message})" for e in read.errors)
+            raise CoordinatorError(
+                f"Cannot record an answer right now: {len(read.errors)} spreadsheet(s) could "
+                f"not be read ({unread}) — the schedule is only partly loaded. Try again shortly.")
+        vis, err = self._visible(entries, professor=professor, role=role,
+                                 identity_label=identity_label)
+        if err:
+            raise CoordinatorAccessError(err)
+        if turma.strip():
+            keys = self.resolve_turmas(turma)
+            if not keys:
+                known = ", ".join(self.cfg.spreadsheets) or "none"
+                raise CoordinatorError(
+                    f"'{turma}' matches no class group here (configured: {known}). Nothing was "
+                    f"recorded.")
+            wanted = set(keys)
+            vis = [e for e in vis if e.sheet_key in wanted]
+        matches = [e for e in vis if _date_matches(e.when, e.date_str, class_date)]
+        if not matches:
+            raise CoordinatorError(
+                f"No class found for that professor on {class_date}, so there is no invitation "
+                f"to answer. Nothing was recorded.")
+        if _ambiguous_year(matches, class_date):
+            years = ", ".join(str(y) for y in sorted({e.when.year for e in matches if e.when}))
+            raise CoordinatorError(
+                f"'{class_date}' matches classes in more than one year ({years}) — ask for the "
+                f"year. Nothing was recorded.")
+        if len(matches) > 1:
+            which = "; ".join(f"{e.sheet_key} — {e.subject}" for e in matches)
+            raise CoordinatorError(
+                f"{class_date} has more than one class for that professor ({which}) — ask which "
+                f"class group. Nothing was recorded, so the invitation is still open.")
+        entry = matches[0]
+        idx = self.status_column_index(entry.header)
+        if idx is None:
+            raise CoordinatorConfigError(
+                f"This institution's schedule has no column named '{self.cfg.column_status}', so "
+                f"there is nowhere to record an answer. Add that header to the schedule tab (or "
+                f"declare the existing one as COLUMN_STATUS in the rules). Nothing was recorded.")
+        current = state_of(self._cell(entry.cells, idx),
+                           accepted=self.cfg.status_accepted_label,
+                           declined=self.cfg.status_declined_label,
+                           ordinary=self.cfg.status_default_labels)
+        if current is None:
+            raise CoordinatorError(
+                f"The status of the class on {entry.date_str} already says "
+                f"'{self._cell(entry.cells, idx)}', which this assistant did not write and will "
+                f"not overwrite. Nothing was recorded — report it as it stands.")
+        if current == state:
+            return entry, state, False
+        self.store.write_cell(entry.sheet_id, self.cfg.tab_schedule, self.cfg.range_schedule,
+                              entry.row_idx, idx,
+                              label_for(state, accepted=self.cfg.status_accepted_label,
+                                        declined=self.cfg.status_declined_label))
+        return entry, state, True
+
+    def class_response(self, entry: ClassEntry) -> Optional[str]:
+        """What one class's status cell says as an RSVP state — ``PENDING`` when nothing is on
+        file, ``None`` when the cell holds something this system did not write.
+
+        The read half of :meth:`record_class_response`, and the reason there is no separate read
+        TOOL: the listing already prints an answer on every line (``server._entry_status``), so a
+        second surface for the same fact would be a second place for it to disagree. This exists
+        for the callers that need the STATE rather than the word — the write path above, and the
+        tests that pin the three of them."""
+        idx = self.status_column_index(entry.header)
+        if idx is None:
+            return RSVP_PENDING
+        return state_of(self._cell(entry.cells, idx),
+                        accepted=self.cfg.status_accepted_label,
+                        declined=self.cfg.status_declined_label,
+                        ordinary=self.cfg.status_default_labels)
 
 
 class CoordinatorError(Exception):

@@ -29,6 +29,15 @@ from cogno_praxis.coordinator.pay import (
     render_pay_block,
 )
 from cogno_praxis.coordinator.durability import is_perishable_edge
+from cogno_praxis.coordinator.rsvp import (
+    RSVP_ACCEPTED,
+    RSVP_DECLINED,
+    RSVP_PENDING,
+    VALID_RSVP,
+    label_for,
+    parse_answer,
+    state_of,
+)
 from cogno_praxis.coordinator.server import build_server
 from cogno_praxis.coordinator.service import (
     CalendarProposal,
@@ -63,4 +72,7 @@ __all__ = [
     # the professor's own pay: the estimate, its declared bonus bands, and its block
     "PayEstimate", "PayGroup", "PayLine", "PayHypothesis", "BonusTier",
     "render_pay_block", "parse_bonus_tiers", "parse_money", "fmt_money", "fmt_hours",
+    # the ANSWER to a class invitation: three states, of which only two are ever written
+    "RSVP_PENDING", "RSVP_ACCEPTED", "RSVP_DECLINED", "VALID_RSVP",
+    "parse_answer", "state_of", "label_for",
 ]

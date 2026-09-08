@@ -9,11 +9,16 @@ decline. ``PARTSTAT`` deliberately stays ``ACCEPTED`` beside it. That pair is se
 available wrongs: this file is THIRTY classes imported in one action, so ``NEEDS-ACTION`` would
 put thirty unanswered invitations in somebody's calendar to close an incoherence nobody sees.
 
-**Nothing reads the reply, and that is not a gap this file closes.** There is no IMAP/POP path
-in, no ``METHOD:REPLY`` parser, no ``PARTSTAT`` reader, no column anywhere recording an
-acceptance. The professor can now decline every class and the schedule will not move. It is
-written down in the module docstring, at the ``ATTENDEE`` line, and here, because the change is
-exactly the kind that invites a reader to assume the loop closes.
+**Nothing reads the CALENDAR reply, and that is not a gap this file closes.** There is no
+IMAP/POP path in, no ``METHOD:REPLY`` parser, no ``PARTSTAT`` reader. The professor can decline
+every class in their client and the schedule will not move. It is written down in the module
+docstring, at the ``ATTENDEE`` line, and here, because the change is exactly the kind that
+invites a reader to assume the loop closes.
+
+**Half of it did close later that day, over the other channel.** An answer given in CHAT is
+recorded against the class it names, in the tenant's own status column —
+``test_the_answer_names_the_class.py``. It shares no code with this file: no ``.ics`` is parsed
+on the way back, and the accept button in a calendar client still reaches nobody.
 
 **And that is what makes a blank ORGANIZER stop being cosmetic.** ``CalendarSender.organizer()``
 is allowed to answer ``""`` — a mail config with neither a declared ``from_email`` nor an
@@ -113,7 +118,8 @@ def test_the_invitation_asks_for_a_reply_and_the_organizer_is_still_the_From():
 def test_the_PARTSTAT_beside_it_deliberately_stays_ACCEPTED():
     """The decision, pinned so it cannot drift without somebody choosing to. Thirty classes at
     NEEDS-ACTION is thirty unanswered invitations in a person's calendar; the contradiction is
-    the cheaper wrong, and it is only cheap because nothing reads the reply anyway."""
+    the cheaper wrong, and it is only cheap because nothing reads the CALENDAR reply anyway —
+    the chat route records a state without ever consulting a PARTSTAT."""
     ics = build_ics_calendar(_EVENTS, **_KW)
 
     assert "PARTSTAT=ACCEPTED" in ics
