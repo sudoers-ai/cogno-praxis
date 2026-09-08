@@ -50,6 +50,34 @@
 
 ### Fixed
 
+- **`coordinator` — uma troca deixa de largar as células que nenhum cabeçalho nomeia.**
+  Medido no corpus vivo a 2026-09-07: a aba de agenda do inquilino tem colunas DEPOIS da última
+  nomeada, com a célula de cabeçalho **em branco**. Chegam a ser lidas porque o `read_range`
+  honra o A1 como *deslocamento de linha* e devolve todas as colunas — mas o `confirm_swap` não
+  as conseguia escrever, porque o `_resolve_columns` limitava as colunas de conteúdo ao último
+  cabeçalho **não vazio**. A troca trocava disciplina e professor e deixava para trás tudo o que
+  passava do cabeçalho: a aula mudava de data, a carga horária e o estado ficavam com a data
+  velha. **As duas linhas continuam cheias** — cada uma passa a descrever a aula da outra — por
+  isso ninguém vê acontecer.
+
+  **A correcção não nomeia as colunas, de propósito.** Para guardar uma célula é preciso
+  transportá-la, não percebê-la; e uma coluna que ninguém nomeou também não pode ser exempta
+  (`FIXED_COLUMNS` casa por NOME), portanto o default honesto para uma célula sem nome é o que
+  todas as colunas de conteúdo já têm — pertence à aula e viaja com ela. Há gémeo que mede que
+  nomear uma coluna e pô-la em `FIXED_COLUMNS` continua a ser o modo de a fixar, e outro que
+  mede que uma folha sem colunas extra se comporta exactamente como antes. O `width` só é
+  passado pelo caminho de **escrita**: das três chamadas a `_resolve_columns`, uma o faz.
+
+- **`coordinator` — um destino que não serve passa a dizer PORQUÊ, e uma recusa não escreve
+  nada.** «No free slot found on 18/07 in the same schedule.» cobria três mundos com uma frase:
+  a data não existe na agenda, a data é feriado, a data já tem aula. Agora distingue-os e nomeia
+  os rótulos que o inquilino aceita (`FREE_SLOT_LABELS`), que são vocabulário dele e o leitor não
+  adivinha. Nomeia o obstáculo, **nunca a pessoa por trás dele** — de quem é a aula que ocupa a
+  data é a agenda de outra pessoa, e a regra de acesso não deixa de valer dentro de uma mensagem
+  de erro. Toda a validação corre antes do único `store.swap_rows`, e há gémeo que compara a
+  **grelha inteira** depois de uma recusa. A diagnose é uma leitura que não pode rebentar: um
+  diagnóstico que levanta troca uma frase accionável por um stack trace que ninguém vê.
+
 - **COMPANIES: corrigir um campo deixa de apagar outro — e o `segment` ganha quem o escreva.**
   Medido: «corrige o SEGMENTO para padaria artesanal» chegou como
   `company_update(guidelines='artisanal bakery')`. O campo errado, e as diretrizes que estavam

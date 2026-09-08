@@ -311,7 +311,33 @@ class CoordinatorService:
                                   else max(0, int(horizon_days)))
 
     # ── layout + row helpers ─────────────────────────────────────────────────────────
-    def _resolve_columns(self, header: list[str]) -> ColumnLayout:
+    def _resolve_columns(self, header: list[str], *, width: int = 0) -> ColumnLayout:
+        """The layout of one sheet, resolved from its header — plus, for a WRITE, its ``width``.
+
+        ``width`` is how many cells the rows a swap is about actually carry, and it exists
+        because a sheet is wider than its header row. The tenant's own schedule tab carries
+        columns AFTER the last named one — an hour total, an approval state — with the header
+        cell left BLANK, so the header alone says the row ends at ``Professor`` while the row
+        goes on for three more cells.
+
+        Bounding the content columns at the last non-empty HEADER is what made ``confirm_swap``
+        drop them: a swap exchanged the discipline and the professor and left everything past
+        the header behind, so the class moved to its new date and its hour total and its
+        "Confirmado" stayed with the old one. Nobody sees that happen — the two rows are both
+        still full, just describing each other's class.
+
+        **The fix deliberately does NOT name those columns.** It does not need to: to keep a
+        cell you have to carry it, not understand it. A column nobody named cannot be FIXED
+        either (``FIXED_COLUMNS`` matches header names), so the honest default for an unnamed
+        cell is the one every named content column already has — it belongs to the class, and it
+        travels with it. The day somebody opens the sheet and writes those headers in, this
+        stays correct: a named column is resolved exactly as before, and a named one the tenant
+        adds to ``FIXED_COLUMNS`` stops travelling, which is the escape hatch working.
+
+        ``width`` defaults to 0, so every READ path resolves byte-for-byte what it resolved
+        before; only the caller that is about to WRITE passes it, because it is the only one
+        that knows which two rows are involved.
+        """
         h = [c.strip().lower() for c in header]
         date_idx = next((i for i, c in enumerate(h) if c == self.cfg.column_date.lower()), 0)
         prof_idx = next((i for i, c in enumerate(h) if c == self.cfg.column_professor.lower()), None)
@@ -320,7 +346,8 @@ class CoordinatorService:
         time_idx = next((i for i, c in enumerate(h) if c == self.cfg.column_time.lower()), None)
         fixed_names = {_norm(n) for n in self.cfg.fixed_columns}
         fixed = {i for i, c in enumerate(h) if _norm(c) in fixed_names}
-        content = [i for i in range(last + 1) if i not in fixed]
+        # NOT ``last + 1``: that is the header's width, and the ROW is what gets written.
+        content = [i for i in range(max(last + 1, width)) if i not in fixed]
         return ColumnLayout(date_idx, prof_idx, subj_idx, last, fixed, content, time_idx=time_idx)
 
     @staticmethod
@@ -807,6 +834,42 @@ class CoordinatorService:
         return len(events), recipient, dropped
 
     # ── the spreadsheet write ────────────────────────────────────────────────────────
+    def _why_not_a_destination(self, src: ClassEntry, new_date: str) -> str:
+        """WHY this date cannot receive the class — the sentence a bare refusal owes the reader.
+
+        A destination has to be one of the tenant's own free-slot labels (``FREE_SLOT_LABELS``,
+        e.g. "Livre, Reposição"). Everything else is refused, and the refusal used to be one
+        sentence for four different worlds: "No free slot found on 18/07 in the same schedule."
+        That is true and it is useless. It cannot tell the reader whether the date is not in the
+        schedule at all, whether it is a holiday, or whether it already has a class on it — and
+        those want three different next moves. A contact who is not told why simply tries
+        another date, and then another.
+
+        So this looks the date up AGAIN, this time with the skip rows included, purely to
+        DIAGNOSE. It is a read: nothing here decides whether the swap happens — the caller has
+        already decided it does not — and nothing here writes.
+
+        **It names the obstacle, never the person behind it.** "That date already has a class"
+        is the reason; whose class it is, is somebody else's schedule, and the access rule that
+        governs the rest of this vertical does not stop being true inside an error message. The
+        acceptable labels ARE named, because they are the tenant's own vocabulary and the reader
+        cannot guess them.
+        """
+        same_day = [e for e in self.aggregate(include_skip=True, include_free=True)
+                    if e.sheet_id == src.sheet_id and _date_matches(e.when, e.date_str, new_date)]
+        allowed = ", ".join(self.cfg.free_slot_labels) or "(none configured)"
+        if not same_day:
+            return (f"{new_date} is not a date in this schedule, so there is no slot to move the "
+                    f"class into. A destination has to be an open slot already on the sheet "
+                    f"({allowed}).")
+        skipped = [e for e in same_day if self._is_skip(e.subject)]
+        if skipped and len(skipped) == len(same_day):
+            return (f"{new_date} is marked \"{skipped[0].subject}\" in this schedule — no class "
+                    f"can be moved onto it. A destination has to be an open slot ({allowed}).")
+        return (f"{new_date} already has a class scheduled, so it is not an open slot. A class "
+                f"can only be moved onto a slot the sheet marks as open ({allowed}) — pick one "
+                f"of those, or free this date first. Nothing has been changed.")
+
     def confirm_swap(self, *, professor: str, original_date: str, new_date: str,
                      role: str = "", identity_label: str = "") -> tuple[ClassEntry, ClassEntry]:
         """Swap a professor's class (source, by date+professor) into a free slot (dest, by
@@ -839,12 +902,15 @@ class CoordinatorService:
         dst_matches = [e for e in entries if e.is_free_slot and e.sheet_id == src.sheet_id
                        and _date_matches(e.when, e.date_str, new_date)]
         if not dst_matches:
-            raise CoordinatorError(f"No free slot found on {new_date} in the same schedule.")
+            raise CoordinatorError(self._why_not_a_destination(src, new_date))
         if _ambiguous_year(dst_matches, new_date):
             raise CoordinatorError(
                 f"'{new_date}' matches free slots in more than one year — please include the year.")
         dst = dst_matches[0]
-        cols = self._resolve_columns(src.header)
+        # The WIDTH comes from the two rows being written, not from the header: a cell the
+        # header does not reach is still a cell, and leaving it behind is what desynchronised
+        # the hour total and the approval state from the class that moved.
+        cols = self._resolve_columns(src.header, width=max(len(src.cells), len(dst.cells)))
         self.store.swap_rows(src.sheet_id, self.cfg.tab_schedule, self.cfg.range_schedule,
                              src.row_idx, dst.row_idx, content_cols=cols.content_indices)
         return src, dst
