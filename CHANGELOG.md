@@ -50,6 +50,36 @@
 
 ### Fixed
 
+- **`coordinator` — a listagem para de ser desfeita, e a janela por omissão deixa de trazer o
+  ano inteiro.** Duas metades de um mesmo resultado: o que o professor lê, e quanto lhe é lido.
+
+  **A FORMA.** A listagem passa a vir agrupada sob um cabeçalho de mês a negrito
+  (`**Setembro de 2026**`) com uma linha por aula e **três campos escolhidos**, na ordem em que
+  o olho precisa deles: DIA, TURMA, DISCIPLINA — `08/09 · DE_09 · Bancos NoSQL` —, mais o
+  estado quando não é o ordinário. O bloco anterior era `Turma: X | Data: Y | Disciplina: Z`
+  com todas as colunas não vazias anexadas: um rótulo em cada campo de cada linha, a repetir em
+  todas as 33 as palavras que o leitor aprendeu na primeira, e o ano a repetir sob um cabeçalho
+  que acabara de o dizer. **A forma não foi inventada aqui — foi devolvida.** Medido nos turnos
+  da caixa a 2026-09-06: entregue o bloco liso, o rascunho do executor voltou já agrupado por
+  mês; o locutor deitou-o fora e reproduziu o bloco liso, porque o `limits.txt` lhe dizia que a
+  saída CRUA da ferramenta É o formato esperado. O modelo estava certo e o prompt venceu-o.
+  Renderizar a forma aqui é o que faz a instrução e o resultado serem a mesma coisa. Uma linha
+  cuja data não se conseguiu ler mantém a forma rotulada e vai para o fim, sem cabeçalho: a
+  leitura nunca esconde o que não consegue datar.
+
+  **A JANELA.** Sem período pedido, a leitura passa a devolver `[HOJE, HOJE + 30 dias]`
+  (`DEFAULT_HORIZON_DAYS`, injectável por `CoordinatorService(horizon_days=...)`). A ponta de
+  trás já existia; esta é a da frente, e nasce da mesma medição: «traga minhas aulas» respondia
+  com 33 aulas a entrar por Junho de 2027. **A ponta da frente cede a qualquer período
+  NOMEADO** — um `month`, mesmo distante, e um `discipline`, que é uma consulta por uma coisa
+  nomeada («quando é o workshop de abertura?» não pode responder «nada» porque a resposta está
+  a dois meses). Um `turma` **não** a larga: estreita DE QUEM, não QUANDO. O **export de
+  calendário não a aplica de todo** (`apply_horizon=False`): uma janela que existe para poupar
+  rolagem não decide o que entra no calendário de alguém — a ponta de trás, essa, continua a
+  valer lá. Cada ponta tem a sua frase de rodapé e **só aparece quando cortou mesmo**: «today
+  onward» para a de trás, «the next 30 days» para a da frente, e nenhuma delas conta quantas
+  aulas ficaram fora.
+
 - **`coordinator` — uma troca deixa de largar as células que nenhum cabeçalho nomeia.**
   Medido no corpus vivo a 2026-09-07: a aba de agenda do inquilino tem colunas DEPOIS da última
   nomeada, com a célula de cabeçalho **em branco**. Chegam a ser lidas porque o `read_range`
@@ -195,12 +225,14 @@
      numa conversa de setembro) → o juiz rejeitava → a 2.ª tentativa acertava com `2026-09`.
      Os nomes ingleses entram na tabela, ao lado dos portugueses; onde as duas línguas partilham
      prefixo («mar», «jun», «jul», «nov») partilham também o mês.
-  3. **A janela por omissão passa a ser `[HOJE, ∞)`.** As planilhas guardam o ano lectivo
-     inteiro e devolvê-lo deixava a escolha ao modelo — foi assim que abril foi lido de volta.
-     O passado pede-se: `include_past=True`, ou nomeando um mês **já terminado**, que é o mesmo
-     pedido dito de outra maneira. Um mês **em curso** mostra de hoje ao fim do mês. O corte é à
-     granularidade do **DIA** (uma aula das 08h ainda é de hoje às 15h) e **nunca esconde uma
-     linha sem data**. A frase «a partir de hoje» só aparece quando **houve mesmo corte**.
+  3. **A janela por omissão ganha a ponta de TRÁS: `[HOJE, ...)`.** As planilhas guardam o ano
+     lectivo inteiro e devolvê-lo deixava a escolha ao modelo — foi assim que abril foi lido de
+     volta. O passado pede-se: `include_past=True`, ou nomeando um mês **já terminado**, que é o
+     mesmo pedido dito de outra maneira. Um mês **em curso** mostra de hoje ao fim do mês. O
+     corte é à granularidade do **DIA** (uma aula das 08h ainda é de hoje às 15h) e **nunca
+     esconde uma linha sem data**. A frase «a partir de hoje» só aparece quando **houve mesmo
+     corte**. *(A ponta da FRENTE — os 30 dias — chegou depois, e tem entrada própria em
+     `### Fixed`. Esta linha dizia `[HOJE, ∞)` e deixou de ser verdade nesse dia.)*
      E o «hoje» vem da **âncora do host** (`COGNO_COORDINATOR_TODAY`, o mesmo dia que ele rende
      como `[HOJE]`), não do relógio do processo: o contentor arranca em UTC de propósito, e sem
      isto, entre as 21h e a meia-noite em São Paulo, uma aula de hoje desaparecia da lista. O
