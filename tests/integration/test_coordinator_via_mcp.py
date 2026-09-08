@@ -81,3 +81,35 @@ async def test_the_calendar_export_is_gated_and_a_refusal_is_never_stamped_as_a_
             "a call that mailed nothing must not be recorded as a write — that record is what "
             "decides whether the turn kept a promise")
         assert "Nothing was sent" in (res.error or "")
+
+
+@pytest.mark.asyncio
+async def test_an_answer_to_an_invitation_is_gated_and_a_refusal_costs_nothing():
+    """The same two facts about ``record_class_response``, and here they matter more.
+
+    **Gated.** ``destructiveHint`` → ``requires_confirmation`` → the EGO's gate B holds the call
+    until the contact says yes. That is what stands between a stray "sim" and a professor
+    recorded as attending a class they never agreed to, and it is a property of the annotation
+    the real bridge reports — not of a promise in a prompt.
+
+    **A refusal costs nothing.** The demo store the subprocess builds holds a header row and no
+    classes, so the branch reached is the honest "no class on that date, so there is no
+    invitation to answer". It RAISES, which arrives as ``isError`` → ``ok=False`` →
+    ``side_effect=False``: an invitation left open must not enter ``committed_this_turn`` as a
+    change that never happened.
+    """
+    async with stdio_session(sys.executable, args=[SERVER], env=_ENV) as session:
+        disp = await MCPDispatcher.create(session)
+
+        names = {s["function"]["name"] for s in disp.tools_schema()}
+        assert "record_class_response" in names
+        assert disp.is_mutating("record_class_response") is True
+        assert disp.requires_confirmation("record_class_response") is True
+
+        res = await disp.execute("record_class_response",
+                                 {"class_date": "10/09/2026", "answer": "ACCEPTED",
+                                  "role": "EMPLOYEE", "identity_label": "Ana"})
+        assert res.ok is False
+        assert res.side_effect is False, (
+            "an answer that was NOT recorded must not be recorded as a write")
+        assert "Nothing was recorded" in (res.error or "")
