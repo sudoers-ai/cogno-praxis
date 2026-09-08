@@ -174,7 +174,8 @@ async def test_the_shipped_annotation_lets_the_grounded_question_be_asked():
         assert "NOT REMOVED" in held.result
         assert "2026-03-10" in held.result and "149,90" in held.result   # data e valor
         assert "2 other entry(ies) also match" in held.result            # as irmãs
-        assert "confirm_tx_id=" in held.result
+        # O id NÃO está na prosa — só no canal. Ver `server._removal_proposal_text`.
+        assert "confirm_tx_id" not in held.result
 
         # (3) nada leu como escrita, em nenhuma das fontes que o predicado une
         assert await _rows(disp) == before
@@ -197,7 +198,8 @@ async def test_the_proposal_is_never_recorded_as_a_write():
         assert r.ok is True                    # correu bem; simplesmente não comitou
         # e nomeia o argumento de que precisa — o nome é da TOOL, nunca inventado por cima
         assert set(r.confirm_arguments) == {"confirm_tx_id"}
-        assert r.confirm_arguments["confirm_tx_id"] in r.output
+        # …e o valor NÃO viaja no texto: o canal é a única via da proposta ao commit.
+        assert r.confirm_arguments["confirm_tx_id"] not in r.output
 
 
 # ── gémeo 3: a VOLTA fecha — a confirmação continua a apagar a linha certa ─────────────

@@ -27,6 +27,22 @@ def _text(call_result):
     return "\n".join(b.text for b in content if getattr(b, "type", None) == "text")
 
 
+def _confirm_args(call_result):
+    """O que a proposta pede de volta — lido do ``_meta`` do bloco, nunca do texto.
+
+    Este helper É a mudança: até 2026-09-08 os testes recuperavam o id fazendo
+    ``split("confirm_tx_id='")`` sobre a prosa, o que só era possível porque a prosa o
+    imprimia — e o que os testes conseguiam fazer, o modelo também. Agora o único sítio onde
+    ele existe é o canal por onde o host o devolve."""
+    content = call_result[0] if isinstance(call_result, tuple) else call_result
+    for block in content:
+        meta = getattr(block, "meta", None) or getattr(block, "_meta", None) or {}
+        args = meta.get("cogno-mcp/confirm_arguments")
+        if args:
+            return dict(args)
+    return {}
+
+
 async def test_tools_and_annotations():
     tools = await _server().list_tools()
     ann = {t.name: t.annotations for t in tools}
@@ -88,11 +104,16 @@ async def test_remove_by_search_destructive():
                                         "identity_id": "emp-1"})
     # step 1 PROPOSES and deletes nothing (the grounded question — see
     # tests/unit/test_a_removal_asks_with_what_it_read.py)
-    proposed = _text(await mcp.call_tool("remove_by_search", {"query": "internet",
-                                                              "identity_id": "emp-1"}))
+    call = await mcp.call_tool("remove_by_search", {"query": "internet",
+                                                    "identity_id": "emp-1"})
+    proposed = _text(call)
     assert "NOT REMOVED" in proposed and "internet" in proposed
-    tx_id = proposed.split("confirm_tx_id='")[1].split("'")[0]
-    # step 2 commits the row that was proposed
+    # The row the contact has to check is named; the key that commits it is NOT.
+    assert "100" in proposed
+    assert "confirm_tx_id" not in proposed
+    tx_id = _confirm_args(call)["confirm_tx_id"]
+    assert tx_id and tx_id not in proposed
+    # step 2 commits the row that was proposed — with what the CHANNEL carried
     removed = _text(await mcp.call_tool("remove_by_search", {"query": "internet",
                                                              "identity_id": "emp-1",
                                                              "confirm_tx_id": tx_id}))

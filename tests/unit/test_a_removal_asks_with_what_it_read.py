@@ -177,11 +177,15 @@ async def test_the_mcp_tool_proposes_then_commits():
     assert "NOT REMOVED" in proposta
     assert "internet março" in proposta and "149" in proposta and "2026-03-10" in proposta
     assert "internet fevereiro" in proposta and "internet janeiro" in proposta
-    assert "confirm_tx_id=" in proposta
+    # O que o contacto precisa para DECIDIR está todo cá em cima — a linha e as três irmãs.
+    # O que COMITA não está, e a inversão desta asserção é a mudança de 2026-09-08: até aqui
+    # ela dizia `"confirm_tx_id=" in proposta`, e o que este teste conseguia ler da prosa o
+    # modelo também conseguia. Um segredo impresso não é um segredo, é uma sugestão.
+    assert "confirm_tx_id" not in proposta
     assert _quantas(svc) == 3
 
     tx_id = svc.remove_by_search("internet", EU).proposal.confirm_tx_id   # type: ignore[union-attr]
-    assert tx_id in proposta
+    assert tx_id not in proposta
 
     feito = _text(await mcp.call_tool(
         "remove_by_search", {"query": "internet", "identity_id": EU, "confirm_tx_id": tx_id}))

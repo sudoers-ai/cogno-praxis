@@ -20,7 +20,9 @@ question is never asked. Under the old annotation this tool's gate-C proposal �
 could not fire at all. The annotation is not a protection this drops but a protection it moves
 to the channel that can carry the per-CALL fact; the write path here is unreachable without
 ``confirm_tx_id``, an id the caller can only have learned from a proposal (``service`` pins that
-structurally, and ``tests/unit/test_tool_annotations.py`` measures it rather than believing it).
+structurally, and ``tests/unit/test_tool_annotations.py`` measures it rather than believing it)
+— and which the proposal no longer PRINTS, so the only route to it is the ``_meta`` channel and
+the layer that asks the human. See :func:`_removal_proposal_text` for what that cost twice.
 
 ``build_server(service)`` is the only injection seam (the host builds a service over its own
 store adapter). The module-level ``mcp`` is an in-memory demo for standalone runs and tests.
@@ -122,7 +124,7 @@ def _entry_line(t: dict) -> str:
 
 
 def _removal_proposal_text(p: RemovalProposal, query: str) -> str:
-    """Render a proposal that QUOTES the ledger it just read.
+    """Render a proposal that QUOTES the ledger it just read — and NOT the id that commits it.
 
     The grounding of this text is the point, not a nicety: a question phrased per tool name can
     only say "this deletes something", while this one names the date, the description and the
@@ -130,6 +132,22 @@ def _removal_proposal_text(p: RemovalProposal, query: str) -> str:
     is the ambiguity a bare "confirma?" hides. It deliberately does NOT start with the
     ``Removed: `` marker the grounding backstop reads (``bookkeeper/grounding.py``): nothing was
     removed, and the marker is how the rest of the system knows the difference.
+
+    **The id is not in here, and that is the point.** A printed secret is not a secret, it is a
+    suggestion. This text used to end with ``confirm_tx_id='a1b2c3…'`` and an instruction to
+    call the tool again — i.e. it handed the model the commit key and told it to use it. What
+    the model did with that is measured, twice, in ``turn_traces``: it put a VALUE in the id
+    field (``confirm_tx_id="45.00"`` on turn 1380; ``confirm_tx_id="45"`` on turn 1420) — and on
+    1420 it did so **with the correct id in the text it had just been handed**. That is not the
+    model failing a copy; it is the text inviting a copy that nothing needed. The id travels in
+    the block's ``_meta`` instead, to the layer that asks the human and replays the call, so the
+    only route from proposal to commit runs through the confirmation. Same shape, same reason,
+    as ``companies/server.py``'s ``_deletion_proposal_text``.
+
+    What the contact needs in order to DECIDE stays, all of it: the date, the description and
+    the amount of the row this would remove, and every sibling the same query also matched. A
+    proposal the contact cannot check is not a confirmation — dropping the id must not cost the
+    line that identifies which R$ 45,00 is on the table.
     """
     lines = [f"NOT REMOVED — nothing was deleted. Searching {query!r} in YOUR entries selected:",
              f"  {_entry_line(p.entry)}"]
@@ -138,8 +156,8 @@ def _removal_proposal_text(p: RemovalProposal, query: str) -> str:
         lines.extend(f"  {_entry_line(o)}" for o in p.others)
     lines.append(
         "Tell the user EXACTLY which entry (date, description, amount) you are about to remove "
-        "and get their agreement. Only then call remove_by_search again with the SAME query and "
-        f"confirm_tx_id={p.confirm_tx_id!r} to delete that one entry.")
+        "and get their agreement. Do NOT call remove_by_search again yourself: this removal is "
+        "already held, and it commits only after the user agrees.")
     return "\n".join(lines)
 
 
@@ -222,10 +240,13 @@ def build_server(service: Optional[BookkeeperService] = None, *,
         one. Prefer the words when you have them — a figure can be shared by several entries,
         and then this answers with all of them and you must ask WHICH.
 
-        Called with the query alone it deletes NOTHING: it searches your entries and answers with
-        the exact entry it would remove (date, description, amount) plus that entry's id, and
-        lists any other entry the same query also matched. Relay that entry to the user, get
-        their agreement, then call this again with confirm_tx_id=<that id> to delete it.
+        Called with the query alone it deletes NOTHING: it searches your entries and answers
+        with the exact entry it would remove (date, description, amount) and lists any other
+        entry the same query also matched. Relay that entry to the user and get their
+        agreement; the confirmation is carried back for you.
+
+        confirm_tx_id: HOST-SUPPLIED. Never invent, guess or copy it — a value you write here
+            is refused and the removal is proposed again.
         """
         outcome = svc.remove_by_search(query, identity_id, confirm_tx_id=confirm_tx_id)
         if outcome.removed is not None:
