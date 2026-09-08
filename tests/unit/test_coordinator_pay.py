@@ -73,7 +73,7 @@ COLUMN_SUBJECT: "Disciplina"
 # that used "Carga Horária" would pass just as well against a hardcoded guess.
 _PAY_RULES = """COLUMN_HOURS: "Total de Horas"
 PAY_RATE_PER_HOUR: 120,00
-PAY_BONUS_TIERS: "80-89 = 30, 90+ = 40"
+IBOPE_BONUS: 80-89=30; 90+=40
 """
 
 _SCHEDULE_AA = [
@@ -237,18 +237,89 @@ def test_an_IBOPE_result_that_WAS_found_applies_its_band_and_offers_no_hypothesi
     assert "R$ 9.600,00" in block                     # 60 h × (120 + 40)
 
 
-def test_a_result_BELOW_every_declared_band_pays_the_base_and_says_why():
-    """A read result is not automatically a bonus. 70% falls in no declared band, so the answer
-    is the base with a reason — not a hypothesis (nothing is unknown here) and not the lowest
-    band applied out of charity."""
+def test_a_result_BELOW_every_declared_band_is_ZERO_and_the_zero_is_SAID():
+    """One of the two worlds ``matched_tier is None`` used to flatten together.
+
+    70% is under the lowest declared band, and the rules read "Ibope > 80% … adicional". So the
+    adicional really is zero — an apurado fact, not an absence of one — and the block says which
+    it is. It offers no hypothesis, because nothing here is open."""
     rules = _BASE_RULES + _PAY_RULES + 'TAB_IBOPE: "Resultados IBOPE"\nCOLUMN_IBOPE: "Resultado"\n'
     svc = _svc(rules, ibope=[["Professor", "Resultado"], [ME, "70"]])
     est = svc.estimate_professor_pay(identity_label=ME)
     assert est.ibope_found is True and est.matched_tier is None
+    assert est.bonus_state == "below"
     assert est.hypotheses == ()
     block = render_pay_block(est)
-    assert "não cai em nenhuma faixa" in block
+    assert "Abaixo da faixa mais baixa declarada (80%)" in block
+    assert "Isto é um valor apurado, não uma falta de informação." in block
     assert "R$ 7.200,00" in block                     # the base, unchanged
+    assert "NÃO ENCONTRADO" not in block
+
+
+def test_a_result_IN_A_GAP_between_declared_bands_is_UNDETERMINED_and_never_zero():
+    """The other world, and the one that used to be paid as zero.
+
+    89,5 against bands of 80–89 and 90+ falls in neither. Paying zero there is a figure about
+    somebody's money that the tenant's own rules never authorised; so is quietly promoting it to
+    the band above. The estimate says the number, says the bands do not cover it, and offers the
+    two neighbours — choosing neither."""
+    rules = _BASE_RULES + _PAY_RULES + 'TAB_IBOPE: "Resultados IBOPE"\nCOLUMN_IBOPE: "Resultado"\n'
+    svc = _svc(rules, ibope=[["Professor", "Resultado"], [ME, "89,5"]])
+    est = svc.estimate_professor_pay(identity_label=ME)
+    assert est.ibope_found is True and est.matched_tier is None
+    assert est.bonus_state == "gap", "a gap must not be read as 'below the lowest band'"
+
+    # the NEIGHBOURS, and only them — the whole ladder would be noise for a known number
+    assert [(t.low, t.high) for t in est.neighbouring_tiers] == [(80.0, 89.0), (90.0, None)]
+    assert [h.per_hour for h in est.hypotheses] == [0.0, 30.0, 40.0]
+
+    block = render_pay_block(est)
+    assert "FAIXA NÃO DECLARADA" in block
+    assert "INDETERMINADO, e não é zero" in block
+    assert "89,5%" in block or "89.5%" in block
+    # ...and it did NOT quietly settle on either side
+    assert "*Total*" not in block
+
+
+def test_the_two_worlds_that_look_alike_from_inside_matched_tier_are_told_APART():
+    """Both answer ``matched_tier is None``. Reading them as one is how 89,5 got paid as zero;
+    reading a genuine sub-80 as "undetermined" would be the mirror defect, inventing doubt where
+    the rules are perfectly clear. The state is what separates them."""
+    rules = _BASE_RULES + _PAY_RULES + 'TAB_IBOPE: "Resultados IBOPE"\nCOLUMN_IBOPE: "Resultado"\n'
+    below = _svc(rules, ibope=[["Professor", "Resultado"], [ME, "70"]]) \
+        .estimate_professor_pay(identity_label=ME)
+    gap = _svc(rules, ibope=[["Professor", "Resultado"], [ME, "89,5"]]) \
+        .estimate_professor_pay(identity_label=ME)
+    assert below.matched_tier is gap.matched_tier is None
+    assert (below.bonus_state, gap.bonus_state) == ("below", "gap")
+    assert below.hypotheses == () and gap.hypotheses != ()
+
+
+def test_the_response_rate_CONDITION_is_stated_and_never_assumed_met():
+    """``IBOPE_MIN_RESPONSE_PCT`` is a condition this system has no reader for — no tenant
+    declares a column carrying the answered share. So it is never treated as met and never as
+    failed: it is RENDERED, because a bonus quoted without the condition it hangs on reads as a
+    bonus that has been earned."""
+    rules = (_BASE_RULES + _PAY_RULES + 'TAB_IBOPE: "Resultados IBOPE"\n'
+             'COLUMN_IBOPE: "Resultado"\nIBOPE_MIN_RESPONSE_PCT: 30\n')
+    svc = _svc(rules, ibope=[["Professor", "Resultado"], [ME, "92"]])
+    est = svc.estimate_professor_pay(identity_label=ME)
+    assert est.ibope_min_response_pct == 30.0
+    block = render_pay_block(est)
+    assert "pelo menos 30% da turma" in block
+    assert "Este sistema não lê essa taxa" in block
+    # and a tenant who declares no threshold gets no sentence about one
+    plain = _svc(_BASE_RULES + _PAY_RULES).estimate_professor_pay(identity_label=ME)
+    assert plain.ibope_min_response_pct is None
+    assert "da turma" not in render_pay_block(plain)
+
+
+def test_an_out_of_range_threshold_is_refused_rather_than_clamped():
+    """Clamping 150 to 100 would invent a rule the tenant never wrote, about money."""
+    from cogno_praxis.coordinator import CoordinatorConfig
+    assert CoordinatorConfig("IBOPE_MIN_RESPONSE_PCT: 30").ibope_min_response_pct == 30.0
+    for junk in ("150", "-1", "abc", ""):
+        assert CoordinatorConfig(f"IBOPE_MIN_RESPONSE_PCT: {junk}").ibope_min_response_pct is None
 
 
 def test_a_free_slot_is_not_a_class_and_earns_nothing():
@@ -283,7 +354,7 @@ def test_a_tenant_that_declared_NEITHER_is_told_about_BOTH():
     cfg = CoordinatorConfig(_BASE_RULES)
     assert cfg.pay_undeclared == ("PAY_RATE_PER_HOUR", "COLUMN_HOURS")
     assert cfg.pay_rate_per_hour is None
-    assert cfg.pay_bonus_tiers == ()
+    assert cfg.ibope_bonus == ()
 
 
 def test_the_refusal_is_not_worded_as_a_malfunction():
@@ -383,12 +454,46 @@ def test_money_is_read_in_both_locales_and_refuses_everything_else(raw, expected
     assert parse_money(raw) == expected
 
 
-def test_an_unreadable_bonus_band_is_dropped_without_taking_the_others_with_it():
-    tiers = parse_bonus_tiers("80-89 = 30, isto nao e uma faixa, 90+ = 40")
+def test_a_band_the_parser_cannot_read_is_REPORTED_never_dropped():
+    """The failure this replaced was silent and cost money. An unreadable band used to vanish
+    into a log warning, and a value whose bands ALL failed came back as "no bonus declared" —
+    the very sentence a tenant with no bonus scheme legitimately gets. A typo therefore paid a
+    professor less and gave nobody, on either side, anything to notice."""
+    tiers, bad = parse_bonus_tiers("80-89=30; isto nao e uma faixa; 90+=40")
     assert [(t.low, t.high, t.per_hour) for t in tiers] == [(80.0, 89.0, 30.0),
                                                             (90.0, None, 40.0)]
-    assert parse_bonus_tiers("") == ()
-    assert parse_bonus_tiers("nada aqui") == ()
+    assert bad == ("isto nao e uma faixa",), "the unreadable band has to come back NAMED"
+    assert parse_bonus_tiers("") == ((), ())
+    assert parse_bonus_tiers("nada aqui") == ((), ("nada aqui",))
+
+
+def test_a_comma_is_a_DECIMAL_separator_and_never_a_band_separator():
+    """The thousand-fold money bug, pinned. With the comma acting as a band separator,
+    ``80-89 = 1.234,56`` split into ``"80-89 = 1.234"`` and ``"56"``: the first parsed as a
+    perfectly plausible **R$ 1,23** and the second was discarded. Nothing looked wrong. A
+    separator that can occur INSIDE the value it separates is not a separator."""
+    tiers, bad = parse_bonus_tiers("80-89=1.234,56")
+    assert bad == ()
+    assert [(t.low, t.high, t.per_hour) for t in tiers] == [(80.0, 89.0, 1234.56)]
+    # and the same amount written the other way round reads identically
+    assert parse_bonus_tiers("80-89=1234.56")[0][0].per_hour == 1234.56
+    # two bands whose amounts BOTH carry decimals still separate correctly
+    tiers, bad = parse_bonus_tiers("80-89=30,00; 90+=40,50")
+    assert bad == ()
+    assert [t.per_hour for t in tiers] == [30.0, 40.5]
+
+
+def test_an_unreadable_band_REFUSES_THE_ESTIMATE_and_names_the_entry():
+    """The loud half, at the layer the professor reaches: not a dropped band, a refused turn."""
+    from cogno_praxis.coordinator import CoordinatorConfigError
+    svc = _svc(_BASE_RULES + 'COLUMN_HOURS: "Total de Horas"\nPAY_RATE_PER_HOUR: 120,00\n'
+               "IBOPE_BONUS: 80-89=30; isto nao e uma faixa\n")
+    with pytest.raises(CoordinatorConfigError) as exc:
+        svc.estimate_professor_pay(identity_label=ME)
+    msg = str(exc.value)
+    assert "isto nao e uma faixa" in msg, "the refusal must name the entry to fix"
+    assert "SEMICOLONS" in msg
+    assert "R$" not in msg                            # it refuses without quoting any figure
 
 
 def test_rules_that_declare_no_bonus_say_so_instead_of_hypothesising():

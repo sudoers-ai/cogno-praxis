@@ -33,6 +33,7 @@ from cogno_praxis.coordinator.server import build_server
 from cogno_praxis.coordinator.service import (
     CalendarProposal,
     CoordinatorAccessError,
+    CoordinatorConfigError,
     CoordinatorError,
     CoordinatorService,
     month_label,
@@ -42,6 +43,7 @@ from cogno_praxis.coordinator.types import ClassEntry, ColumnLayout, ReadReport,
 
 __all__ = [
     "CoordinatorConfig", "CoordinatorService", "CoordinatorError", "CoordinatorAccessError",
+    "CoordinatorConfigError",
     "SpreadsheetStore", "InMemorySpreadsheetStore", "ClassEntry", "ColumnLayout",
     "ReadReport", "SheetReadError", "build_server", "is_perishable_edge",
     # the calendar export (.ics by e-mail) — the pure builder plus its delivery port

@@ -34,7 +34,10 @@ Format (all sections optional; sensible defaults shown)::
     TAB_HOURS: "Informações Adicionais" # optional — defaults to TAB_PROFESSORS
     RANGE_HOURS: "A1:E50"               # optional — defaults to RANGE_PROFESSORS
     PAY_RATE_PER_HOUR: 120,00           # the hourly rate
-    PAY_BONUS_TIERS: "80-89 = 30, 90+ = 40"   # optional IBOPE bonus bands, R$/hour
+    IBOPE_BONUS: 80-89=30; 90+=40       # optional bonus bands, R$/hour. SEMICOLONS separate
+                                        # them — the comma is the decimal separator here.
+    IBOPE_MIN_RESPONSE_PCT: 30          # optional: the share of the class that must have
+                                        # ANSWERED before any bonus is due
     TAB_IBOPE: "IBOPE"                  # where a survey RESULT is recorded, if anywhere
     RANGE_IBOPE: "A1:Z200"              # optional — defaults to A1:Z200
     COLUMN_IBOPE: "Resultado"           # the percentage column on that tab
@@ -77,6 +80,16 @@ def _find_int(rules: str, key: str, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return value if value > 0 else default
+
+
+def _find_pct(raw: str) -> Optional[float]:
+    """A percentage in ``0..100`` — anything else (absent, blank, "abc", 150, -1) is ``None``.
+
+    ``None`` means the tenant declared no such threshold, and the estimate then states no
+    condition. A value OUT of range is treated the same way rather than clamped: clamping 150
+    to 100 would invent a rule the tenant did not write, about money."""
+    value = parse_money(raw)
+    return value if value is not None and 0.0 <= value <= 100.0 else None
 
 
 def _find_list(rules: str, key: str, default: tuple[str, ...]) -> tuple[str, ...]:
@@ -164,8 +177,19 @@ class CoordinatorConfig:
         # rate means no estimate at all, while no tier means the rules declare no bonus — a
         # complete answer with nothing hypothetical in it.
         self.pay_rate_per_hour: Optional[float] = parse_money(_find(rules, "PAY_RATE_PER_HOUR", ""))
-        self.pay_bonus_tiers: tuple[BonusTier, ...] = parse_bonus_tiers(
-            _find(rules, "PAY_BONUS_TIERS", ""))
+        # ONE name, no alias. ``PAY_BONUS_TIERS`` existed for exactly one unmerged PR and no
+        # live tenant ever declared it — measured: every role block of the only configured
+        # tenant reports both pay keys missing. There is therefore no compatibility to keep, and
+        # two spellings of one key is a second door to one decision: the coordinator types what
+        # the rules documentation names, and a key that never matches fails as "not configured"
+        # with nothing on screen to say why.
+        self.ibope_bonus: tuple[BonusTier, ...]
+        self.ibope_bonus_unreadable: tuple[str, ...]
+        self.ibope_bonus, self.ibope_bonus_unreadable = parse_bonus_tiers(
+            _find(rules, "IBOPE_BONUS", ""))
+        # The share of the class that must have ANSWERED. ``None`` = the tenant declared none.
+        self.ibope_min_response_pct: Optional[float] = _find_pct(
+            _find(rules, "IBOPE_MIN_RESPONSE_PCT", ""))
         # WHERE a survey RESULT would be, when the tenant records one anywhere. Absent is the
         # ordinary case and is not a defect: it produces the hypotheses, named as hypotheses.
         self.tab_ibope: str = _find(rules, "TAB_IBOPE", "")

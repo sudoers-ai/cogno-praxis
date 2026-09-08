@@ -29,6 +29,7 @@ from cogno_praxis.coordinator.pay import render_pay_block
 from cogno_praxis.coordinator.service import (
     CalendarProposal,
     CoordinatorAccessError,
+    CoordinatorConfigError,
     CoordinatorError,
     CoordinatorService,
     _norm,
@@ -355,15 +356,16 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         except CoordinatorAccessError as exc:
             return (f"NOT PERMITTED: {exc} This is an access rule working as intended, not a "
                     f"failure — state the limit plainly and offer what IS allowed.")
+        except CoordinatorConfigError as exc:
+            # A tenant that has not DECLARED something — or declared it wrongly — is not a system
+            # that BROKE, and the two must not share a word. "ERROR" is what a model relays as
+            # "não consegui acessar"; this has to reach the contact as configuration somebody can
+            # go and fix. Same distinction ``NOT PERMITTED`` draws for a rule that worked.
+            # Caught by TYPE: the first cut matched a substring of the message across two files,
+            # which is a contract nobody can see and that a reworded sentence silently breaks.
+            return (f"NOT CONFIGURED: {exc} This is missing or malformed configuration, not a "
+                    f"malfunction — say so plainly and estimate nothing.")
         except CoordinatorError as exc:
-            # A tenant that has not DECLARED something is not a system that BROKE, and the two
-            # must not share a word. "ERROR" is what a model relays as "não consegui acessar";
-            # this one has to reach the contact as a configuration that is missing, which is a
-            # true sentence somebody can act on. The distinction is the same one ``NOT
-            # PERMITTED`` above draws for a rule that worked.
-            if "has not configured" in str(exc):
-                return (f"NOT CONFIGURED: {exc} This is missing configuration, not a "
-                        f"malfunction — say so plainly and estimate nothing.")
             return f"ERROR: {exc}"
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))

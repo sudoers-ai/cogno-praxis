@@ -712,11 +712,23 @@ class CoordinatorService:
                 "not something this assistant discloses to anyone.")
         missing = self.cfg.pay_undeclared
         if missing:
-            raise CoordinatorError(
+            raise CoordinatorConfigError(
                 f"This institution has not configured the pay figures: {', '.join(missing)} "
                 f"{'is' if len(missing) == 1 else 'are'} missing from the persona rules. "
                 f"Nothing can be estimated without {'it' if len(missing) == 1 else 'them'}, "
                 f"and nothing here will be assumed.")
+        # A band the parser could not read REFUSES THE WHOLE ESTIMATE, and it names the entry.
+        # Dropping it would be the worse of the two available wrongs: the professor is paid less
+        # and the reply is word-for-word the one a tenant with no bonus scheme gets, so nobody —
+        # not the professor, not whoever wrote the typo — has anything to notice.
+        bad = self.cfg.ibope_bonus_unreadable
+        if bad:
+            named = "; ".join(repr(b) for b in bad)
+            raise CoordinatorConfigError(
+                f"IBOPE_BONUS in the persona rules has {len(bad)} band(s) this system cannot "
+                f"read: {named}. A band is 'min-max=amount' or 'min+=amount', and bands are "
+                f"separated by SEMICOLONS (a comma is a decimal separator). Nothing is estimated "
+                f"until that line is fixed — a bonus band that is silently skipped pays less.")
         rate = self.cfg.pay_rate_per_hour
         assert rate is not None                        # pay_undeclared already refused a None
 
@@ -758,8 +770,9 @@ class CoordinatorService:
         pct = self._ibope_result(identity_label=me, report=report)
         return PayEstimate(
             rate=rate, groups=groups, hours_missing=tuple(missing_hours),
-            tiers=self.cfg.pay_bonus_tiers, ibope_found=pct is not None, ibope_pct=pct,
-            ibope_tab=self.cfg.tab_ibope.strip(), period=month_label(period))
+            tiers=self.cfg.ibope_bonus, ibope_found=pct is not None, ibope_pct=pct,
+            ibope_tab=self.cfg.tab_ibope.strip(), period=month_label(period),
+            ibope_min_response_pct=self.cfg.ibope_min_response_pct)
 
     def get_professor_info(self, *, professor: str = "", role: str = "",
                            identity_label: str = "",
@@ -1091,6 +1104,16 @@ class CoordinatorService:
 
 class CoordinatorError(Exception):
     """A domain error (not configured, not found, or an unreadable spreadsheet)."""
+
+
+class CoordinatorConfigError(CoordinatorError):
+    """The tenant's RULES are missing or malformed — nothing broke, nothing is deployed wrong.
+
+    A subclass rather than a phrase in the message, because the caller has to tell it apart and
+    the first cut of this did so with ``"has not configured" in str(exc)``. Matching a substring
+    across two files is a contract nobody can see: reword the sentence and the wrapper silently
+    starts reporting a tenant's unfilled form as a system ERROR — which the model then relays to
+    a professor as "não consegui acessar". The type cannot drift from the sentence."""
 
 
 class CoordinatorAccessError(CoordinatorError):
