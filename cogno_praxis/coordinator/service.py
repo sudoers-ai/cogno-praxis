@@ -950,6 +950,28 @@ class CoordinatorService:
             raise CoordinatorError(
                 "No e-mail is configured for this institution, so the calendar cannot be sent "
                 "from here. Nothing was sent — offer to read the classes out instead.")
+        # The ORGANIZER, checked HERE and not at the send, because both paths come through this
+        # method and a proposal that offers a send this deployment will refuse is the broken
+        # promise the docstring above forbids.
+        #
+        # ``organizer()`` is allowed to answer "" — a mail config with neither a declared
+        # ``from_email`` nor an authenticated ``user`` has no From address to give, and the
+        # adapter says so honestly rather than inventing one. Until now nothing read that ""
+        # and ``build_ics_calendar`` rendered ``ORGANIZER:mailto:`` into a message that went
+        # out anyway. With ``RSVP=TRUE`` the events now ASK for a reply, and every reply is
+        # addressed to the ORGANIZER — so an empty one is an invitation with nowhere to answer,
+        # and this stops being cosmetic.
+        #
+        # A CONFIG error, not a plain one: the wrapper renders it "NOT CONFIGURED", which is
+        # what somebody can actually go and fix, and never as a system that broke. And it NAMES
+        # the keys, the same way the pay estimate does — a refusal that does not say which line
+        # to add is a dead end wearing a sentence.
+        if not sender.organizer()[0].strip():
+            raise CoordinatorConfigError(
+                "The calendar mailer declares no address to send FROM, so the invitation would "
+                "have no ORGANIZER and the professor's reply would have nowhere to go. Set "
+                "`from_email` (or the authenticated `user`) in this institution's SMTP "
+                "configuration. Nothing was sent, and nothing will be until that is declared.")
         return sender, events, recipient, target, dropped
 
     def preview_schedule_to_calendar(
