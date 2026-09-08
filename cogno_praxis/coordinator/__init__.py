@@ -39,13 +39,22 @@ from cogno_praxis.coordinator.service import (
     month_label,
 )
 from cogno_praxis.coordinator.store import InMemorySpreadsheetStore, SpreadsheetStore
-from cogno_praxis.coordinator.types import ClassEntry, ColumnLayout, ReadReport, SheetReadError
+from cogno_praxis.coordinator.types import (
+    ClassEntry,
+    ColumnLayout,
+    DailyChecks,
+    DeadlineDue,
+    ReadReport,
+    SheetReadError,
+)
 
 __all__ = [
     "CoordinatorConfig", "CoordinatorService", "CoordinatorError", "CoordinatorAccessError",
     "CoordinatorConfigError",
     "SpreadsheetStore", "InMemorySpreadsheetStore", "ClassEntry", "ColumnLayout",
     "ReadReport", "SheetReadError", "build_server", "is_perishable_edge",
+    # the whole day in one composed read: today's classes, the deadlines, the survey trigger
+    "DailyChecks", "DeadlineDue",
     # the calendar export (.ics by e-mail) — the pure builder plus its delivery port
     "CalendarEvent", "CalendarSender", "RecordingCalendarSender", "build_ics_calendar",
     "class_event_uid", "sequence_now",

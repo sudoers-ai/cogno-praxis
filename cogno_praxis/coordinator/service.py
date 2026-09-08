@@ -37,7 +37,14 @@ from cogno_praxis.coordinator.pay import (
     parse_money,
 )
 from cogno_praxis.coordinator.store import SpreadsheetStore
-from cogno_praxis.coordinator.types import ClassEntry, ColumnLayout, ReadReport, SheetReadError
+from cogno_praxis.coordinator.types import (
+    ClassEntry,
+    ColumnLayout,
+    DailyChecks,
+    DeadlineDue,
+    ReadReport,
+    SheetReadError,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -593,6 +600,54 @@ class CoordinatorService:
                 last_of[k] = e.when
         return [e for e in entries if e.when == today and not e.is_free_slot
                 and last_of.get((e.sheet_id, _norm(e.professor), _norm(e.subject))) == today]
+
+
+    # ── the day, in one call (COMPOSED — nothing here is a new read) ─────────────────
+    def daily_checks(self, *, professor: str = "", role: str = "",
+                     identity_label: str = "",
+                     report: Optional[ReadReport] = None) -> DailyChecks:
+        """Everything "o que tenho hoje?" asks, from the three predicates that already answer it.
+
+        **Composition, not a fourth predicate.** Today's classes are :meth:`weekly_briefing`
+        narrowed to today; the deadlines are :meth:`check_deadlines` verbatim, each paired with
+        how much of its grace window is left; the survey trigger is :meth:`ibope_status`
+        verbatim. Nothing here re-decides what "the last class" or "still due" means — those
+        definitions have one home each, and a correction to any of them arrives here without
+        this method being touched.
+
+        **The deadline split is "closing today" vs "closing later", and that is the ONLY split
+        this data supports.** A genuinely OVERDUE deadline is INVISIBLE to this vertical:
+        ``check_deadlines`` keeps ``last_class < today <= last_class + GRADE_GRACE_DAYS``, so a
+        discipline whose last class was more than fourteen days ago is filtered out at the
+        source and reaches nothing downstream. Widening that window would change a shipped
+        tool's meaning for every one of its callers, so it is stated here rather than done —
+        see :class:`~cogno_praxis.coordinator.types.DeadlineDue`.
+
+        **``report`` is passed to the FIRST composed call only, and the reason is arithmetic
+        rather than taste.** All three predicates aggregate the SAME spreadsheets with the same
+        arguments, so a tenant with one unreachable sheet would record that one failure three
+        times and the footer would announce "3 spreadsheet(s) could not be read" over a single
+        stale id. One read's worth of trouble must be reported once.
+
+        Read-only, like every predicate under it: there is no branch here that writes, and the
+        only write path in this service is :meth:`confirm_swap`, which nothing here calls.
+        """
+        today = self._today()
+        # FIRST — and therefore the one call that carries the report (see above).
+        week = self.weekly_briefing(professor=professor, role=role,
+                                    identity_label=identity_label, report=report)
+        due = self.check_deadlines(professor=professor, role=role,
+                                   identity_label=identity_label)
+        ibope = self.ibope_status(professor=professor, role=role,
+                                  identity_label=identity_label)
+        return DailyChecks(
+            classes_today=[e for e in week if e.when == today],
+            # ``e.when`` is not Optional here: ``check_deadlines`` drops undated rows itself.
+            deadlines=[DeadlineDue(entry=e,
+                                   days_left=(e.when + timedelta(days=GRADE_GRACE_DAYS)
+                                              - today).days)
+                       for e in due if e.when is not None],
+            ibope_today=list(ibope))
 
     # ── the professor's OWN pay (read-only, self-only) ───────────────────────────────
     def _hours_by_subject(self, sheet_id: str, sheet_key: str,
