@@ -348,16 +348,24 @@ def test_the_answer_lands_in_the_named_column_of_that_class_row():
     NAME, and the row the class was READ from — the same coordinate system ``swap_rows`` uses.
 
     Resolving a STATE column by position is how an inserted column starts silently rewriting the
-    wrong one; ``types.DailyChecks`` refuses to even READ that column for the same reason."""
-    svc, store = _svc([["08/09/2026", "Ter", "Ana", "Algoritmos", ""],
-                       ["10/09/2026", "Qui", "Ana", "Redes", ""]])
+    wrong one; ``types.DailyChecks`` refuses to even READ that column for the same reason.
+
+    The sheet here carries a SIXTH column after the named one — the shape the live corpus has,
+    where the row runs on past the last header cell. It is what makes this test discriminate:
+    with ``Status`` sitting last, "by name" and "by position" agree and a reader resolving by
+    position would pass. ``_resolve_columns`` already documents that a row is wider than its
+    header; this is the same fact on the write side."""
+    header = ["Data", "Dia", "Professor", "Disciplina", "Status", ""]
+    svc, store = _svc([["08/09/2026", "Ter", "Ana", "Algoritmos", "", "8h"],
+                       ["10/09/2026", "Qui", "Ana", "Redes", "", "8h"]], header=header)
 
     svc.record_class_response(class_date="10/09/2026", answer=RSVP_ACCEPTED,
                               professor="Ana", identity_label="Ana", role="PROFESSOR")
 
     assert store.writes == [(_SID, "Secretaria", 2, _STATUS, "Aceita")]
-    grid = store.read_range(_SID, "Secretaria", "A4:E200")
+    grid = store.read_range(_SID, "Secretaria", "A4:F200")
     assert grid[1][_STATUS] == "" and grid[2][_STATUS] == "Aceita"
+    assert [r[5] for r in grid[1:]] == ["8h", "8h"], "the unnamed trailing cell is untouched"
 
 
 def test_a_sheet_with_no_status_column_refuses_as_CONFIGURATION_and_writes_nothing():
