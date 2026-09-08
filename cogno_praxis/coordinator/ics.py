@@ -3,10 +3,21 @@
 One mail, one attachment, **N ``VEVENT``s** — the shape a calendar imports in a single action.
 The scheduler's booking invite (``cogno_host.invites``, over ``cogno_herald.build_ics_event``)
 is the other shape: exactly ONE event, about one appointment, sent the moment it is booked. The
-two are not a parameter apart. A booking has an appointment id, a guest, an organizer expecting
-an RSVP; a class has none of those — it has a class group, a discipline and a day, and it comes
-in batches of thirty. So this is a NEW entry point beside that one, and the booking invite is
-not touched by it: ``build_ics_event`` still renders the same bytes it rendered yesterday.
+two are not a parameter apart. A booking has an appointment id and a guest; a class has neither
+— it has a class group, a discipline and a day, and it comes in batches of thirty. So this is a
+NEW entry point beside that one, and the booking invite is not touched by it:
+``build_ics_event`` still renders the same bytes it rendered yesterday.
+
+**The reply is not read, and this file will not pretend otherwise.** Since 2026-09-08 the
+events carry ``RSVP=TRUE``, so the professor's own calendar offers them accept and decline —
+and NOTHING IN THIS SYSTEM EVER LEARNS WHICH THEY CHOSE. There is no IMAP or POP path in, no
+``METHOD:REPLY`` parser, no ``PARTSTAT`` reader, and no column in any table that records an
+acceptance. A reply is delivered to the ``ORGANIZER`` mailbox and read by whoever reads that
+mailbox, which is a person, not this code. Anyone building on top of this should assume the
+loop is OPEN: a professor may decline every class in the file and the schedule will not move.
+
+``PARTSTAT`` stays ``ACCEPTED`` beside that ``RSVP=TRUE``, which is a contradiction on purpose
+— see the note at the ``ATTENDEE`` line for the thirty-unanswered-invitations reason.
 
 **The UID is derived from CONTENT, and that is the whole design.** A calendar keeps one entry
 per ``UID``; a second message carrying the same ``UID`` and a higher ``SEQUENCE`` UPDATES that
@@ -210,6 +221,17 @@ def build_ics_calendar(
     events = list(events)
     if not events:
         return ""
+    if not organizer_email.strip():
+        # The LAST guard before bytes, and it exists because of what the line above it now
+        # says. With ``RSVP=TRUE`` every reply a client sends is addressed to the ORGANIZER,
+        # so an empty one is an invitation with nowhere to answer — and the old behaviour was
+        # to render ``ORGANIZER:mailto:`` and mail it anyway. The caller refuses first and with
+        # a sentence a person can act on (``CoordinatorService._prepare_calendar``); this one
+        # is the floor a future caller cannot walk past.
+        raise ValueError(
+            "a calendar cannot be built without an ORGANIZER address: with RSVP=TRUE the "
+            "attendee's reply is addressed to it, so an empty one is an invitation with "
+            "nowhere to answer")
     stamp = _utc_stamp(now)
     lines = [
         "BEGIN:VCALENDAR",
@@ -245,7 +267,22 @@ def build_ics_calendar(
         else:
             lines.append(f"ORGANIZER:mailto:{organizer_email}")
         if attendee:
-            lines.append(f"ATTENDEE;RSVP=FALSE;PARTSTAT=ACCEPTED:mailto:{attendee}")
+            # RSVP=TRUE beside PARTSTAT=ACCEPTED is a DELIBERATE, and self-contradictory, pair:
+            # it reads as "you are already down as attending, but tell me if that changes".
+            # Each half is chosen against a measured cost and neither is free.
+            #
+            # RSVP=TRUE is what makes the professor's client offer the accept/decline controls
+            # at all. PARTSTAT stays ACCEPTED because this file is THIRTY classes, imported in
+            # one action: NEEDS-ACTION would turn every one of them into an unanswered
+            # invitation sitting in a person's calendar, which is a cost they see every day, to
+            # close an incoherence nobody sees.
+            #
+            # And the incoherence is smaller than it looks, because of what is NOT built:
+            # NOTHING EVER READS THE REPLY. There is no IMAP/POP path into this system, no
+            # METHOD:REPLY parser, no PARTSTAT reader, no column anywhere that records an
+            # acceptance. The professor can now accept or decline in their own calendar and we
+            # will not know. See the module docstring.
+            lines.append(f"ATTENDEE;RSVP=TRUE;PARTSTAT=ACCEPTED:mailto:{attendee}")
         lines.append("END:VEVENT")
     lines.append("END:VCALENDAR")
     folded: list[str] = []
