@@ -362,9 +362,11 @@ def build_server(service: Optional[CoordinatorService] = None, *,
                                turma: str = "", include_past: bool = False,
                                identity_label: str = "", role: str = "") -> str:
         """List a professor's class schedule (aggregated across all course spreadsheets, sorted
-        by date). EVERY line names its class group ("Turma: ..."), so an unfiltered read already
+        by date, under a bold month header). EVERY line names its class group as its MIDDLE
+        field, unlabelled — ``08/09 · DE_09 · Bancos NoSQL`` — so an unfiltered read already
         answers "which group is this class in?".
-        Returns UPCOMING classes only — from today onward — unless ``include_past``.
+        Returns the next 30 days, from today onward. ``include_past`` reaches backwards; a named
+        ``month`` or ``discipline`` drops the forward cut, ``turma`` does not.
         ``month`` filters by YYYY-MM, a bare number, or a month name in Portuguese or English
         ("março", "September"). ``discipline`` filters by subject and is typo-tolerant ("machne
         learning" still matches). ``turma`` narrows to one class group or a family of them: a
