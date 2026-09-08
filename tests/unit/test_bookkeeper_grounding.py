@@ -127,12 +127,20 @@ def test_server_result_markers_match_the_rules():
         assert SUMMARY_HEAD_RE.match(summ)
         # A removal PROPOSES first (two calls), and the proposal must NOT wear the marker —
         # it is exactly how the rules tell a real deletion from a claimed one.
-        proposed = _text(await mcp.call_tool("remove_by_search", {"query": "Luz",
-                                                                  "identity_id": "u1"}))
+        call = await mcp.call_tool("remove_by_search", {"query": "Luz", "identity_id": "u1"})
+        proposed = _text(call)
         assert not proposed.startswith(REMOVED_PREFIX)
+        # O id vem do ``_meta``, não da prosa — a prosa deixou de o imprimir de propósito
+        # (``server._removal_proposal_text``). Mesmo leitor local que o ``_text`` acima, e
+        # pela mesma razão de ser local: é uma linha de plumbing, não um contrato novo.
+        blocks = call[0] if isinstance(call, tuple) else call
+        confirm = next((dict(m["cogno-mcp/confirm_arguments"])
+                        for b in blocks
+                        for m in [getattr(b, "meta", None) or getattr(b, "_meta", None) or {}]
+                        if m.get("cogno-mcp/confirm_arguments")), {})
         rem = _text(await mcp.call_tool(
             "remove_by_search", {"query": "Luz", "identity_id": "u1",
-                                 "confirm_tx_id": proposed.split("confirm_tx_id='")[1].split("'")[0]}))
+                                 "confirm_tx_id": confirm["confirm_tx_id"]}))
         assert rem.startswith(REMOVED_PREFIX)
     asyncio.run(run())
 

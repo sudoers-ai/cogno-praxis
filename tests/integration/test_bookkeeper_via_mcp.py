@@ -65,7 +65,11 @@ async def test_bookkeeper_loop_over_mcp():
         # Still there — a proposal writes nothing.
         assert "50" in (await disp.execute("get_summary", {"identity_id": "emp-1",
                                                            "role": "ADMIN"})).output
-        tx_id = proposed.output.split("confirm_tx_id='")[1].split("'")[0]
+        # O id vem do CANAL, nunca da prosa: `_removal_proposal_text` deixou de o imprimir
+        # de propósito, e é `cogno_mcp` que o mapeia do `_meta` para cá.
+        assert "confirm_tx_id" not in proposed.output
+        tx_id = proposed.confirm_arguments["confirm_tx_id"]
+        assert tx_id and tx_id not in proposed.output
         rem = await disp.execute("remove_by_search", {"query": "corte", "identity_id": "emp-1",
                                                       "confirm_tx_id": tx_id})
         assert rem.ok and "Removed" in rem.output
