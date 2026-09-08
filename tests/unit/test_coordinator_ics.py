@@ -239,7 +239,9 @@ def test_the_organizer_is_the_mailbox_the_message_leaves_from():
     ics = sender.sent[0]["ics"]
 
     assert "ORGANIZER;CN=Coordenação:mailto:coord@escola.test" in ics
-    assert "ATTENDEE;RSVP=FALSE;PARTSTAT=ACCEPTED:mailto:ana@escola.test" in ics
+    # RSVP=TRUE since 2026-09-08 — see test_the_invitation_asks_for_an_answer.py for why the
+    # PARTSTAT beside it deliberately stays ACCEPTED, and for what still does not read the reply.
+    assert "ATTENDEE;RSVP=TRUE;PARTSTAT=ACCEPTED:mailto:ana@escola.test" in ics
 
 
 # ── the paths that must send NOTHING ──────────────────────────────────────────────────

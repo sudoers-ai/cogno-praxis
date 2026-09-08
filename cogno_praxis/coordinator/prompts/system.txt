@@ -20,6 +20,7 @@ Required tool mapping:
 - Grade/attendance deadlines             → check_deadlines(professor?)
 - Week ahead / "o que tenho essa semana" → get_weekly_briefing(professor?)
 - Survey (IBOPE) reminders today         → check_ibope_status(professor?)
+- "o que tenho hoje?" / the whole day    → daily_checks(professor?)
 - "quanto eu recebo/vou receber"         → estimate_professor_pay(period?, turma?)
 - Open slots to reschedule into          → find_replacement_slot(professor?)
 - Move a class to a free slot            → confirm_swap(professor, original_date, new_date, reason?)
