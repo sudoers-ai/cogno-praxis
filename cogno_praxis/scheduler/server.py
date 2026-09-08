@@ -23,6 +23,7 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from cogno_praxis.render import Field, render_block
 from cogno_praxis.scheduler.engine import SchedulerConfig
 from cogno_praxis.scheduler.service import (
     RESOLVE_DATE_DESCRIPTION,
@@ -53,20 +54,63 @@ def _status_reply(appt: Appointment, changed: bool) -> str:
     return f"Appointment {appt.appointment_id} is now {appt.status}."
 
 
-def _format_appt(a: Appointment) -> str:
-    """Render one appointment line for ``list_appointments``.
+def _day_header(iso: str) -> str:
+    """``"2026-09-09"`` → ``"quarta-feira, 9 de setembro de 2026 (2026-09-09)"``.
 
-    A self-block (``block_schedule``) has no guest name — its marker lives in
-    ``notes`` (e.g. "Bloqueado"). The old render dropped ``notes`` and left an
-    empty name, so a block came out as a nameless ``[CONFIRMED]`` row that the
-    EGO/voicer could not tell apart from a client booking (the doctor's 16/17
-    block was invisible). We surface the block explicitly instead.
-    """
-    if not a.with_name:  # self-occupation / block — no guest, marker in notes
-        label = a.notes.strip() or "Bloqueado"
-        return f"{a.appointment_id}: [BLOQUEIO: {label}] on {a.date} at {a.time} [{a.status}]"
-    return (f"{a.appointment_id}: {a.with_name} with {a.host_name or a.host_id} "
-            f"on {a.date} at {a.time} [{a.status}]")
+    Both forms, once per day instead of once per row, and each is there for a different reader.
+
+    The SPOKEN half is the one this listing never had. Until now every row carried an ISO date
+    and nothing else, so a persona answering "quando é a minha consulta?" had to work out the
+    weekday itself — the arithmetic behind the live incident ``format_date`` was written for (a
+    persona handed "2026-07-25 (Saturday)" and still voicing "sexta-feira"). This is that same
+    function, not a second date formatter: a listing that named the weekday differently from
+    the tool that resolves dates would be two answers to one question.
+
+    The ISO half is what a follow-up is computed from — ``check_availability`` and
+    ``reschedule_appointment`` both take ``YYYY-MM-DD`` — and it is HOISTED here precisely
+    because it is constant within a day: paying for it once per group instead of once per row
+    is the whole compression this pattern offers.
+
+    A date this cannot read keeps its raw string as its own header, so the row is still filed
+    and still carries its date. It never returns ``""`` for a non-empty input: that would send
+    the row to the end of the block with no date at all, which is the one outcome worse than an
+    ugly header."""
+    raw = str(iso).strip()
+    try:
+        spoken = format_date(date.fromisoformat(raw),
+                             os.environ.get("COGNO_SCHEDULER_LANG", "pt"))
+    except (TypeError, ValueError):
+        return raw
+    return f"{spoken} ({raw})"
+
+
+def _appt_record(a: Appointment) -> "dict[str, str]":
+    """One appointment as the SIX fields the listing may show, chosen one at a time.
+
+    A self-block (``block_schedule``) has no guest name — its marker lives in ``notes`` (e.g.
+    "Bloqueado"). The old render dropped ``notes`` and left an empty name, so a block came out
+    as a nameless ``[CONFIRMED]`` row that the EGO/voicer could not tell apart from a client
+    booking (the doctor's 16/17 block was invisible). It is surfaced explicitly, in the field
+    that answers "who".
+
+    ``id`` is on this line and looks like noise. It is not removable:
+    ``cogno_anima.tools.IdProvenanceDispatcher`` refuses ``cancel``/``confirm``/``complete``/
+    ``reschedule`` unless the ``appointment_id`` appeared as a SUBSTRING in a read earlier in
+    the SAME turn. So it goes LAST, where the eye arrives after the facts — never away.
+
+    ``day`` is in the record and NOT in :data:`_APPT_FIELDS`: it is the grouping key, so it is
+    rendered once as a header instead of once per row. A key a caller did not choose has no
+    path into a line, which is the whole discipline of the shared renderer."""
+    who = a.with_name.strip() or f"[BLOQUEIO: {a.notes.strip() or 'Bloqueado'}]"
+    return {"day": _day_header(a.date), "time": a.time, "who": who,
+            "host": a.host_name or a.host_id, "status": f"[{a.status}]",
+            "id": a.appointment_id}
+
+
+#: The listing's columns, in reading order. The STATUS bracket is not decoration either:
+#: ``cogno_praxis.scheduler.grounding`` reads ``[PENDING]``/``[CONFIRMED]`` out of this very
+#: text with a regex, and the host's booking notifier reads a bracketed status too.
+_APPT_FIELDS = ("time", "who", "host", "status", Field("id"))
 
 
 def build_server(service: Optional[SchedulerService] = None, *, name: str = "cogno-scheduler") -> FastMCP:
@@ -222,8 +266,12 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
                             f"{len(others)} appointment(s) with another status — call "
                             f"list_appointments again WITHOUT `status` to see them.")
                 return f"No {status.strip().upper()} appointments found."
-            return "No appointments found."
-        return "\n".join(_format_appt(a) for a in appts)
+            # The UNFILTERED empty case falls through: `render_block` renders `empty` for an
+            # empty list, so "No appointments found." has ONE definition instead of two.
+            # `scheduler/grounding.LIST_EMPTY_RE` matches that sentence and nothing after it,
+            # which is why no note or footer may ever be attached to this call.
+        return render_block([_appt_record(a) for a in appts], fields=_APPT_FIELDS,
+                            empty="No appointments found.", group_by=lambda r: str(r["day"]))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
     def reschedule_appointment(appointment_id: str, new_date: str, new_time: str,

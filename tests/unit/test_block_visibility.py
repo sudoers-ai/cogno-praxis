@@ -55,12 +55,34 @@ async def test_block_then_list_loses_block_semantics():
 
     # ...and now (fix A) it is rendered as an explicit block the EGO/voicer can
     # voice, carrying the 'Bloqueado' marker that used to be dropped.
-    block_line = next(ln for ln in listed.splitlines() if "2026-07-16" in ln)
-    client_line = next(ln for ln in listed.splitlines() if "2026-07-15" in ln)
+    #
+    # The two rows used to be FOUND by their ISO date, because every line carried one. Since
+    # the shared renderer groups by day, the ISO lives in the day HEADER — hoisted, not
+    # dropped, which is why the assertion above still reads unchanged. A row is now found by
+    # what makes it that row, and the day it was filed under is asserted separately: that
+    # pairing is strictly more than the old lookup checked, since a block filed under the
+    # wrong header would have passed before.
+    lines = listed.splitlines()
+    block_line = next(ln for ln in lines if "BLOQUEIO" in ln)
+    client_line = next(ln for ln in lines if "Neymar Junior" in ln)
     print("block line :", repr(block_line))
     print("client line:", repr(client_line))
     assert "BLOQUEIO" in block_line and "Bloqueado" in block_line
-    # A block is no longer confusable with a client booking: no bogus " with " gap.
+    assert _day_header_above(lines, block_line) == "*quinta-feira, 16 de julho de 2026 (2026-07-16)*"
+    assert _day_header_above(lines, client_line) == "*quarta-feira, 15 de julho de 2026 (2026-07-15)*"
+    # A block is no longer confusable with a client booking: no bogus name gap where the
+    # guest would be — the marker occupies the "who" field outright.
     assert " with " not in block_line
-    # Real client bookings are unchanged.
-    assert "Neymar Junior with" in client_line
+    # Real client bookings still name the guest and the professional, in that order.
+    assert client_line.index("Neymar Junior") < client_line.index("Dr. Vinicius Vale")
+
+
+def _day_header_above(lines: "list[str]", row: str) -> str:
+    """The nearest bold day header preceding ``row`` — which day the listing filed it under."""
+    head = ""
+    for ln in lines:
+        if ln.startswith("*"):
+            head = ln
+        if ln == row:
+            return head
+    raise AssertionError(f"row not found in listing: {row!r}")
