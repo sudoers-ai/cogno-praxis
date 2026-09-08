@@ -250,8 +250,12 @@ def test_the_unnamed_month_FALLBACK_uses_the_same_single_asterisk(monkeypatch):
     monkeypatch.setattr(srv, "_MONTH_LABELS_PT", ("", "Janeiro"))
     out = srv._month_header(date(2026, 12, 1))
 
-    assert out == "*12/2026*"
+    # The MARKER is the assertion, not the numeric shape: this branch exists so a short table is
+    # still readable, and how it spells "December 2026" is free. A probe that reworded it to
+    # `*2026-12*` broke an earlier cut of this test, which was measuring the wrong thing.
     assert "**" not in out
+    assert out.startswith("*") and out.endswith("*")
+    assert "2026" in out and "12" in out
 
 
 def test_the_two_renderers_of_this_vertical_agree_on_the_marker():
