@@ -82,7 +82,8 @@ _UNDOABLE: "dict[str, str]" = {
 # ``test_every_asking_tool_really_refuses_to_commit_unasked`` below.
 _ASKS_ITSELF: "dict[str, str]" = {
     "remove_by_search": "confirm_tx_id — the id of the row it proposed after reading the ledger",
-    "company_delete": "confirm_company_id — the id of the company it proposed after reading it",
+    "company_delete": "confirm_token — a one-time secret it MINTED while proposing, bound to "
+                      "(identity, company) and spendable once",
 }
 
 _BUILDERS = {"scheduler": build_scheduler, "bookkeeper": build_bookkeeper,
@@ -237,15 +238,19 @@ def test_every_asking_tool_really_refuses_to_commit_unasked():
     assert out_c.proposal is not None and out_c.removed is None
     assert len(co.list_companies()) == 2
 
-    # 2. a guessed/wrong id is not a shortcut into the write path — and it must not silently
-    #    delete the company it was ASKED about either
-    assert co.delete("acme", identity_id="e1", role="ADMIN",
-                     confirm_company_id="initech").removed is None
-    assert len(co.list_companies()) == 2
+    # 2. NO value the caller already holds is a shortcut into the write path. The middle entry
+    #    is the one that used to pass: until 2026-09-06 the confirmed branch compared
+    #    `confirm_company_id` with the row's own id, so `acme`+`acme` — one call, both ends —
+    #    removed the company. This arm only tried `initech`, i.e. a guess at ANOTHER row, and
+    #    a guess at the row you are already naming is the easier one.
+    for guess in ("initech", "acme", "Acme"):
+        assert co.delete("acme", identity_id="e1", role="ADMIN",
+                         confirm_token=guess).removed is None
+        assert len(co.list_companies()) == 2
 
     # 3. the argument the tool named DOES commit — exactly the company proposed
     gone = co.delete("acme", identity_id="e1", role="ADMIN",
-                     confirm_company_id=out_c.proposal.confirm_company_id).removed
+                     confirm_token=out_c.proposal.confirm_token).removed
     assert gone is not None and gone.company_id == "acme"
     assert [c.company_id for c in co.list_companies()] == ["initech"]
 

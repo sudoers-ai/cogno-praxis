@@ -16,6 +16,13 @@ the durable facts the graph is for — so there is nothing here to veto, and an 
 function would read as coverage.
 """
 
+from cogno_praxis.companies.confirmations import (
+    DEFAULT_CONFIRMATION_TTL_S,
+    ConfirmationStore,
+    InMemoryConfirmationStore,
+    confirmation_subject,
+    mint_token,
+)
 from cogno_praxis.companies.identifiers import (
     cnpj_is_acceptable,
     cnpj_valid,
@@ -45,4 +52,6 @@ __all__ = [
     # what an update WROTE — the row and the fields that moved, named
     "UpdateOutcome", "FieldChange",
     "cnpj_is_acceptable", "cnpj_valid", "company_id_for", "fold", "normalize_cnpj",
+    "ConfirmationStore", "InMemoryConfirmationStore", "DEFAULT_CONFIRMATION_TTL_S",
+    "confirmation_subject", "mint_token",
 ]

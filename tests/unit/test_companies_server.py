@@ -293,8 +293,16 @@ async def test_the_delete_proposal_carries_the_gate_C_meta():
     blocks = result[0] if isinstance(result, tuple) else result
     meta = getattr(blocks[0], "meta", None) or getattr(blocks[0], "_meta", None) or {}
     assert meta.get("cogno-mcp/needs_confirmation") is True
-    assert meta.get("cogno-mcp/confirm_arguments") == {"confirm_company_id": "acme"}
+    # The named argument is a one-time TOKEN this call minted, not the id the caller sent.
+    asked = meta.get("cogno-mcp/confirm_arguments") or {}
+    assert set(asked) == {"confirm_token"} and asked["confirm_token"]
     assert "NOT REMOVED" in blocks[0].text
+    # THE TOKEN IS NOT IN THE TEXT, and this is the load-bearing half: the text is what the
+    # MODEL reads, so a token printed there is a token the model can put straight back into a
+    # second call without anybody being asked — which is exactly how the previous version
+    # taught the shortcut it was meant to close.
+    assert asked["confirm_token"] not in blocks[0].text
+    assert "confirm_token" not in blocks[0].text
     assert svc.get("acme") is not None
 
 
@@ -331,9 +339,15 @@ async def test_the_confirmed_delete_reports_the_row_that_LEFT():
     the proposal deliberately does not carry it."""
     svc = CompanyService(InMemoryCompanyStore())
     svc.register("Acme", identity_id="u1")
-    result = await build_server(svc).call_tool(
+    server = build_server(svc)
+    proposal = await server.call_tool(
+        "company_delete", {"company_id": "acme", "identity_id": "u1", "role": "ADMIN"})
+    first = proposal[0] if isinstance(proposal, tuple) else proposal
+    meta = getattr(first[0], "meta", None) or getattr(first[0], "_meta", None) or {}
+    token = (meta.get("cogno-mcp/confirm_arguments") or {})["confirm_token"]
+    result = await server.call_tool(
         "company_delete", {"company_id": "acme", "identity_id": "u1", "role": "ADMIN",
-                           "confirm_company_id": "acme"})
+                           "confirm_token": token})
     blocks = result[0] if isinstance(result, tuple) else result
     assert blocks[0].text.startswith("Removed:")
     assert svc.get("acme") is None

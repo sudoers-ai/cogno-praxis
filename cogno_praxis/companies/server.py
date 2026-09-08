@@ -70,6 +70,8 @@ from typing import Optional, Sequence
 from mcp.server.fastmcp import FastMCP
 from mcp.types import TextContent, ToolAnnotations
 
+from cogno_praxis.companies.confirmations import (
+    ConfirmationStore, InMemoryConfirmationStore)
 from cogno_praxis.companies.service import (
     CompanyError,
     CompanyService,
@@ -126,13 +128,19 @@ def _deletion_proposal_text(p: DeletionProposal) -> str:
 
     It deliberately does NOT start with the ``Removed:`` marker the confirmed path uses:
     nothing was removed, and the marker is how the rest of the system tells the two apart.
+
+    **The token is not in here, and that is the point.** This text is read by a model, so
+    anything it names is something the model can put straight back into a second call — which
+    is exactly how the previous version taught the shortcut it was meant to close (it printed
+    ``confirm_company_id=<the id the caller already had>``). The token travels in the block's
+    ``_meta`` instead, to the layer that asks the human; see the note at the tool.
     """
     return "\n".join([
         "NOT REMOVED — nothing was deleted yet. This is the company that would be removed:",
         f"  {_line(p.company)}",
         "Tell the user EXACTLY which company (name, and the CNPJ if it has one) you are about "
-        "to remove and get their agreement. Only then call company_delete again with "
-        f"confirm_company_id={p.confirm_company_id!r}.",
+        "to remove and get their agreement. Do NOT call company_delete again yourself: this "
+        "removal is already held, and it commits only after the user agrees.",
     ])
 
 
@@ -273,31 +281,46 @@ def build_server(service: Optional[CompanyService] = None, *,
     # would make gate B hold this by NAME, before it runs — and a tool gate B holds never
     # executes, so the grounded question below could never be asked. The hold is not dropped,
     # it is MOVED to the channel that can carry the per-CALL fact. The write path is
-    # unreachable without `confirm_company_id`, an id the caller can only have learned from the
-    # proposal, and `test_tool_annotations.py` measures that rather than believing it.
+    # unreachable without a `confirm_token` this tool itself MINTED on a previous call, and
+    # `test_tool_annotations.py` measures that rather than believing it.
+    #
+    # That last sentence used to name `confirm_company_id` and it was not true: that argument
+    # was the row's own id, i.e. the tool's required FIRST argument, so one call with the id on
+    # both ends removed the company with nothing proposed to anybody — measured 2026-09-06
+    # through EGO → host write policy → this vertical. The prose is corrected here and the
+    # mechanism in `confirmations.py`; the two were wrong in the same direction, which is why
+    # neither was fixed alone.
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     def company_delete(company_id: str, identity_id: str = "", role: str = "",
-                       confirm_company_id: str = ""):
+                       confirm_token: str = ""):
         """Remove a registered company. TWO STEPS — destructive.
 
         Called with company_id alone it deletes NOTHING: it reads the record and answers with
-        the company it would remove. Relay that to the user, get their agreement, then call
-        this again with confirm_company_id=<the id it named>.
+        the company it would remove. Relay that to the user and get their agreement; the
+        confirmation is carried back for you.
+
+        confirm_token: HOST-SUPPLIED. Never invent, guess or copy it — a value you write here
+            is refused and the removal is proposed again.
         """
         outcome = svc.delete(company_id, identity_id=identity_id, role=role,
-                             confirm_company_id=confirm_company_id)
+                             confirm_token=confirm_token)
         if outcome.removed is not None:
             return f"Removed: {_line(outcome.removed)}."
         assert outcome.proposal is not None
         # The prose stays the text; the machine-readable half rides in the block's ``_meta``
         # beside it. ``confirm_arguments`` names the argument THIS tool needs in order to
         # commit — the vertical's own business, never invented by the layer above.
+        #
+        # THE CHANNEL IS THE PROTECTION, not just the plumbing. The value here is a one-time
+        # token this call minted (`confirmations`), so the only route from the proposal to the
+        # commit runs through the layer that recorded this `_meta` and asked the human. The
+        # model reads the TEXT, and the text does not contain it.
         return TextContent(
             type="text",
             text=_deletion_proposal_text(outcome.proposal),
             _meta={_META_NEEDS_CONFIRMATION: True,
                    _META_CONFIRM_ARGUMENTS: {
-                       "confirm_company_id": outcome.proposal.confirm_company_id}},
+                       "confirm_token": outcome.proposal.confirm_token}},
         )
 
     # NO `help` tool, deliberately. The bookkeeper ships one and this vertical would collide
@@ -309,15 +332,26 @@ def build_server(service: Optional[CompanyService] = None, *,
 
 
 def _seeded_service() -> CompanyService:
-    """Build a service from the injected per-tenant env (Postgres when a DSN is set)."""
+    """Build a service from the injected per-tenant env (Postgres when a DSN is set).
+
+    The confirmation store follows the company store, and it MUST: this process is spawned per
+    turn, so a removal's proposal and its confirmation are produced by two different processes.
+    A Postgres company store beside an in-memory confirmation store would propose a removal
+    every time and commit none (see `confirmations`).
+    """
     dsn = os.environ.get("COGNO_COMPANY_DSN") or os.environ.get("COGNO_PG_DSN")
+    scope = os.environ.get("COGNO_COMPANY_SCOPE", "default")
     store: CompanyStore
+    confirmations: ConfirmationStore
     if dsn:
-        from cogno_praxis.companies.stores.postgres import PgCompanyStore
-        store = PgCompanyStore(dsn, os.environ.get("COGNO_COMPANY_SCOPE", "default"))
+        from cogno_praxis.companies.stores.postgres import (
+            PgCompanyStore, PgConfirmationStore)
+        store = PgCompanyStore(dsn, scope)
+        confirmations = PgConfirmationStore(dsn, scope)
     else:
         store = InMemoryCompanyStore()
-    return CompanyService(store)
+        confirmations = InMemoryConfirmationStore()
+    return CompanyService(store, confirmations=confirmations)
 
 
 if __name__ == "__main__":

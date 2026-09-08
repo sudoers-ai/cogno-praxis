@@ -322,22 +322,24 @@ def test_delete_without_the_confirmation_reads_and_proposes():
     out = svc.delete("acme", identity_id="staff-1", role="ADMIN")
     assert out.removed is None
     assert out.proposal is not None and out.proposal.company.name == "Acme"
-    assert out.proposal.confirm_company_id == "acme"
+    # The proposal MINTS a one-time secret; it does not hand back the id the caller already
+    # sent. That distinction is the whole gate — `test_companies_deletion_nonce.py`.
+    assert out.proposal.confirm_token and "acme" not in out.proposal.confirm_token
     assert svc.get("acme") is not None
 
 
 def test_delete_with_the_WRONG_confirmation_still_commits_nothing():
     svc = _peopled()
     assert svc.delete("acme", identity_id="staff-1", role="ADMIN",
-                      confirm_company_id="initech").removed is None
+                      confirm_token="initech").removed is None
     assert svc.get("acme") is not None and svc.get("initech") is not None
 
 
-def test_delete_with_the_id_it_named_removes_exactly_that_company():
+def test_delete_with_the_token_it_minted_removes_exactly_that_company():
     svc = _peopled()
     out = svc.delete("acme", identity_id="staff-1", role="ADMIN")
     gone = svc.delete("acme", identity_id="staff-1", role="ADMIN",
-                      confirm_company_id=out.proposal.confirm_company_id).removed
+                      confirm_token=out.proposal.confirm_token).removed
     assert gone is not None and gone.company_id == "acme"
     assert {c.company_id for c in svc.list_companies()} == {"padaria-sol-nascente", "initech"}
 
@@ -374,9 +376,10 @@ def test_a_store_failure_on_DELETE_is_refused_and_leaks_no_infrastructure():
     store = _BreaksOnWrite()
     svc = CompanyService(store)
     svc.register("Acme", identity_id="u1")
+    token = svc.delete("acme", identity_id="u1", role="ADMIN").proposal.confirm_token
     store.fail = True
     with pytest.raises(CompanyError) as exc:
-        svc.delete("acme", identity_id="u1", role="ADMIN", confirm_company_id="acme")
+        svc.delete("acme", identity_id="u1", role="ADMIN", confirm_token=token)
     assert "RuntimeError" in str(exc.value)
     assert "10.0.0.1" not in str(exc.value)
 
@@ -391,8 +394,9 @@ def test_a_confirmed_delete_of_a_row_that_vanished_is_not_reported_as_a_removal(
 
     svc = CompanyService(_Vanishing())
     svc.register("Acme", identity_id="u1")
+    token = svc.delete("acme", identity_id="u1", role="ADMIN").proposal.confirm_token
     with pytest.raises(CompanyError, match="já não estava"):
-        svc.delete("acme", identity_id="u1", role="ADMIN", confirm_company_id="acme")
+        svc.delete("acme", identity_id="u1", role="ADMIN", confirm_token=token)
 
 
 def test_update_replaces_one_brand_field_and_leaves_its_twin_alone():
