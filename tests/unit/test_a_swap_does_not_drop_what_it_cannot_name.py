@@ -226,3 +226,124 @@ def test_reading_a_sheet_with_unnamed_columns_is_unaffected():
     assert len(entries) == 1
     assert entries[0].cells[5:8] == ["16.0", "Confirmado", ""]
     assert entries[0].subject == "Redes" and entries[0].professor == "Ana"
+
+
+# ── the destination rule: only an open slot, and a refusal that SAYS SO ──────────────
+#
+# The owner's rule is "the destination can only be an empty slot or a «Reposição» slot", and
+# that is already what the code enforces — through the tenant's own ``FREE_SLOT_LABELS``, which
+# for the live tenant reads "Livre, Reposição": "Livre" IS the empty slot, spelled. What was
+# missing is the REASON. One sentence covered four different worlds, and a contact who is told
+# only "no free slot found" tries another date, and then another.
+#
+# Measured before widening anything: of the 13 distinct live schedule lines that provably were
+# not cut before the discipline field (the persisted tool result is capped at 240 characters, so
+# most lines cannot answer this at all), 0 carry an EMPTY discipline cell. There is therefore no
+# evidence of an empty-subject row distinct from the "Livre" label, and this file does not widen
+# what counts as a destination on the strength of 13 lines. It only names the refusal.
+
+def _occupied_dest():
+    return _svc([
+        ["16/07/2026", "Ter", "Ana", "Redes", "101", "16.0", "Confirmado", ""],
+        ["18/07/2026", "Qui", "Bruno", "Estatistica", "205", "20.0", "Confirmado", ""],
+    ], header=_HEADER_WITH_BLANKS)
+
+
+def test_a_destination_that_already_has_a_class_is_refused_WITH_THE_REASON():
+    from cogno_praxis.coordinator import CoordinatorError
+    import pytest as _pytest
+    svc, _ = _occupied_dest()
+    with _pytest.raises(CoordinatorError) as exc:
+        svc.confirm_swap(professor="Ana", original_date="16/07/2026", new_date="18/07/2026",
+                         role="SUPERVISOR", identity_label="Sofia")
+    msg = str(exc.value)
+    assert "already has a class scheduled" in msg
+    assert "Livre" in msg, "the reader cannot guess the tenant's own label for an open slot"
+    # ...and it names the obstacle, never the person behind it: whose class occupies that date
+    # is somebody else's schedule, and the access rule does not stop inside an error message.
+    assert "Bruno" not in msg and "Estatistica" not in msg
+
+
+def test_a_refusal_leaves_NOTHING_written():
+    """The obligatory negative twin. A refusal that has already touched the sheet is worse than
+    the defect it refused: the class is half-moved and nobody was told. Measured by comparing
+    the whole grid, not one row — a partial write anywhere is a failure here."""
+    from cogno_praxis.coordinator import CoordinatorError
+    import copy
+    import pytest as _pytest
+    svc, store = _occupied_dest()
+    before = copy.deepcopy(store._sheets[(_SID, "Secretaria")])
+    with _pytest.raises(CoordinatorError):
+        svc.confirm_swap(professor="Ana", original_date="16/07/2026", new_date="18/07/2026",
+                         role="SUPERVISOR", identity_label="Sofia")
+    assert store._sheets[(_SID, "Secretaria")] == before, "a refused swap wrote to the sheet"
+
+
+def test_a_date_that_is_not_in_the_schedule_says_that_and_not_something_else():
+    from cogno_praxis.coordinator import CoordinatorError
+    import pytest as _pytest
+    svc, _ = _occupied_dest()
+    with _pytest.raises(CoordinatorError) as exc:
+        svc.confirm_swap(professor="Ana", original_date="16/07/2026", new_date="25/12/2026",
+                         role="SUPERVISOR", identity_label="Sofia")
+    assert "not a date in this schedule" in str(exc.value)
+
+
+def test_a_holiday_is_refused_as_a_HOLIDAY_and_not_as_a_missing_date():
+    """A skip-label row is dropped from the ordinary aggregate, so before this it looked exactly
+    like a date that does not exist. They want different next moves."""
+    from cogno_praxis.coordinator import CoordinatorError
+    import pytest as _pytest
+    svc, _ = _svc([
+        ["16/07/2026", "Ter", "Ana", "Redes", "101", "16.0", "Confirmado", ""],
+        ["18/07/2026", "Qui", "", "Feriado", "", "", "", ""],
+    ], header=_HEADER_WITH_BLANKS)
+    with _pytest.raises(CoordinatorError) as exc:
+        svc.confirm_swap(professor="Ana", original_date="16/07/2026", new_date="18/07/2026",
+                         role="SUPERVISOR", identity_label="Sofia")
+    msg = " ".join(str(exc.value).split())      # flattened: pin the sentence, not the wrapping
+    assert "Feriado" in msg
+    assert "no class can be moved onto it" in msg
+
+
+def test_a_Reposicao_slot_is_STILL_a_valid_destination():
+    """The twin that keeps the refusal from swallowing the rule it is supposed to police: the
+    two labels the tenant declares must still work, trailing cells and all."""
+    svc, store = _svc([
+        ["16/07/2026", "Ter", "Ana", "Redes", "101", "16.0", "Confirmado", ""],
+        ["18/07/2026", "Qui", "", "Reposicao", "", "", "", ""],
+    ], header=_HEADER_WITH_BLANKS,
+        rules=_RULES.replace('FREE_SLOT_LABELS: "Livre"',
+                             'FREE_SLOT_LABELS: "Livre, Reposicao"'))
+    svc.confirm_swap(professor="Ana", original_date="16/07/2026", new_date="18/07/2026",
+                     role="SUPERVISOR", identity_label="Sofia")
+    src, dst = _rows(store)
+    assert dst[3] == "Redes" and dst[5] == "16.0"
+    assert src[3] == "Reposicao"
+
+
+def test_the_diagnosis_cannot_turn_a_clean_refusal_into_a_crash():
+    """``_why_not_a_destination`` re-reads the sheet to say WHY. It runs on the failure path, so
+    a store that has started throwing must still produce the refusal — a diagnostic that raises
+    replaces a sentence the contact can act on with a stack trace nobody sees. ``aggregate``
+    already swallows a per-sheet failure into its report, and this pins that the refusal inherits
+    that and does not grow a second, louder failure mode."""
+    from cogno_praxis.coordinator import CoordinatorError
+    import pytest as _pytest
+    svc, store = _occupied_dest()
+
+    calls = {"n": 0}
+    real = store.read_range
+
+    def flaky(sheet_id, tab, a1_range):
+        calls["n"] += 1
+        if calls["n"] > 1:                       # the first read (the swap's own) succeeds
+            raise RuntimeError("the sheet went away between the read and the diagnosis")
+        return real(sheet_id, tab, a1_range)
+
+    store.read_range = flaky                      # type: ignore[method-assign]
+    with _pytest.raises(CoordinatorError) as exc:
+        svc.confirm_swap(professor="Ana", original_date="16/07/2026", new_date="18/07/2026",
+                         role="SUPERVISOR", identity_label="Sofia")
+    assert "RuntimeError" not in str(exc.value)
+    assert "Livre" in str(exc.value)              # still a usable sentence

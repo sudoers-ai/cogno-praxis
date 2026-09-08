@@ -834,6 +834,42 @@ class CoordinatorService:
         return len(events), recipient, dropped
 
     # ── the spreadsheet write ────────────────────────────────────────────────────────
+    def _why_not_a_destination(self, src: ClassEntry, new_date: str) -> str:
+        """WHY this date cannot receive the class — the sentence a bare refusal owes the reader.
+
+        A destination has to be one of the tenant's own free-slot labels (``FREE_SLOT_LABELS``,
+        e.g. "Livre, Reposição"). Everything else is refused, and the refusal used to be one
+        sentence for four different worlds: "No free slot found on 18/07 in the same schedule."
+        That is true and it is useless. It cannot tell the reader whether the date is not in the
+        schedule at all, whether it is a holiday, or whether it already has a class on it — and
+        those want three different next moves. A contact who is not told why simply tries
+        another date, and then another.
+
+        So this looks the date up AGAIN, this time with the skip rows included, purely to
+        DIAGNOSE. It is a read: nothing here decides whether the swap happens — the caller has
+        already decided it does not — and nothing here writes.
+
+        **It names the obstacle, never the person behind it.** "That date already has a class"
+        is the reason; whose class it is, is somebody else's schedule, and the access rule that
+        governs the rest of this vertical does not stop being true inside an error message. The
+        acceptable labels ARE named, because they are the tenant's own vocabulary and the reader
+        cannot guess them.
+        """
+        same_day = [e for e in self.aggregate(include_skip=True, include_free=True)
+                    if e.sheet_id == src.sheet_id and _date_matches(e.when, e.date_str, new_date)]
+        allowed = ", ".join(self.cfg.free_slot_labels) or "(none configured)"
+        if not same_day:
+            return (f"{new_date} is not a date in this schedule, so there is no slot to move the "
+                    f"class into. A destination has to be an open slot already on the sheet "
+                    f"({allowed}).")
+        skipped = [e for e in same_day if self._is_skip(e.subject)]
+        if skipped and len(skipped) == len(same_day):
+            return (f"{new_date} is marked \"{skipped[0].subject}\" in this schedule — no class "
+                    f"can be moved onto it. A destination has to be an open slot ({allowed}).")
+        return (f"{new_date} already has a class scheduled, so it is not an open slot. A class "
+                f"can only be moved onto a slot the sheet marks as open ({allowed}) — pick one "
+                f"of those, or free this date first. Nothing has been changed.")
+
     def confirm_swap(self, *, professor: str, original_date: str, new_date: str,
                      role: str = "", identity_label: str = "") -> tuple[ClassEntry, ClassEntry]:
         """Swap a professor's class (source, by date+professor) into a free slot (dest, by
@@ -866,7 +902,7 @@ class CoordinatorService:
         dst_matches = [e for e in entries if e.is_free_slot and e.sheet_id == src.sheet_id
                        and _date_matches(e.when, e.date_str, new_date)]
         if not dst_matches:
-            raise CoordinatorError(f"No free slot found on {new_date} in the same schedule.")
+            raise CoordinatorError(self._why_not_a_destination(src, new_date))
         if _ambiguous_year(dst_matches, new_date):
             raise CoordinatorError(
                 f"'{new_date}' matches free slots in more than one year — please include the year.")
