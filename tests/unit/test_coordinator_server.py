@@ -45,7 +45,7 @@ def test_get_professor_schedule_tool_reads_real_data():
         out = _text(await mcp.call_tool("get_professor_schedule",
                                         {"role": "SUPERVISOR", "identity_label": "Sofia"}))
         # the listing says the day, and the month header says the month and the year once
-        assert "Redes" in out and "- 20/07 ·" in out and "**Julho de 2026**" in out
+        assert "Redes" in out and "- 20/07 ·" in out and "*Julho de 2026*" in out
     asyncio.run(run())
 
 

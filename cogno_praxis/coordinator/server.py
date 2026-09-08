@@ -160,15 +160,31 @@ _MONTH_LABELS_PT: tuple[str, ...] = (
 
 
 def _month_header(when: date) -> str:
-    """``**Setembro de 2026**`` — the group header for one month, bold.
+    """``*Setembro de 2026*`` — the group header for one month, bold.
 
-    Bold is ``*…*``-free on purpose: WhatsApp and Telegram both render ``**text**`` from the
-    Markdown the rest of the system already emits, and the voicer that reproduces this block is
-    the same one that writes the surrounding sentences. A month the table does not name falls
-    back to its number rather than raising — a listing is not the place to discover a bad
-    constant, and ``09/2026`` is still readable."""
+    **ONE asterisk, because WhatsApp's bold is ``*text*`` and not ``**text**``.** This shipped
+    with two, on the premise that "WhatsApp and Telegram both render ``**text**``". That premise
+    is false for the channel these replies actually reach a professor through: WhatsApp renders
+    a single pair and passes a double pair through UNCHANGED, so every month header a contact
+    received arrived with the asterisks VISIBLE. Nothing anywhere converts markup on the way
+    out — not this vertical, not the host, not the gateway — so what this function writes is
+    what a person reads, byte for byte.
+
+    ``coordinator/pay.py`` had it right the whole time (``_H = "*{}*"``, with the reason in a
+    comment beside it), which is the sharpest evidence available that this was a slip rather
+    than a disagreement: one package, two renderers, one of them already correct.
+
+    **This is a DRESSING, not the design.** The real answer is that a vertical emits STRUCTURE
+    — grouping, order, which fields — and a GATEWAY translates it to the channel's dialect
+    once, at the end, over the whole voiced text (``*x*`` on WhatsApp, ``<b>x</b>`` on Telegram,
+    Markdown left alone on the web). That adapter does not exist yet, and until it does this
+    single asterisk is what makes WhatsApp work. Whoever builds it should know there is an
+    asterisk here waiting to be normalized, and that Telegram TOLERATES this one meanwhile.
+
+    A month the table does not name falls back to its number rather than raising — a listing is
+    not the place to discover a bad constant, and ``09/2026`` is still readable."""
     name = _MONTH_LABELS_PT[when.month] if when.month < len(_MONTH_LABELS_PT) else ""
-    return f"**{name} de {when.year}**" if name else f"**{when.month:02d}/{when.year}**"
+    return f"*{name} de {when.year}*" if name else f"*{when.month:02d}/{when.year}*"
 
 
 def _entry_status(e: ClassEntry, defaults: tuple[str, ...], column: str) -> str:
