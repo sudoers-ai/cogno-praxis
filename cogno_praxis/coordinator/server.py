@@ -36,7 +36,7 @@ from cogno_praxis.coordinator.service import (
     _parse_date,
 )
 from cogno_praxis.coordinator.store import InMemorySpreadsheetStore
-from cogno_praxis.coordinator.types import ClassEntry, ReadReport
+from cogno_praxis.coordinator.types import ClassEntry, DailyChecks, ReadReport
 
 
 def _says_the_same_date(cell: str, e: ClassEntry) -> bool:
@@ -258,6 +258,66 @@ def _fmt_list(entries: list[ClassEntry], *, empty: str,
     return f"{body}\n\n{footer}" if footer else body
 
 
+#: The section labels of a daily check, in the order a professor needs them: what is happening
+#: NOW, then what closes today, then what closes later, then the one nudge that is time-boxed to
+#: today. Constants rather than sentences built at the call site — the assembly below picks
+#: from this table and adds nothing of its own.
+_DAILY_SECTIONS: "dict[str, str]" = {
+    "classes": "TODAY'S CLASSES",
+    "due_today": "GRADE/ATTENDANCE DEADLINES — the grace window closes TODAY",
+    "due_ahead": "GRADE/ATTENDANCE DEADLINES — still inside the window",
+    "due_none": "GRADE/ATTENDANCE DEADLINES",
+    "ibope": "SURVEY (IBOPE) REMINDER — a discipline's LAST class is today",
+}
+
+
+def _daily_checks_text(dc: DailyChecks, *, report: Optional[ReadReport] = None,
+                       defaults: tuple[str, ...] = (), status_column: str = "") -> str:
+    """The three answers of one day, ASSEMBLED — it renders no line of its own.
+
+    **This is deliberately not a formatter.** Every line here comes out of ``_fmt_list``, the
+    same function the other six read tools render with, called once per section under a label
+    from :data:`_DAILY_SECTIONS`. No new line shape, no new grouping, no second way to print a
+    class — so a channel-aware renderer arriving later replaces THIS function and the four
+    labels, and nothing else in the vertical has to move.
+
+    **An empty section is a SENTENCE, never a bare header.** ``_fmt_list`` already answers an
+    empty list with its ``empty`` string, which is the mechanism that keeps "nothing today"
+    from reaching a model as a header with a void under it — a void is the shape a model fills
+    in from memory. And a day that is empty in ALL of them is said ONCE: four sentences saying
+    nothing four ways is how "you have nothing today" stops reading as an answer.
+
+    The deadline sections are two because the DATA is two — a window closing today cannot wait
+    and a window with days left can. The per-deadline day COUNT is on
+    :attr:`~cogno_praxis.coordinator.types.DeadlineDue.days_left` and is deliberately not
+    rendered here: which of "vence hoje" and "faltam 6 dias" a channel says, and how, is
+    presentation, and it lands with the renderer.
+    """
+    footer = _fmt_report(report) if report else ""
+    if dc.empty:
+        body = ("Nothing today: no classes, no grade/attendance deadline inside its window, no "
+                "survey reminder. That is a complete answer — say it plainly and do not go "
+                "looking for something to report.")
+        return f"{body}\n\n{footer}" if footer else body
+
+    def section(key: str, entries: list[ClassEntry], *, empty: str) -> str:
+        return _DAILY_SECTIONS[key] + "\n" + _fmt_list(
+            entries, empty=empty, defaults=defaults, status_column=status_column)
+
+    blocks: list[str] = [section("classes", dc.classes_today, empty="No classes today.")]
+    for key, group in (("due_today", dc.due_today), ("due_ahead", dc.due_ahead)):
+        if group:                             # `empty` is unreachable while the group is non-empty
+            blocks.append(section(key, [d.entry for d in group], empty=""))
+    if not dc.deadlines:
+        blocks.append(section(
+            "due_none", [],
+            empty="No discipline is inside the grade/attendance window today."))
+    blocks.append(section(
+        "ibope", dc.ibope_today,
+        empty="No discipline has its last class today — no survey reminder."))
+    body = "\n\n".join(blocks)
+    return f"{body}\n\n{footer}" if footer else body
+
 def _calendar_proposal_text(p: CalendarProposal,
                             report: Optional[ReadReport] = None) -> str:
     """The question a calendar send owes the professor, GROUNDED in what was just read.
@@ -437,6 +497,23 @@ def build_server(service: Optional[CoordinatorService] = None, *,
             svc.ibope_status(professor=professor, identity_label=identity_label, role=role,
                              report=report),
             empty="No last classes today — no survey reminders needed.", report=report, **_status_args(svc)))
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    def daily_checks(professor: str = "", identity_label: str = "", role: str = "") -> str:
+        """Everything today holds for a professor, in ONE call: the classes happening TODAY, the
+        grade/attendance deadlines still inside their window (split into the ones whose window
+        closes TODAY and the ones with days left), and any discipline whose LAST class is today
+        and therefore needs the end-of-course survey (IBOPE) reminder. Use it for "o que tenho
+        hoje?", "como está o meu dia", "tem algo pra hoje?" — one call instead of three. It reads
+        the same live spreadsheets the individual tools read and WRITES NOTHING. A day with
+        nothing in it comes back as one sentence saying so: that is a complete answer, so say it
+        plainly and never fill the gap from memory or from an earlier turn. A professor sees only
+        their own day; a supervisor may name any professor."""
+        report = ReadReport()
+        return _guard(lambda: _daily_checks_text(
+            svc.daily_checks(professor=professor, identity_label=identity_label, role=role,
+                             report=report),
+            report=report, **_status_args(svc)))
 
     # READ-ONLY, and self-only inside the service. The scope this opened is "a professor may
     # ask what THEY earn"; there is no argument here that reaches anybody else's figure, and

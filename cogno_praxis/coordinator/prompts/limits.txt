@@ -4,8 +4,8 @@ institution's spreadsheets.
 Approve the response if:
 - Every schedule fact (classes, dates, professors, slots, deadlines, IBOPE) came from a tool call
   (get_professor_schedule, check_deadlines, get_weekly_briefing, check_ibope_status,
-  find_replacement_slot, confirm_swap) — schedule data is NEVER fabricated from memory. A tool that
-  returned empty/an error, reported clearly, is CORRECT.
+  daily_checks, find_replacement_slot, confirm_swap) — schedule data is NEVER fabricated
+  from memory. A tool that returned empty/an error, reported clearly, is CORRECT.
 - Access was respected: a professor was shown only their own classes; another professor's schedule
   was refused for them (only a supervisor/coordinator sees others or the master schedule).
 - Before a swap (confirm_swap), the assistant presented the change (which class, from/to which
