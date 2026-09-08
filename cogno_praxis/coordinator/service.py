@@ -311,7 +311,33 @@ class CoordinatorService:
                                   else max(0, int(horizon_days)))
 
     # ── layout + row helpers ─────────────────────────────────────────────────────────
-    def _resolve_columns(self, header: list[str]) -> ColumnLayout:
+    def _resolve_columns(self, header: list[str], *, width: int = 0) -> ColumnLayout:
+        """The layout of one sheet, resolved from its header — plus, for a WRITE, its ``width``.
+
+        ``width`` is how many cells the rows a swap is about actually carry, and it exists
+        because a sheet is wider than its header row. The tenant's own schedule tab carries
+        columns AFTER the last named one — an hour total, an approval state — with the header
+        cell left BLANK, so the header alone says the row ends at ``Professor`` while the row
+        goes on for three more cells.
+
+        Bounding the content columns at the last non-empty HEADER is what made ``confirm_swap``
+        drop them: a swap exchanged the discipline and the professor and left everything past
+        the header behind, so the class moved to its new date and its hour total and its
+        "Confirmado" stayed with the old one. Nobody sees that happen — the two rows are both
+        still full, just describing each other's class.
+
+        **The fix deliberately does NOT name those columns.** It does not need to: to keep a
+        cell you have to carry it, not understand it. A column nobody named cannot be FIXED
+        either (``FIXED_COLUMNS`` matches header names), so the honest default for an unnamed
+        cell is the one every named content column already has — it belongs to the class, and it
+        travels with it. The day somebody opens the sheet and writes those headers in, this
+        stays correct: a named column is resolved exactly as before, and a named one the tenant
+        adds to ``FIXED_COLUMNS`` stops travelling, which is the escape hatch working.
+
+        ``width`` defaults to 0, so every READ path resolves byte-for-byte what it resolved
+        before; only the caller that is about to WRITE passes it, because it is the only one
+        that knows which two rows are involved.
+        """
         h = [c.strip().lower() for c in header]
         date_idx = next((i for i, c in enumerate(h) if c == self.cfg.column_date.lower()), 0)
         prof_idx = next((i for i, c in enumerate(h) if c == self.cfg.column_professor.lower()), None)
@@ -320,7 +346,8 @@ class CoordinatorService:
         time_idx = next((i for i, c in enumerate(h) if c == self.cfg.column_time.lower()), None)
         fixed_names = {_norm(n) for n in self.cfg.fixed_columns}
         fixed = {i for i, c in enumerate(h) if _norm(c) in fixed_names}
-        content = [i for i in range(last + 1) if i not in fixed]
+        # NOT ``last + 1``: that is the header's width, and the ROW is what gets written.
+        content = [i for i in range(max(last + 1, width)) if i not in fixed]
         return ColumnLayout(date_idx, prof_idx, subj_idx, last, fixed, content, time_idx=time_idx)
 
     @staticmethod
@@ -844,7 +871,10 @@ class CoordinatorService:
             raise CoordinatorError(
                 f"'{new_date}' matches free slots in more than one year — please include the year.")
         dst = dst_matches[0]
-        cols = self._resolve_columns(src.header)
+        # The WIDTH comes from the two rows being written, not from the header: a cell the
+        # header does not reach is still a cell, and leaving it behind is what desynchronised
+        # the hour total and the approval state from the class that moved.
+        cols = self._resolve_columns(src.header, width=max(len(src.cells), len(dst.cells)))
         self.store.swap_rows(src.sheet_id, self.cfg.tab_schedule, self.cfg.range_schedule,
                              src.row_idx, dst.row_idx, content_cols=cols.content_indices)
         return src, dst
