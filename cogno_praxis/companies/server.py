@@ -79,6 +79,7 @@ from cogno_praxis.companies.service import (
     FieldChange,
 )
 from cogno_praxis.companies.store import Company, CompanyStore, InMemoryCompanyStore
+from cogno_praxis.render import Field, render_block
 
 # ── The gate-C channel: how this server tells cogno-anima "I ran, I read, I did not commit" ──
 #
@@ -105,6 +106,51 @@ def _line(c: Company) -> str:
         if value:
             bits.append(f"{label}: {value}")
     return " — ".join(bits)
+
+
+#: The listing's columns, in reading order — and the one place in this repo where the shared
+#: renderer's "no labels" rule does NOT apply, said here rather than quietly broken.
+#:
+#: That rule is earned by a listing whose lines are HOMOGENEOUS under a header: a date, a class,
+#: a discipline, in the same three positions on every row, so the reader learns the shape once.
+#: A company line is not that. There is no grouping key to hoist, and the fields are of
+#: different KINDS — a registration number, a line of business, two paragraphs of brand prose —
+#: so a bare value has nothing around it to say which it is. What generalises here is the rest
+#: of the pattern: the fields are CHOSEN one at a time, the name is emphasised so the eye has
+#: somewhere to land, and ``·`` replaces the em-dash chain.
+#:
+#: The two long brand fields stay in the listing on purpose. Dropping them is the obvious
+#: compression and ``test_companies_server.py::test_a_company_line_names_everything_the_record
+#: _holds`` already pins the opposite, with a reason: the read tools exist so the model can say
+#: something TRUE about a company, and a line missing the guidelines makes it guess or omit.
+#: Overturning a pinned property needs a measurement, and this change has none.
+_COMPANY_FIELDS = (
+    Field("name", emphasis=True),
+    Field("cnpj", label="CNPJ"),
+    Field("segment", label="segmento"),
+    Field("visual_identity", label="identidade visual:"),
+    Field("guidelines", label="diretrizes:"),
+    Field("company_id", label="id:"),
+)
+
+
+def _company_record(c: Company) -> "dict[str, str]":
+    """One company as the six fields a listing may show, read one at a time.
+
+    The two brand fields ride one jsonb under stable keys (``store.Company``), so they are
+    lifted by NAME here — never by iterating the mapping, which is how a store gaining a key
+    would start printing it to contacts without anyone deciding to."""
+    brand = c.visual_identity or {}
+    return {"name": c.name, "cnpj": c.cnpj, "segment": c.segment,
+            "visual_identity": str(brand.get("visual_identity") or "").strip(),
+            "guidelines": str(brand.get("guidelines") or "").strip(),
+            "company_id": c.company_id}
+
+
+def _company_block(rows: "Sequence[Company]", *, empty: str, note: str = "") -> str:
+    """The listing every company READ answers with — one definition, three callers."""
+    return render_block([_company_record(c) for c in rows], fields=_COMPANY_FIELDS,
+                        empty=empty, notes=(note,) if note else ())
 
 
 def _change_lines(changes: "Sequence[FieldChange]") -> str:
@@ -207,10 +253,8 @@ def build_server(service: Optional[CompanyService] = None, *,
         """List the registered companies you can see. This CHOOSES nothing — to act on one,
         search for it by name or CNPJ first."""
         rows = svc.list_visible(identity_id=identity_id, role=role)
-        note = svc.scope_note(identity_id, role)
-        if not rows:
-            return "\n".join(x for x in ["No companies are registered yet.", note] if x)
-        return "\n".join([*(f"- {_line(c)}" for c in rows), *( [note] if note else [] )])
+        return _company_block(rows, empty="No companies are registered yet.",
+                              note=svc.scope_note(identity_id, role))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def company_search(query: str, identity_id: str = "", role: str = "") -> str:
@@ -233,7 +277,10 @@ def build_server(service: Optional[CompanyService] = None, *,
         return "\n".join([
             f"{len(rows)} companies match {query!r} — none was selected. Ask the user which "
             f"one they mean, then search again for that one:",
-            *(f"- {_line(c)}" for c in rows), *( [note] if note else [] )])
+            # `empty` is unreachable on this branch (len(rows) > 1) and is still a true
+            # sentence: an `empty=""` would be a default nobody can see being wrong.
+            _company_block(rows, empty=f"No company you can see matches {query!r}.",
+                           note=note)])
 
     # ── writes ───────────────────────────────────────────────────────────────────────────
     #
