@@ -347,3 +347,53 @@ def test_the_diagnosis_cannot_turn_a_clean_refusal_into_a_crash():
                          role="SUPERVISOR", identity_label="Sofia")
     assert "RuntimeError" not in str(exc.value)
     assert "Livre" in str(exc.value)              # still a usable sentence
+
+
+# ── the state columns: a swap MOVES them and never REWRITES them ─────────────────────
+#
+# The owner named the three unnamed columns on 2026-09-08: F is the discipline's hour load, G is
+# whether the professor CONFIRMED or is still awaited, H is whether the proposal was sent. G and
+# H are the secretariat's state — the assistant reads and shows them, it never writes them.
+#
+# This file still addresses them only by POSITION and still never asserts a meaning, because the
+# fix is meant to survive a column I arriving. What the names buy is this test: the one write
+# path the assistant has must be shown to MOVE those cells and never to author a value in them.
+# A swap that "helpfully" cleared a confirmation, or stamped one, would destroy a professor's
+# answer with nothing to recover it from.
+
+def test_a_swap_authors_no_state_value_it_only_carries_the_ones_already_there():
+    """Conservation, stated as an alphabet: after the swap, the set of values living in the two
+    state columns is exactly the set that was there before. Nothing was written, cleared or
+    invented — the cells only changed row."""
+    svc, store = _svc([
+        ["16/07/2026", "Ter", "Ana", "Redes", "101", "16.0", "Confirmado", "Proposta enviada"],
+        ["18/07/2026", "Qui", "", "Livre", "205", "", "", ""],
+    ], header=_HEADER_WITH_BLANKS)
+    before = _rows(store)
+    was = sorted([before[0][6], before[0][7], before[1][6], before[1][7]])
+
+    svc.confirm_swap(professor="Ana", original_date="16/07/2026", new_date="18/07/2026",
+                     role="SUPERVISOR", identity_label="Sofia")
+    src, dst = _rows(store)
+
+    assert sorted([src[6], src[7], dst[6], dst[7]]) == was
+    # and they travelled TOGETHER, onto the row their class is on now
+    assert dst[6] == "Confirmado" and dst[7] == "Proposta enviada"
+    assert src[6] == "" and src[7] == ""
+
+
+def test_a_swap_never_clears_a_confirmation_that_the_destination_already_carried():
+    """The destructive direction, on its own: a free slot that already carries state must have
+    it exchanged, not blanked. A one-way copy would silently delete it."""
+    svc, store = _svc([
+        ["16/07/2026", "Ter", "Ana", "Redes", "101", "16.0", "", "Proposta enviada"],
+        ["18/07/2026", "Qui", "", "Livre", "205", "4.0", "Confirmado", "Proposta enviada"],
+    ], header=_HEADER_WITH_BLANKS)
+
+    svc.confirm_swap(professor="Ana", original_date="16/07/2026", new_date="18/07/2026",
+                     role="SUPERVISOR", identity_label="Sofia")
+    src, dst = _rows(store)
+
+    assert src[6] == "Confirmado", "the destination's confirmation was destroyed by the swap"
+    assert dst[6] == ""
+    assert src[7] == "Proposta enviada" and dst[7] == "Proposta enviada"
