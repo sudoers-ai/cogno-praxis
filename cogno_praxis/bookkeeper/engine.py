@@ -44,6 +44,23 @@ _ASK_DONT_GUESS = (
     "this tool again with what they answer — never guess, average, round, or pick one of "
     "several numbers.")
 
+# ── pt-BR grouping: "1.250" is one thousand two hundred and fifty ─────────────────────
+# With BOTH separators present the rightmost one decides and the reading is unambiguous
+# ("1.500,50" pt-BR, "1,500.50" en). With only DOTS there is no rightmost-wins to apply, and
+# the old code fell through to the en reading: ``"1.250"`` parsed as 1.25 and ``"12.500"`` as
+# 12.5 — the amount understated by a factor of 1000, silently, in a ledger.
+#
+# What settles it is not the locale but the ARITHMETIC OF MONEY: an amount has two decimal
+# places, so a separator followed by exactly THREE digits cannot be a decimal point. That
+# holds in pt-BR and in en alike, which is why this needs no locale flag and cannot be wrong
+# for the caller who meant the other grammar.
+#
+# Deliberately NOT the comma twin (``"1,250"``): a comma is the pt-BR DECIMAL separator, that
+# form is genuinely ambiguous, and this vertical's contact writes pt-BR — 18 of the 19 money
+# tokens contacts typed across the whole `turn_traces` table carry a comma decimal. Guessing
+# there would trade a measured defect for an unmeasured one.
+_DOT_THOUSANDS = re.compile(r"^\d{1,3}(?:\.\d{3})+$")
+
 
 class BookkeeperError(ValueError):
     """A domain-rule violation (invalid amount, bad date, …). The service re-raises it and the
@@ -53,7 +70,8 @@ class BookkeeperError(ValueError):
 def parse_amount(raw: object) -> float:
     """Coerce a user/LLM-supplied amount to a positive float, or raise.
 
-    Accepts ``150``, ``150.0``, ``"150"``, ``"R$ 1.500,50"`` (pt-BR) and ``"1,500.50"`` (en).
+    Accepts ``150``, ``150.0``, ``"150"``, ``"R$ 1.500,50"`` (pt-BR) and ``"1,500.50"`` (en),
+    and reads ``"R$ 1.250"`` as 1250.00 rather than 1.25 (see :data:`_DOT_THOUSANDS`).
 
     An argument that names no number, or more than one, is REFUSED with a reason that tells
     the model to ASK the user — never to guess or approximate. See :data:`_NUMBER_RUN`.
@@ -78,6 +96,9 @@ def parse_amount(raw: object) -> float:
         # Handles both "1.500,50" (pt-BR) and "1,500.50" (en).
         if s.rfind(",") > s.rfind("."):
             s = s.replace(".", "").replace(",", ".")
+        elif _DOT_THOUSANDS.match(s):
+            # Only dots, in groups of exactly three: thousands, not a decimal. See above.
+            s = s.replace(".", "")
         else:
             s = s.replace(",", "")
         try:

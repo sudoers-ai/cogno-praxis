@@ -148,7 +148,7 @@ async def test_under_yesterdays_annotation_the_tool_never_runs():
         # a tool NÃO correu: a frase é a do portão, não a do livro
         assert "PENDING CONFIRMATION" in held.result
         assert "NOT REMOVED" not in held.result       # a prosa do produtor nunca foi produzida
-        assert "149.90" not in held.result            # nem o valor que só uma leitura sabe
+        assert "149,90" not in held.result            # nem o valor que só uma leitura sabe
         assert "also match" not in held.result        # nem as irmãs
         assert await _rows(disp) == before
         assert committed_this_turn(ctx) is False
@@ -172,7 +172,7 @@ async def test_the_shipped_annotation_lets_the_grounded_question_be_asked():
 
         # (2) a prosa que só um LEITOR poderia ter escrito — a diferença toda entre B e C
         assert "NOT REMOVED" in held.result
-        assert "2026-03-10" in held.result and "149.90" in held.result   # data e valor
+        assert "2026-03-10" in held.result and "149,90" in held.result   # data e valor
         assert "2 other entry(ies) also match" in held.result            # as irmãs
         assert "confirm_tx_id=" in held.result
 
@@ -224,7 +224,7 @@ async def test_the_confirmed_replay_removes_exactly_the_row_that_was_proposed():
         done = [e for s in res.steps for e in s.tool_calls]
         assert [e.tool for e in done] == ["remove_by_search"]
         assert done[0].ok is True and done[0].side_effect is True
-        assert "Removed:" in done[0].result and "149.90" in done[0].result
+        assert "Removed:" in done[0].result and "149,90" in done[0].result
         assert res.pending_confirmation == []
         assert await _rows(disp) == before - 1
         assert committed_this_turn(ctx) is True

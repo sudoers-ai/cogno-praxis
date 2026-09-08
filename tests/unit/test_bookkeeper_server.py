@@ -53,14 +53,16 @@ async def test_add_income_outcome_and_summary_flow():
     inc = _text(await mcp.call_tool(
         "add_income", {"description": "corte", "amount": "R$ 50,00",
                        "identity_id": "emp-1", "client": "João"}))
-    assert "Income recorded" in inc and "João" in inc and "R$ 50.00" in inc and "2026-07-10" in inc
+    # pt-BR grouping — the vertical's contact writes ',' decimals and reads them back the
+    # same way (see tests/unit/test_the_money_is_written_in_pt_br.py).
+    assert "Income recorded" in inc and "João" in inc and "R$ 50,00" in inc and "2026-07-10" in inc
 
     out = _text(await mcp.call_tool(
         "add_outcome", {"description": "luz", "amount": "80", "identity_id": "emp-1"}))
-    assert "Expense recorded" in out and "R$ 80.00" in out
+    assert "Expense recorded" in out and "R$ 80,00" in out
 
     summary = _text(await mcp.call_tool("get_summary", {"identity_id": "emp-1", "role": "EMPLOYEE"}))
-    assert "R$ 50.00" in summary and "R$ 80.00" in summary and "R$ -30.00" in summary  # net
+    assert "R$ 50,00" in summary and "R$ 80,00" in summary and "R$ -30,00" in summary  # net
 
 
 async def test_list_clients_and_search():
