@@ -271,6 +271,15 @@ _DAILY_SECTIONS: "dict[str, str]" = {
 }
 
 
+#: What an EMPTY day says — one sentence, and a named one for the same reason the section labels
+#: are named: it is wording, so a renderer will eventually own it, and a test that pinned the
+#: English instead of the fact would break on a translation that changed nothing.
+_DAILY_NOTHING = (
+    "Nothing today: no classes, no grade/attendance deadline inside its window, no survey "
+    "reminder. That is a complete answer — say it plainly and do not go looking for something "
+    "to report.")
+
+
 def _daily_checks_text(dc: DailyChecks, *, report: Optional[ReadReport] = None,
                        defaults: tuple[str, ...] = (), status_column: str = "") -> str:
     """The three answers of one day, ASSEMBLED — it renders no line of its own.
@@ -295,10 +304,7 @@ def _daily_checks_text(dc: DailyChecks, *, report: Optional[ReadReport] = None,
     """
     footer = _fmt_report(report) if report else ""
     if dc.empty:
-        body = ("Nothing today: no classes, no grade/attendance deadline inside its window, no "
-                "survey reminder. That is a complete answer — say it plainly and do not go "
-                "looking for something to report.")
-        return f"{body}\n\n{footer}" if footer else body
+        return f"{_DAILY_NOTHING}\n\n{footer}" if footer else _DAILY_NOTHING
 
     def section(key: str, entries: list[ClassEntry], *, empty: str) -> str:
         return _DAILY_SECTIONS[key] + "\n" + _fmt_list(

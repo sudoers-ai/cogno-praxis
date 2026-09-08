@@ -37,6 +37,7 @@ from cogno_praxis.coordinator import (
     build_server,
 )
 from cogno_praxis.coordinator.server import (
+    _DAILY_NOTHING,
     _DAILY_SECTIONS,
     _daily_checks_text,
     _status_args,
@@ -170,7 +171,7 @@ def test_a_day_with_nothing_in_it_is_ONE_sentence_and_never_an_empty_block():
     assert dc.empty
 
     out = _daily_checks_text(dc, **_status_args(svc))
-    assert "Nothing today" in out
+    assert out == _DAILY_NOTHING, "an empty day is the declared sentence and nothing else"
     for heading in _DAILY_SECTIONS.values():
         assert heading not in out, "an empty day must not be rendered as empty sections"
 
