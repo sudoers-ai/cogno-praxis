@@ -16,11 +16,24 @@ from cogno_praxis.coordinator.ics import (
     sequence_now,
 )
 from cogno_praxis.coordinator.config import CoordinatorConfig
+from cogno_praxis.coordinator.pay import (
+    BonusTier,
+    PayEstimate,
+    PayGroup,
+    PayHypothesis,
+    PayLine,
+    fmt_hours,
+    fmt_money,
+    parse_bonus_tiers,
+    parse_money,
+    render_pay_block,
+)
 from cogno_praxis.coordinator.durability import is_perishable_edge
 from cogno_praxis.coordinator.server import build_server
 from cogno_praxis.coordinator.service import (
     CalendarProposal,
     CoordinatorAccessError,
+    CoordinatorConfigError,
     CoordinatorError,
     CoordinatorService,
     month_label,
@@ -30,6 +43,7 @@ from cogno_praxis.coordinator.types import ClassEntry, ColumnLayout, ReadReport,
 
 __all__ = [
     "CoordinatorConfig", "CoordinatorService", "CoordinatorError", "CoordinatorAccessError",
+    "CoordinatorConfigError",
     "SpreadsheetStore", "InMemorySpreadsheetStore", "ClassEntry", "ColumnLayout",
     "ReadReport", "SheetReadError", "build_server", "is_perishable_edge",
     # the calendar export (.ics by e-mail) — the pure builder plus its delivery port
@@ -37,4 +51,7 @@ __all__ = [
     "class_event_uid", "sequence_now",
     # the PROPOSAL half of that export: what a send would put in the mail, read and not sent
     "CalendarProposal", "month_label",
+    # the professor's own pay: the estimate, its declared bonus bands, and its block
+    "PayEstimate", "PayGroup", "PayLine", "PayHypothesis", "BonusTier",
+    "render_pay_block", "parse_bonus_tiers", "parse_money", "fmt_money", "fmt_hours",
 ]

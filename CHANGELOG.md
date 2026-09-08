@@ -4,6 +4,63 @@
 
 ### Added
 
+- **`coordinator` — um professor passa a poder perguntar quanto ELE ganha, e o escopo abre só
+  para isso.** Medido em dois turnos vivos do tenant do dono a 2026-09-06: às 22:35:30Z
+  «como funciona a parte financeira. minhas aulas por exemplo, qto eu receberia por mes?» foi
+  respondido com «informações sobre remuneração e pagamentos estão fora do meu escopo»; às
+  22:39:07Z «baseado nesse calculos, qual seria o q tenho a receber…» com «Desculpe, mas não
+  posso ajudar com questões financeiras.»
+
+  **As duas recusas vieram de CAMADAS DIFERENTES**, e é por isso que esta mudança toca quatro
+  prompts e não um. O traço do turno 67 traz `superego.blocked=true` com `judge_attempts=0` — o
+  guarda de entrada parou-o antes de qualquer ferramenta correr. O turno 65 **não foi bloqueado**
+  (`judge_rejected_all`, `last_draft_voiced`): o executor leu a agenda, escreveu um rascunho
+  honesto, e o «You do NOT ... handle finances» da própria persona mais a cláusula de fora-de-
+  escopo do juiz transformaram-no numa recusa. Abrir só a entrada consertava um dos dois.
+
+  O rascunho do turno 65 é também a especificação da conta. Deixado a si mesmo, o executor
+  escreveu «the schedule read did not return those hour totals» e «I can't calculate a reliable
+  monthly total from the number of classes alone» — está certo, e é essa a falha que se fecha: as
+  horas existem na folha da própria instituição e nada as estava a ler.
+
+  **`estimate_professor_pay(period?, turma?)`**, SÓ LEITURA e **só do próprio**, para todos os
+  papéis. Conta: `aulas no período × horas da disciplina × valor/hora` + bónus IBOPE. Saída
+  agrupada por turma e mês, em bloco renderizado (cabeçalho `*negrito*`, linhas sem rótulos
+  repetidos).
+
+  **Nada aqui inventa um número**, e cada forma existe porque a alternativa é uma mentira:
+
+  - **as horas vêm de uma coluna que o inquilino NOMEIA** (`COLUMN_HOURS`, na `TAB_HOURS` que
+    por omissão é a `TAB_PROFESSORS` que ele já declarou). Não há default e não há farejar
+    cabeçalhos: um header que «parece» horas é como um número de sala vira carga horária.
+  - **o valor/hora e as faixas de bónus vêm das `custom_rules`** (`PAY_RATE_PER_HOUR`,
+    `IBOPE_BONUS`, `IBOPE_MIN_RESPONSE_PCT`). Sem eles não há estimativa nenhuma — a recusa
+    NOMEIA a chave que falta, e chega ao modelo como `NOT CONFIGURED:`, não como `ERROR:`, porque
+    um inquilino que não declarou não é um sistema que avariou. As bandas separam-se por **`;`** e
+    nunca por vírgula, que é o separador **decimal** de quem escreve as regras: com a vírgula,
+    `80-89 = 1.234,56` partia-se ao meio e valia **R$ 1,23**. Uma banda ilegível **recusa a
+    estimativa inteira** e nomeia a entrada — engoli-la paga menos ao professor com a mesma frase
+    que um inquilino sem esquema de bónus recebe legitimamente.
+  - **limites e buracos são coisas diferentes:** um resultado **abaixo** da banda mais baixa vale
+    **zero**, e o bloco diz que é um valor apurado, não uma falta de informação; um resultado
+    **num buraco** entre bandas declaradas (89,5 contra 80-89 e 90+) é **INDETERMINADO e nunca
+    zero** — pagar zero ali é um número sobre o dinheiro de alguém que as regras não autorizam, e
+    promovê-lo à banda de cima também. Mostra as duas vizinhas e não escolhe.
+  - **IBOPE não encontrado ⇒ as hipóteses, todas, nenhuma escolhida**, com a frase «RESULTADO
+    NÃO ENCONTRADO» à cabeça. A contagem segue a declaração do inquilino (as duas faixas dele
+    dão três hipóteses com a linha «Sem bónus»), não um 3 escrito no código. **Dois resultados
+    que discordam contam como não encontrado**: escolher um é um bónus inventado a vestir um
+    número verdadeiro.
+  - **uma disciplina sem horas na folha é NOMEADA e fica fora da soma**, nunca zero — «R$ 0,00»
+    lê-se como uma aula que não paga, que é uma afirmação diferente e falsa.
+
+  **O escopo é um guarda e abrir um guarda tem sempre uma vítima possível.** Passou a ser
+  possível: o próprio professor perguntar o que recebe pelas próprias aulas. Continua fechado, e
+  há gémeo para cada metade: a remuneração de OUTRO professor (recusada a **todos** os papéis,
+  supervisão incluída — este é o único read do vertical que não alarga para oversight), as
+  contas da instituição, notas fiscais a processar, orçamentos, mensalidades. E a abertura da
+  entrada é um *prompt*; o «só do próprio» é *código*.
+
 - **`companies` — o cadastro de empresas passa a ser um vertical MCP, com política por papel.**
   Estava no host como skill nativa cogno-cortex (`cogno_host/company_registration.py` +
   `company_adapter.py`); vem para cá inteiro, com store port + adaptador Postgres, e liga-se a

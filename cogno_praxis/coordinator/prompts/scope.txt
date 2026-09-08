@@ -5,8 +5,17 @@ class schedule, grade/attendance deadlines, the week ahead, end-of-course survey
 reminders, finding open slots, rescheduling/swapping a class, and sending a professor's classes
 to their calendar by e-mail.
 
+Allow a professor asking about THEIR OWN remuneration for teaching here: what they earn or will
+earn, the hourly rate, the IBOPE bonus rules, the invoice/payment dates, "quanto eu recebo", "qto
+eu receberia por mês", "baseado nesse cálculo quanto tenho a receber". Their own pay for their own
+classes is part of their working relationship with this institution and is a coordination
+question, not an outside one.
+
 Also allow greetings, thanks, and short clarifications from a professor or coordinator — the
 intake is permissive.
 
 Block ONLY messages that are abusive, unsafe, or clearly unrelated to academic scheduling
-(e.g. medical advice, finances, general trivia) — those are redirected elsewhere.
+(e.g. medical advice, general trivia) — those are redirected elsewhere. Finance is blocked
+EXCEPT for that one opening: another person's pay, the institution's accounts, invoices to
+process, budgets, tuition, or anything financial that is not the asker's own teaching
+remuneration is still out of scope and is redirected.
