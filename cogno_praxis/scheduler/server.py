@@ -270,7 +270,19 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
             # empty list, so "No appointments found." has ONE definition instead of two.
             # `scheduler/grounding.LIST_EMPTY_RE` matches that sentence and nothing after it,
             # which is why no note or footer may ever be attached to this call.
-        return render_block([_appt_record(a) for a in appts], fields=_APPT_FIELDS,
+        # Sorted HERE, and the grouping is why. `render_block` never reorders — it starts a
+        # new header whenever the key changes — so an unsorted list renders its days out of
+        # sequence, and a listing whose headers read 6 July, 1 July, 2 July is worse than the
+        # flat form it replaced. The store returns rows in its own order and a rescheduled
+        # appointment keeps its old position; that was invisible while every line carried its
+        # own date and is not invisible now. Measured on the 48-call probe (call 027,
+        # `include_history=True` after a reschedule) rather than reasoned about.
+        #
+        # ISO dates sort lexicographically, which is the whole reason this vertical stores
+        # them that way; a date the store could not keep in that form sorts by its raw string
+        # and still renders, under a header of its own.
+        rows = sorted(appts, key=lambda a: (a.date, a.time))
+        return render_block([_appt_record(a) for a in rows], fields=_APPT_FIELDS,
                             empty="No appointments found.", group_by=lambda r: str(r["day"]))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))

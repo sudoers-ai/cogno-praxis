@@ -197,3 +197,22 @@ async def test_an_empty_company_listing_still_says_so():
     _, mcp = _companies()
     out = await _ctext(mcp, "list_companies", identity_id="u1", role="ADMIN")
     assert out.startswith("No companies are registered yet.")
+
+
+async def test_the_day_headers_come_out_in_date_order_even_after_a_reschedule():
+    """The defect the grouping introduces, and the 48-call probe found (call 027).
+
+    The store returns rows in its own order and a rescheduled appointment keeps its old
+    position. While every line carried its own ISO date that was invisible; grouped under day
+    headers it reads as 6 July, then 1 July, then 2 July — worse than the flat form."""
+    mcp = _sched()
+    booked = await _book(mcp, "dr_a", "2026-07-01", "09:00", "Contacto Um")
+    appt_id = booked.split()[1].rstrip(":")
+    await _book(mcp, "dr_a", "2026-07-02", "09:00", "Contacto Dois")
+    await mcp.call_tool("reschedule_appointment",
+                        {"appointment_id": appt_id, "new_date": "2026-07-06",
+                         "new_time": "11:00"})
+    out = _text(await mcp.call_tool("list_appointments", {"include_history": True}))
+    heads = [ln for ln in out.splitlines() if ln.startswith("*")]
+    assert heads == ["*quinta-feira, 2 de julho de 2026 (2026-07-02)*",
+                     "*segunda-feira, 6 de julho de 2026 (2026-07-06)*"]
