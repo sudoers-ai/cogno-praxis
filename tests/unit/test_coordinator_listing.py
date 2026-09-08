@@ -229,12 +229,29 @@ def test_no_renderer_in_this_vertical_emits_a_DOUBLE_asterisk():
         _listing(),                                   # the schedule listing, headers and all
         _listing(_THREE),
         _month_header(date(2026, 9, 30)),
-        _month_header(date(1, 1, 1)),                 # the unnamed-month fallback branch
         _H.format("Base"),                            # the pay block's own header template
     ]
     for text in rendered:
         assert "**" not in text, f"double asterisk is not bold on WhatsApp: {text[:60]!r}"
         assert "*" in text, "…and the single-asterisk bold must actually be there"
+
+
+def test_the_unnamed_month_FALLBACK_uses_the_same_single_asterisk(monkeypatch):
+    """The branch a real ``date`` can never reach, reached on purpose.
+
+    ``_month_header`` falls back to ``09/2026`` when the label table does not name the month —
+    and with a 13-entry table and ``date.month`` in 1..12 that is unreachable, so a mutation
+    that restores ``**`` on THAT branch alone survives the whole suite. Measured: it did.
+    Unreachable is not the same as correct — the table is one deletion away from being short,
+    which is exactly the mutation the test above this file's fixtures already guards — so the
+    branch is exercised by shortening the table, the same lever."""
+    import cogno_praxis.coordinator.server as srv
+
+    monkeypatch.setattr(srv, "_MONTH_LABELS_PT", ("", "Janeiro"))
+    out = srv._month_header(date(2026, 12, 1))
+
+    assert out == "*12/2026*"
+    assert "**" not in out
 
 
 def test_the_two_renderers_of_this_vertical_agree_on_the_marker():
