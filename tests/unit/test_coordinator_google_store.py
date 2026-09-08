@@ -116,3 +116,49 @@ def test_swap_rows_builds_batch_update(monkeypatch):
     assert ranges["'Secretaria'!C2"] == "" and ranges["'Secretaria'!C3"] == "Ana"
     assert ranges["'Secretaria'!D2"] == "Livre" and ranges["'Secretaria'!D3"] == "Redes"
     assert "'Secretaria'!A2" not in ranges and "'Secretaria'!B2" not in ranges
+
+
+def test_write_cell_pushes_one_range_and_drops_the_cache(monkeypatch):
+    """One cell, one range, and the cached workbook thrown away.
+
+    The cache drop is the half worth pinning: the adapter answers reads out of a workbook it
+    downloaded up to ten minutes ago, so a write that left it in place would be followed by a
+    read still reporting the OLD status — an answer recorded and then denied by the very next
+    listing. ``swap_rows`` drops it for the same reason."""
+    xlsx = _xlsx("Secretaria", [
+        ["Data", "Dia", "Professor", "Disciplina", "Status"],
+        ["16/07/2026", "Ter", "Ana", "Redes", ""],          # abs row 2 (1-based) → range row 1
+    ])
+    monkeypatch.setattr(GoogleSheetsStore, "_fetch", lambda self, sid: xlsx)
+    pushed = {}
+    monkeypatch.setattr(GoogleSheetsStore, "_push_values",
+                        lambda self, sid, data: pushed.update({"sid": sid, "data": data}))
+    store = GoogleSheetsStore("tok")
+    store.read_range("SID", "Secretaria", "A1:E10")                   # warm the cache
+    assert "SID" in store._cache
+
+    store.write_cell("SID", "Secretaria", "A1:E10", 1, 4, "Aceita")
+
+    assert pushed["sid"] == "SID"
+    assert pushed["data"] == [{"range": "'Secretaria'!E2", "values": [["Aceita"]]}]
+    assert "SID" not in store._cache
+
+
+def test_write_cell_refuses_a_cell_the_download_never_reached(monkeypatch):
+    """A row or column outside the sheet it read is a coordinate the caller cannot have MEANT.
+
+    The Sheets API would happily create it; this raises instead, so a wrong index becomes a
+    failed call rather than a status written into empty space nobody will ever look at."""
+    xlsx = _xlsx("Secretaria", [["Data", "Status"], ["16/07/2026", ""]])
+    monkeypatch.setattr(GoogleSheetsStore, "_fetch", lambda self, sid: xlsx)
+    pushed = []
+    monkeypatch.setattr(GoogleSheetsStore, "_push_values",
+                        lambda self, sid, data: pushed.append(data))
+    store = GoogleSheetsStore("tok")
+
+    with pytest.raises(IndexError):
+        store.write_cell("SID", "Secretaria", "A1:B10", 9, 1, "Aceita")
+    with pytest.raises(IndexError):
+        store.write_cell("SID", "Secretaria", "A1:B10", 1, 9, "Aceita")
+
+    assert pushed == [], "a refused coordinate must not reach the API"

@@ -170,14 +170,23 @@ async def test_exactly_these_tools_are_gated_by_name():
     the house and is the one kind no undo reaches — there is no un-sending an e-mail, so the
     ``_UNDOABLE`` door was never open to it, and it commits on its FIRST call, so gate C's door
     was not either. It is here because it is genuinely gate B's shape, not because a
-    destructiveHint was the convenient way to satisfy this sweep."""
+    destructiveHint was the convenient way to satisfy this sweep.
+
+    ``record_class_response`` joined on 2026-09-08, and the reason it is not ``_UNDOABLE`` is the
+    reason that list demands a MEASURED undo. Calling it again with the other answer looks like
+    one — and is not: the status cell it overwrites may have held the tenant's own ordinary
+    "Confirmado", and the reverse call writes "Aceita", never the word that was there. An entry
+    claiming an undo that lands somewhere else is precisely the ``complete_appointment`` shape
+    the module docstring above is about. Gate C is out for the ordinary reason: it commits on
+    its first call. So gate B, and the tool is the one place in this vertical where a stray "sim"
+    could otherwise become a professor's commitment."""
     live = {}
     for vertical in _BUILDERS:
         live.update(await _annotations(vertical))
     gated = sorted(n for n, a in live.items()
                    if getattr(a, "destructiveHint", None) is True)
-    assert gated == ["cancel_appointment", "confirm_swap", "reschedule_appointment",
-                     "send_schedule_to_calendar"]
+    assert gated == ["cancel_appointment", "confirm_swap", "record_class_response",
+                     "reschedule_appointment", "send_schedule_to_calendar"]
 
 
 def test_every_asking_tool_really_refuses_to_commit_unasked():

@@ -4,8 +4,9 @@ The read path is DOWNLOAD-centric (the design decision): instead of per-cell She
 it downloads the whole file once (Drive ``files.export`` → xlsx for a native Google Sheet, or
 ``files.get?alt=media`` for an uploaded ``.xlsx``), parses it locally with openpyxl, and caches
 the parsed workbook by ``sheet_id`` with a TTL. Auth is the tenant's OAuth access token (the host
-mints/refreshes it and passes it in; the scheduler's DSN analogue). Writes (``swap_rows``) go back
-surgically via the Sheets ``values.batchUpdate`` API so formatting/other tabs are untouched.
+mints/refreshes it and passes it in; the scheduler's DSN analogue). Writes (``swap_rows``,
+``write_cell``) go back surgically via the Sheets ``values.batchUpdate`` API so formatting/other
+tabs are untouched.
 
 ``pip install cogno-praxis[coordinator]`` (openpyxl + httpx). The two HTTP seams — ``_fetch`` and
 ``_push_values`` — are the only network methods, so unit tests mock them and exercise the parse /
@@ -96,6 +97,21 @@ class GoogleSheetsStore:
         grid = self._tabs(sheet_id).get(tab.strip().lower(), [])
         start = self._first_row(a1_range) - 1
         return [list(r) for r in grid[start:]]
+
+    def write_cell(self, sheet_id: str, tab: str, a1_range: str, row: int, col: int,
+                   value: str) -> None:
+        """Set one range-relative cell, then drop this sheet's cache so the next read sees it.
+
+        The bounds check is against the CACHED grid and the write is not: a Sheets cell exists
+        whether or not the downloaded copy reached it, and this refuses rather than creating one
+        — the row/column a caller could not have read is the row/column it cannot have meant."""
+        grid = self._tabs(sheet_id).get(tab.strip().lower(), [])
+        abs_row = self._first_row(a1_range) - 1 + row
+        if abs_row >= len(grid) or col >= len(grid[abs_row]):
+            raise IndexError(f"write_cell out of range: {row}/{col} in {sheet_id}/{tab}")
+        a1 = f"{_col_letter(col)}{abs_row + 1}"             # Sheets rows/cols are 1-based
+        self._push_values(sheet_id, [{"range": f"'{tab}'!{a1}", "values": [[value]]}])
+        self._cache.pop(sheet_id, None)                     # force a fresh read next time
 
     def swap_rows(self, sheet_id: str, tab: str, a1_range: str, row_a: int, row_b: int,
                   *, content_cols: list[int]) -> None:

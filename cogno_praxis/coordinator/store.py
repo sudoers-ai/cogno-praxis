@@ -30,6 +30,23 @@ class SpreadsheetStore(Protocol):
         batch-updates; ``read_range``-only adapters may raise :class:`NotImplementedError`."""
         ...
 
+    def write_cell(self, sheet_id: str, tab: str, a1_range: str, row: int, col: int,
+                   value: str) -> None:
+        """Set ONE cell to ``value``. Same coordinates as :meth:`swap_rows` (``row`` indexes the
+        ``a1_range`` grid, 0 = its header row; ``col`` indexes that row's cells).
+
+        **The narrowest write the port can offer, and that is the point.** ``swap_rows`` moves a
+        whole class between two rows; the answer to an invitation changes one word in one cell,
+        and expressing it as a swap would mean inventing a second row to exchange with. Both
+        adapters already write single cells — the Google one builds ``swap_rows`` out of exactly
+        this operation, twice per column — so this names something that existed rather than
+        adding a capability.
+
+        A ``read_range``-only adapter may raise :class:`NotImplementedError`, the same escape
+        ``swap_rows`` above declares: an adapter that cannot write says so, and the caller
+        reports it instead of believing an answer was recorded."""
+        ...
+
 
 class InMemorySpreadsheetStore:
     """A zero-infra ``SpreadsheetStore`` for tests/dev: an in-memory ``{(sheet_id, tab): grid}``.
@@ -55,6 +72,15 @@ class InMemorySpreadsheetStore:
         grid = self._sheets.get((sheet_id, tab), [])
         start = self._first_row(a1_range) - 1
         return [[str(c).strip() for c in row] for row in grid[start:]]
+
+    def write_cell(self, sheet_id: str, tab: str, a1_range: str, row: int, col: int,
+                   value: str) -> None:
+        grid = self._sheets.get((sheet_id, tab))
+        off = self._first_row(a1_range) - 1                 # range-relative → absolute grid rows
+        g = off + row
+        if grid is None or g >= len(grid) or col >= len(grid[g]):
+            raise IndexError(f"write_cell out of range: {row}/{col} in {sheet_id}/{tab}")
+        grid[g][col] = value
 
     def swap_rows(self, sheet_id: str, tab: str, a1_range: str, row_a: int, row_b: int,
                   *, content_cols: list[int]) -> None:

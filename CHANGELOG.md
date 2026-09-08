@@ -4,6 +4,47 @@
 
 ### Added
 
+- **`coordinator` — a resposta ao convite de aula passa a ficar gravada, pela metade CHAT.** O
+  convite já pedia resposta desde #120 (`RSVP=TRUE` no `.ics`), e o que faltava era a volta:
+  o professor dizia «aceito» e nada em lado nenhum ficava a saber. `record_class_response`
+  (MCP, `readOnlyHint=False`, `destructiveHint=True`) grava **ACEITE / RECUSADA** na coluna
+  `COLUMN_STATUS` da própria folha do tenant — a mesma célula que `server._entry_status` já lê
+  para TODA a listagem, portanto a resposta aparece na agenda semanal, no `daily_checks` e no
+  horário sem um leitor novo. **PENDENTE nunca se escreve**: é a célula vazia (ou o estado
+  ordinário do tenant), o que o torna impossível de fabricar.
+
+  **O que liga a resposta ao convite é a DATA que a resposta nomeia, e nada mais — dito assim
+  porque o canal não dá outra coisa.** O convite sai por e-mail e a resposta chega por chat; o
+  vertical é um subprocesso NOVO em cada turno, logo não pode lembrar-se do que perguntou; o
+  adaptador Evolution nunca preenche `reply_to` e o host nunca o lê; e o `selection.id` de um
+  botão é convertido em texto antes de chegar ao pipeline. Não há, hoje, referência à mensagem
+  citada nem carga útil de botão a que agarrar uma resposta. Portanto a ligação é a mesma que o
+  `confirm_swap` sempre usou para escrever nestes dados — `(professor, data)` resolvido contra a
+  folha, com `_ambiguous_year` incluído — e chega como **argumento tipado**, não como frase
+  interpretada.
+
+  **Todas as recusas deixam a aula PENDENTE, que é uma resposta.** Sem data, com uma data que
+  não bate, que bate em dois anos, ou que bate em duas turmas no mesmo dia → levanta erro e não
+  escreve nada; a mensagem nomeia as turmas para que a segunda tentativa funcione (`turma`
+  desempata). `answer` é um alfabeto FECHADO (`ACCEPTED`/`DECLINED`): «sim» não entra, e o
+  detector de língua nunca vota — esta casa já mediu `"sim"` lido como finlandês.
+
+  **Duas respostas iguais são UM estado**: a segunda não escreve e diz «was ALREADY recorded —
+  no change was made», a frase que a cláusula NOTHING TO DO do juiz já sabe ler. **Mudar uma
+  resposta anterior é permitido e fica gravado** — quem aceitou e depois não pode tem de o poder
+  dizer —, mas **um valor que este sistema não escreveu nunca é sobrescrito**: uma nota que a
+  secretaria deixou na folha dela não é deste feature para destruir.
+
+  O porto ganhou **um** método, `SpreadsheetStore.write_cell`, nas mesmas coordenadas do
+  `swap_rows` — que o adaptador Google já construía a partir exactamente desta operação, duas
+  vezes por coluna. Config: `STATUS_ACCEPTED_LABEL` (`"Aceita"`) e `STATUS_DECLINED_LABEL`
+  (`"Recusada"`), porque a palavra na célula é lida por uma pessoa na folha da instituição.
+
+  **O e-mail continua fora**: nenhum `METHOD:REPLY`, nenhum leitor de `PARTSTAT`, nenhuma caixa
+  de correio consultada. O botão «aceitar» de um cliente de calendário continua a não chegar a
+  ninguém, e as prosas do `ics.py` que o diziam foram corrigidas para dizer QUAL das duas voltas
+  ficou aberta em vez de negarem as duas.
+
 - **`coordinator` — um professor passa a poder perguntar quanto ELE ganha, e o escopo abre só
   para isso.** Medido em dois turnos vivos do tenant do dono a 2026-09-06: às 22:35:30Z
   «como funciona a parte financeira. minhas aulas por exemplo, qto eu receberia por mes?» foi

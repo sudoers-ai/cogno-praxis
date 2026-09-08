@@ -27,6 +27,13 @@ Format (all sections optional; sensible defaults shown)::
     FREE_SLOT_LABELS: "Livre, Reposição"
     SKIP_LABELS: "Recesso, Feriado, Férias"
 
+    # The STATUS column — the one a listing prints when it says something exceptional, and
+    # the one a professor's answer to a class invitation is recorded in.
+    COLUMN_STATUS: "Status"
+    STATUS_DEFAULT_LABELS: "Confirmado, Confirmada"   # the ordinary state: printed by nobody
+    STATUS_ACCEPTED_LABEL: "Aceita"     # what an accepted invitation writes into that cell
+    STATUS_DECLINED_LABEL: "Recusada"   # and a declined one
+
     # The professor-pay estimate. NONE of these has a business default: every one of them
     # is a number or a column name only the tenant knows, and a default here would be this
     # library guessing at somebody's pay. Absent → the estimate refuses and names the key.
@@ -148,6 +155,17 @@ class CoordinatorConfig:
         self.column_status: str = _find(rules, "COLUMN_STATUS", "Status")
         self.status_default_labels: tuple[str, ...] = _find_list(
             rules, "STATUS_DEFAULT_LABELS", ("Confirmado", "Confirmada"))
+        # The two words an ANSWER to a class invitation writes into that same column. Declared
+        # here for the same reason the labels above are: a professor reads this cell in their
+        # own spreadsheet, so the word has to be the institution's, and a tenant whose sheet
+        # already says "Aceito"/"Recusado" changes two lines instead of forking the vertical.
+        #
+        # They are deliberately NOT in `STATUS_DEFAULT_LABELS`: that list is what the listing
+        # SWALLOWS as routine, and an answer is precisely the thing a coordinator has to see.
+        # A tenant who puts one of these there is telling the listing to hide it, which is a
+        # choice this config lets them make and does not make for them.
+        self.status_accepted_label: str = _find(rules, "STATUS_ACCEPTED_LABEL", "Aceita")
+        self.status_declined_label: str = _find(rules, "STATUS_DECLINED_LABEL", "Recusada")
 
         # Columns that DON'T move during a swap (dates stay put; content columns are exchanged).
         self.fixed_columns: tuple[str, ...] = _find_list(rules, "FIXED_COLUMNS", ("Data", "Dia"))
