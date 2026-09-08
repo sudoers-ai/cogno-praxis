@@ -163,7 +163,7 @@ def test_the_date_is_said_once_and_normalized():
     assert "00:00:00" not in out                      # the raw spreadsheet stamp is gone
     # Said once, and now the YEAR is said once too — by the month header, for the whole group.
     assert out.count("10/09") == 1 and out.count("2026") == 1
-    assert out.splitlines()[0] == "**Setembro de 2026**"
+    assert out.splitlines()[0] == "*Setembro de 2026*"
 
 
 def test_a_column_that_is_not_the_same_date_survives():

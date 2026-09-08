@@ -82,18 +82,20 @@ def test_three_classes_over_two_months_render_as_two_headers_and_three_lines():
     # exactly the shape asked for, and the ORDER is the assertion — a set would pass on a
     # listing that put October before September, which is the one thing a calendar may not do.
     assert body[:5] == [
-        "**Setembro de 2026**",
+        "*Setembro de 2026*",
         "- 08/09 · Turma DE_09 · NoSQL and Distributed Databases",
         "- 30/09 · Turma DE_09 · Workshop de Abertura",
-        "**Outubro de 2026**",
+        "*Outubro de 2026*",
         "- 02/10 · Turma DE_09 · Fundamentals of Data Engineering · Remarcada",
     ]
 
 
 def test_the_month_header_is_bold_and_in_the_contacts_language():
-    # ``**…**`` is what WhatsApp and Telegram render, and the month is the one a professor reads.
-    assert _month_header(date(2026, 9, 30)) == "**Setembro de 2026**"
-    assert _month_header(date(2027, 3, 1)) == "**Março de 2027**"
+    # ONE asterisk. WhatsApp's bold is ``*text*``; a DOUBLE pair is not bold there, it is passed
+    # through and the contact SEES the asterisks. Nothing in any repo converts markup on the way
+    # out, so this string is read byte for byte by a person. ``pay.py``'s ``_H`` says the same.
+    assert _month_header(date(2026, 9, 30)) == "*Setembro de 2026*"
+    assert _month_header(date(2027, 3, 1)) == "*Março de 2027*"
 
 
 def test_a_status_prints_only_when_it_is_not_the_ordinary_one():
@@ -120,7 +122,7 @@ def test_an_undatable_row_keeps_its_labels_and_goes_last():
     rows = _THREE + [["a combinar", "?", "Ana", "Seminário", "Pendente"]]
     body = [ln for ln in _listing(rows).splitlines() if ln.strip()]
     assert body[-1].startswith("- Turma: Turma DE_09 | Data: a combinar")
-    assert body[0] == "**Setembro de 2026**"
+    assert body[0] == "*Setembro de 2026*"
 
 
 # ── GÉMEO 2: no period named → ≤30 days, and the continuation is offered ──────────────
@@ -180,7 +182,7 @@ def test_every_month_number_has_a_declared_name():
     assert len(_MONTH_LABELS_PT) == 13 and _MONTH_LABELS_PT[0] == ""
     assert len(set(_MONTH_LABELS_PT[1:])) == 12
     for m in range(1, 13):
-        assert _month_header(date(2026, m, 1)) == f"**{_MONTH_LABELS_PT[m]} de 2026**"
+        assert _month_header(date(2026, m, 1)) == f"*{_MONTH_LABELS_PT[m]} de 2026*"
 
 
 def test_every_declared_default_status_is_actually_suppressed():
@@ -204,3 +206,62 @@ def test_the_status_column_is_read_by_name_not_by_position():
     # a tenant whose sheet has no such column simply gets no status, never a crash or a guess
     assert _fmt_line(e, defaults=("Confirmado",), status_column="Situação").endswith("Databases")
     assert _fmt_line(e, defaults=(), status_column="Status").endswith("· Confirmado")
+
+
+# ── the marker itself: one asterisk, everywhere, measured on what is PRODUCED ─────────
+#
+# The sonda that motivated this, made permanent. `_month_header` shipped emitting `**` on the
+# premise that WhatsApp renders it; it does not — it renders `*text*` and passes `**text**`
+# through unchanged, so the contact SAW the asterisks. Nothing in any repo converts markup on
+# the way out, so a renderer's bytes are what a person reads.
+#
+# Asserted on the OUTPUT rather than by grepping the source, so it needs no exception list: the
+# power operator in `bookkeeper/arithmetic.py`'s error message is a `**` nobody wants flagged,
+# and a lexical sweep would have to carve it out by name. This one simply never sees it.
+
+def test_no_renderer_in_this_vertical_emits_a_DOUBLE_asterisk():
+    """One marker for the whole vertical. Fixing `_month_header` and leaving a sibling behind
+    would trade a defect a professor sees every day for one they see some days, which is the
+    harder of the two to notice and the harder to report."""
+    from cogno_praxis.coordinator.pay import _H
+
+    rendered = [
+        _listing(),                                   # the schedule listing, headers and all
+        _listing(_THREE),
+        _month_header(date(2026, 9, 30)),
+        _H.format("Base"),                            # the pay block's own header template
+    ]
+    for text in rendered:
+        assert "**" not in text, f"double asterisk is not bold on WhatsApp: {text[:60]!r}"
+        assert "*" in text, "…and the single-asterisk bold must actually be there"
+
+
+def test_the_unnamed_month_FALLBACK_uses_the_same_single_asterisk(monkeypatch):
+    """The branch a real ``date`` can never reach, reached on purpose.
+
+    ``_month_header`` falls back to ``09/2026`` when the label table does not name the month —
+    and with a 13-entry table and ``date.month`` in 1..12 that is unreachable, so a mutation
+    that restores ``**`` on THAT branch alone survives the whole suite. Measured: it did.
+    Unreachable is not the same as correct — the table is one deletion away from being short,
+    which is exactly the mutation the test above this file's fixtures already guards — so the
+    branch is exercised by shortening the table, the same lever."""
+    import cogno_praxis.coordinator.server as srv
+
+    monkeypatch.setattr(srv, "_MONTH_LABELS_PT", ("", "Janeiro"))
+    out = srv._month_header(date(2026, 12, 1))
+
+    # The MARKER is the assertion, not the numeric shape: this branch exists so a short table is
+    # still readable, and how it spells "December 2026" is free. A probe that reworded it to
+    # `*2026-12*` broke an earlier cut of this test, which was measuring the wrong thing.
+    assert "**" not in out
+    assert out.startswith("*") and out.endswith("*")
+    assert "2026" in out and "12" in out
+
+
+def test_the_two_renderers_of_this_vertical_agree_on_the_marker():
+    """`pay.py` was right before this fix and `server.py` was wrong — one package, two
+    renderers, one convention. Pinned so the next one to arrive cannot pick a third."""
+    from cogno_praxis.coordinator.pay import _H
+
+    assert _H == "*{}*"
+    assert _month_header(date(2026, 9, 30)) == "*Setembro de 2026*"

@@ -155,7 +155,7 @@ def test_the_note_appears_only_when_something_was_actually_cut():
     asked_for = asyncio.run(run({"include_past": True}))
     # the April workshop, in the listing's own shape now
     assert "covers today onward" not in asked_for
-    assert "**Abril de 2026**" in asked_for and "- 14/04 ·" in asked_for
+    assert "*Abril de 2026*" in asked_for and "- 14/04 ·" in asked_for
 
 
 def test_an_undated_row_is_never_hidden_by_the_window():
