@@ -87,8 +87,34 @@ _META_CONFIRM_ARGUMENTS = "cogno-mcp/confirm_arguments"
 # different question with a different answer.
 
 
+#: en-US grouping onto pt-BR grouping, in ONE pass. ``str.translate`` maps each character
+#: from the ORIGINAL string, so the two separators swap rather than chase each other — a
+#: two-step ``.replace`` would turn every "," into "." and then every "." back into ",".
+_TO_PT_BR = str.maketrans({",": ".", ".": ","})
+
+
 def _brl(v: float) -> str:
-    return f"R$ {v:,.2f}"
+    """``1250.0`` → ``"R$ 1.250,00"``. pt-BR grouping: '.' thousands, ',' decimal.
+
+    This emitted the en-US grammar — ``"R$ 1,250.00"`` — and that is not cosmetic here, for
+    three reasons that compound.
+
+    It is the grammar the CONTACT does not use. Over the whole ``turn_traces`` table: of the
+    19 money tokens contacts typed at this vertical, 18 carry a comma decimal (``R$ 45,00``);
+    of the 160 the tools answered with, 159 carried a dot decimal (``R$ 45.00``). The two
+    halves of one conversation in two grammars.
+
+    Nothing downstream reconciled them, and the voice prompt forbids trying: it says to keep
+    tool-formatted figures intact, and the SUPEREGO's preserved-term backstop flags a figure
+    the executor grounded that appears ALTERED in the reply — so a voicer that localised the
+    number would be the one flagged.
+
+    And it is the repo's own declaration of the format: ``cogno_praxis.grounding._PT.money``
+    recognises ``1.234,56`` while ``_EN.money`` recognises ``1,234.56``. The anti-fabrication
+    money anchor for the pt bundle was reading for one grammar while this function wrote the
+    other; a reply quoting a bare en-formatted figure did not match it at all.
+    """
+    return f"R$ {v:,.2f}".translate(_TO_PT_BR)
 
 
 def _entry_line(t: dict) -> str:
