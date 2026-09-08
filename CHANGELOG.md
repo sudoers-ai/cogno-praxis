@@ -34,9 +34,18 @@
     por omissão é a `TAB_PROFESSORS` que ele já declarou). Não há default e não há farejar
     cabeçalhos: um header que «parece» horas é como um número de sala vira carga horária.
   - **o valor/hora e as faixas de bónus vêm das `custom_rules`** (`PAY_RATE_PER_HOUR`,
-    `PAY_BONUS_TIERS`). Sem eles não há estimativa nenhuma — a recusa NOMEIA a chave que falta,
-    e chega ao modelo como `NOT CONFIGURED:`, não como `ERROR:`, porque um inquilino que não
-    declarou não é um sistema que avariou.
+    `IBOPE_BONUS`, `IBOPE_MIN_RESPONSE_PCT`). Sem eles não há estimativa nenhuma — a recusa
+    NOMEIA a chave que falta, e chega ao modelo como `NOT CONFIGURED:`, não como `ERROR:`, porque
+    um inquilino que não declarou não é um sistema que avariou. As bandas separam-se por **`;`** e
+    nunca por vírgula, que é o separador **decimal** de quem escreve as regras: com a vírgula,
+    `80-89 = 1.234,56` partia-se ao meio e valia **R$ 1,23**. Uma banda ilegível **recusa a
+    estimativa inteira** e nomeia a entrada — engoli-la paga menos ao professor com a mesma frase
+    que um inquilino sem esquema de bónus recebe legitimamente.
+  - **limites e buracos são coisas diferentes:** um resultado **abaixo** da banda mais baixa vale
+    **zero**, e o bloco diz que é um valor apurado, não uma falta de informação; um resultado
+    **num buraco** entre bandas declaradas (89,5 contra 80-89 e 90+) é **INDETERMINADO e nunca
+    zero** — pagar zero ali é um número sobre o dinheiro de alguém que as regras não autorizam, e
+    promovê-lo à banda de cima também. Mostra as duas vizinhas e não escolhe.
   - **IBOPE não encontrado ⇒ as hipóteses, todas, nenhuma escolhida**, com a frase «RESULTADO
     NÃO ENCONTRADO» à cabeça. A contagem segue a declaração do inquilino (as duas faixas dele
     dão três hipóteses com a linha «Sem bónus»), não um 3 escrito no código. **Dois resultados
