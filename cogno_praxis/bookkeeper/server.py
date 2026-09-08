@@ -164,7 +164,10 @@ def build_server(service: Optional[BookkeeperService] = None, *,
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def search(query: str, identity_id: str = "", role: str = "", date_from: str = "",
                date_to: str = "") -> str:
-        """Search transactions by keyword (and optional date range)."""
+        """Search transactions by keyword or by exact amount (and optional date range).
+
+        "material" matches the description; "45", "45,00" and "R$ 45,00" all match every
+        entry whose amount is exactly 45.00 (never 450.00)."""
         hits = svc.search(query, identity_id, role, date_from=date_from, date_to=date_to)
         if not hits:
             return f"No transactions match {query!r}."
@@ -188,6 +191,11 @@ def build_server(service: Optional[BookkeeperService] = None, *,
     def remove_by_search(query: str, identity_id: str = "", confirm_tx_id: str = ""):
         """Remove YOUR most recent transaction matching the query. TWO STEPS — destructive.
 
+        The query selects on an entry's DESCRIPTION/client OR on its exact AMOUNT: "45",
+        "45,00" and "R$ 45,00" all find the 45.00 entry, and none of them finds the 450.00
+        one. Prefer the words when you have them — a figure can be shared by several entries,
+        and then this answers with all of them and you must ask WHICH.
+
         Called with the query alone it deletes NOTHING: it searches your entries and answers with
         the exact entry it would remove (date, description, amount) plus that entry's id, and
         lists any other entry the same query also matched. Relay that entry to the user, get
@@ -198,11 +206,32 @@ def build_server(service: Optional[BookkeeperService] = None, *,
             return f"Removed: {_entry_line(outcome.removed)}."
         if outcome.proposal is None:
             # NOTHING MATCHED, so nothing was deleted — and a RETURN here would have the MCP
-            # bridge stamp this call ``side_effect=True``. See _REFUSALS_RAISE. The sentence is
-            # unchanged and still reaches the model (as ``ToolResult.error``); what changes is
-            # that the turn no longer declares a write it did not make.
+            # bridge stamp this call ``side_effect=True``. See _REFUSALS_RAISE. It still RAISES,
+            # so the turn does not declare a write it did not make; what changed is the SENTENCE.
+            #
+            # A lookup that came up empty is not a failure, and the old wording could not say so.
+            # It reaches the model on ``ToolResult.error`` — the channel a model reads as "the
+            # thing you tried did not work" — and the model duly relayed it: over the whole
+            # ``turn_traces`` table, three turns drafted "Não consegui remover" / "Não foi
+            # possível remover", one adding "A despesa permanece registrada". Nothing was
+            # attempted, so nothing failed.
+            #
+            # Worse than the invented failure is the claim underneath it — that the entry is not
+            # in the books. This tool cannot know that: it searched ONE wording, over the rows of
+            # ONE identity. Saying it to the owner of those books is a false statement about their
+            # own data, which is not an error message but misinformation they will act on.
+            #
+            # So the sentence says what happened (a search, empty), what it does NOT establish
+            # (absence), and what to do next (list, then ASK). ``nothing removed.`` is kept
+            # verbatim: ``grounding.NO_MATCH_MARKER`` greps it as a substring and
+            # ``tests/unit/test_a_write_that_wrote_nothing.py`` pins the pair.
             raise BookkeeperError(
-                f"No transaction of yours matches {query!r} — nothing removed.")
+                f"Searched YOUR entries for {query!r} by description and by amount and found "
+                "none — nothing removed. This was a LOOKUP that came up empty: nothing was "
+                "attempted and nothing failed. Do NOT tell the user the removal failed, and do "
+                "NOT tell them the entry is not in the system — you searched one wording, over "
+                "the entries recorded under this identity only. Call get_summary (or search) to "
+                "list what is actually there, then ASK the user which entry they mean.")
         # The prose stays the text; the machine-readable half rides in the block's ``_meta``
         # beside it. ``confirm_arguments`` names the argument THIS tool needs in order to
         # commit — the vertical's own business, never invented by the layer above.

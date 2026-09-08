@@ -190,17 +190,34 @@ async def test_the_mcp_tool_proposes_then_commits():
 
 
 @pytest.mark.asyncio
-async def test_the_mcp_tool_keeps_the_no_match_sentence_byte_for_byte():
-    """O terceiro gémeo pela ferramenta. Esta frase é lida a jusante (o teste do servidor e o
-    `hostbench` procuram "nothing removed"), e o caminho "não encontrei" não é o caminho novo.
+async def test_the_mcp_tool_keeps_the_no_match_marker_and_asks_instead_of_failing():
+    """O terceiro gémeo pela ferramenta, e o que ele guarda mudou de nome mas não de função.
 
-    O que mudou é o CANAL, não a frase: o ramo passou a LEVANTAR em vez de devolver, porque uma
-    devolução fazia a ponte carimbar `side_effect=True` sobre zero linhas apagadas (ver
-    `server.py`: `_REFUSALS_RAISE`). A frase continua idêntica e continua a chegar ao modelo —
-    agora como `ToolResult.error`."""
+    A versão anterior fixava a frase BYTE A BYTE, e a razão que dava era o que se lê a jusante:
+    `NO_MATCH_MARKER` — "nothing removed" — que o teste do servidor, o `test_bookkeeper_via_mcp`
+    e o `hostbench` procuram como SUBSTRING. É essa a dependência real, e é ela que continua
+    fixada aqui.
+
+    O resto da frase mudou de propósito. Chegava ao modelo por `ToolResult.error`, o canal que
+    um modelo lê como «aquilo que tentaste não resultou», e ele repetia-o: sobre a tabela
+    `turn_traces` inteira, três turnos redigiram "Não consegui remover" / "Não foi possível
+    remover", um deles a acrescentar "A despesa permanece registrada". Nada foi tentado, logo
+    nada falhou — e a alegação por baixo, de que o lançamento não está nos livros, esta
+    ferramenta não a pode fazer: procurou UMA grafia, sobre as linhas de UMA identidade.
+
+    Então o que se fixa agora é o DEVER da frase: o marcador, as duas proibições, e o próximo
+    passo ser uma PERGUNTA."""
     from mcp.server.fastmcp.exceptions import ToolError
+
+    from cogno_praxis.bookkeeper.grounding import NO_MATCH_MARKER
 
     mcp = build_server(_com_tres_internets())
     with pytest.raises(ToolError) as erro:
         await mcp.call_tool("remove_by_search", {"query": "aluguel", "identity_id": EU})
-    assert "No transaction of yours matches 'aluguel' — nothing removed." in str(erro.value)
+    texto = str(erro.value)
+    assert NO_MATCH_MARKER in texto            # a dependência a jusante, intacta
+    assert "'aluguel'" in texto                # a razão continua a nomear o que se procurou
+    assert "nothing was attempted and nothing failed" in texto
+    assert "Do NOT tell the user the removal failed" in texto
+    assert "not in the system" in texto        # a segunda proibição — a que desinforma
+    assert "ASK the user which entry they mean" in texto

@@ -76,8 +76,10 @@ async def test_a_removal_that_matched_nothing_does_not_report_a_write():
     with pytest.raises(ToolError) as erro:
         await mcp.call_tool("remove_by_search", {"query": "aluguel", "identity_id": _ME})
 
-    # the reason still travels to the model, unchanged
-    assert "No transaction of yours matches" in str(erro.value)
+    # the reason still travels to the model — it names what was searched, and carries the
+    # marker the rest of the system greps. The WORDING around the marker is pinned by
+    # ``test_a_removal_asks_with_what_it_read.py``; what this test owns is the CHANNEL.
+    assert "'aluguel'" in str(erro.value)
     assert NO_MATCH_MARKER in str(erro.value)
     # ... and the ledger really is untouched, so the claim it is refusing to make is false
     assert len(svc.search("office supplies", _ME, "EMPLOYEE")) == 1

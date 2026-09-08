@@ -26,7 +26,7 @@ from cogno_praxis.bookkeeper.engine import (
     INCOME,
     OUTCOME,
     BookkeeperError,
-    matches_query,
+    matches_entry,
     normalize_name,
     parse_amount,
     resolve_date,
@@ -180,7 +180,8 @@ class BookkeeperService:
                date_from: str = "", date_to: str = "") -> list[dict]:
         who = self._scope(identity_id, role)
         rows = self._store.list(identity_id=who, date_from=date_from or None, date_to=date_to or None)
-        hits = [t for t in rows if matches_query(f"{t.description} {t.client_name}", query)]
+        hits = [t for t in rows if matches_entry(t.description, t.client_name,
+                                                 t.amount, query)]
         return [self._row(t) for t in hits]
 
     # ── removing (destructive — own entries only, and it PROPOSES first) ───
@@ -196,8 +197,14 @@ class BookkeeperService:
         2. ``remove_by_search(query, identity_id, confirm_tx_id=<the entry's id>)`` deletes that
            exact row.
 
-        No match at all → an empty :class:`RemovalOutcome`: nothing was found, so there is nothing
-        to ask about and no question is raised.
+        ``query`` selects on the entry's WORDS or on its exact AMOUNT (:func:`matches_entry`).
+        Naming an entry by its value is how a contact actually refers to one, and until that
+        axis existed a query of "45,00" searched a text field that never held a number.
+
+        No match at all → an empty :class:`RemovalOutcome`: the store was not touched. That is a
+        lookup which came up empty — NOT a failed removal, and NOT proof the entry is absent,
+        since the search covers one wording over this identity's own rows. ``server.py`` says
+        exactly that in the sentence it raises, because the model reads that channel as failure.
 
         The confirmation rides an argument this method OWNS, because what a removal needs in order
         to commit is this vertical's business — nothing above it invents the name. A
@@ -207,7 +214,8 @@ class BookkeeperService:
         steps exist to prevent.
         """
         rows = self._store.list(identity_id=identity_id)   # own only, most-recent first
-        hits = [t for t in rows if matches_query(f"{t.description} {t.client_name}", query)]
+        hits = [t for t in rows if matches_entry(t.description, t.client_name,
+                                                 t.amount, query)]
         if not hits:
             return RemovalOutcome()
         pinned = (confirm_tx_id or "").strip()
