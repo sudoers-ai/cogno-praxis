@@ -100,11 +100,18 @@ def declared_smtp(tenant_config: "Optional[dict]") -> "dict[str, Any]":
     and "which mailbox" can never be answered by two different pieces of code. The predicate is
     a non-empty ``host``, which is herald's own: a declaration without a server to talk to is
     not a declaration, and treating it as one is how a tenant gets a sender that cannot send.
+
+    Every level of the shape is CHECKED rather than trusted, because this is called with data a
+    host owns — a stored config, a JSON column, an environment variable. A wrong shape here must
+    read as "nothing declared" (so: nothing sent) and never as an ``AttributeError`` climbing out
+    of a mailer and killing a turn that was only trying to read a schedule.
     """
-    if not tenant_config:
+    if not isinstance(tenant_config, dict):
         return {}
-    sched = tenant_config.get("schedule_config") or {}
-    smtp = sched.get("smtp") or {}
+    sched = tenant_config.get("schedule_config")
+    if not isinstance(sched, dict):
+        return {}
+    smtp = sched.get("smtp")
     if not isinstance(smtp, dict) or not str(smtp.get("host") or "").strip():
         return {}
     return smtp

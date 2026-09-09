@@ -214,6 +214,24 @@ def test_a_declaration_that_names_no_server_is_no_declaration(monkeypatch, raw):
     assert sender_from_env() is None
 
 
+@pytest.mark.parametrize("cfg", [None, {}, "a string", {"schedule_config": None},
+                                 {"schedule_config": "smtp"},
+                                 {"schedule_config": {"smtp": "smtp.escola.test"}},
+                                 {"schedule_config": {}}])
+def test_a_config_of_the_wrong_shape_reads_as_nothing_declared_and_never_raises(cfg):
+    """The host owns this argument — a stored config, a JSON column, an environment variable —
+    so every level of the shape is checked rather than trusted.
+
+    An ``AttributeError`` climbing out of a mailer would kill a turn that was only trying to read
+    a schedule, over a mailbox nobody asked to use. And the safe direction is fixed: a shape this
+    code cannot read means NOTHING was declared, therefore nothing is sent — never a fallback.
+
+    The control is every other test in this module: a well-formed declaration builds a sender.
+    """
+    assert declared_smtp(cfg) == {}
+    assert sender_for_tenant(cfg) is None
+
+
 # ── TWIN 3: chosen at the moment of the call, not at import ───────────────────────────
 
 def test_two_tenants_in_one_process_leave_by_two_different_accounts(monkeypatch):
