@@ -16,7 +16,7 @@ Run the demo standalone (stdio):  ``python -m cogno_praxis.coordinator.server``
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Callable, Optional
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -436,19 +436,41 @@ def _fmt_professors(rows: list[dict[str, str]], *, report: Optional[ReadReport] 
 def build_server(service: Optional[CoordinatorService] = None, *,
                  name: str = "cogno-coordinator",
                  sender: Optional[CalendarSender] = None,
+                 sender_for: "Optional[Callable[[], Optional[CalendarSender]]]" = None,
                  tz_name: Optional[str] = None) -> FastMCP:
     """Build a FastMCP server bound to a service (inject a Sheets-backed one in prod/tests).
 
-    ``sender`` is the calendar-mail port. ``None`` falls back to whatever the environment
-    declares (:func:`_demo_sender`), and when THAT is ``None`` too the calendar tool refuses
-    honestly and sends nothing — the deliberate behaviour of a deployment with no SMTP.
+    **The calendar mailer is chosen when a tool is CALLED, not when this function runs.** There
+    are two seams and they answer two different questions. ``sender`` is one fixed mailbox — a
+    host that has already resolved the tenant's, a test that wants a recorder. ``sender_for`` is
+    a callable asked on every calendar tool call, which is what a process serving more than one
+    tenant needs: the mailbox is a function of WHOSE turn this is, and a value captured here
+    would answer for whoever happened to be first. Passing both raises: two seams disagreeing
+    about which mailbox this server sends from is the one thing neither can detect.
+
+    Neither → :func:`_demo_sender`, also asked per call, which resolves whatever THIS tenant
+    declared. When that is ``None`` the calendar tool refuses honestly and sends nothing — the
+    deliberate behaviour of a tenant that declared no mailbox, and now also of a tenant on a box
+    that has one it did not ask for.
 
     ``tz_name`` is the tenant's zone NAME for the exported events' ``TZID``; ``None`` reads
     ``COGNO_COORDINATOR_TZ`` (the host stamps it from its own ``tenant_tz``). Absent, the
     export renders all-day events rather than inventing a zone.
     """
+    if sender is not None and sender_for is not None:
+        raise ValueError(
+            "build_server takes `sender` (one fixed mailbox) or `sender_for` (resolved per "
+            "call), never both — a server with two answers to 'which mailbox' cannot tell you "
+            "which one a message left by.")
     svc = service or _demo_service()
-    snd = sender if sender is not None else _demo_sender()
+
+    def _fixed() -> Optional[CalendarSender]:
+        """The one mailbox this server was built with — the ``sender=`` seam, unchanged."""
+        return sender
+
+    _resolve_sender: "Callable[[], Optional[CalendarSender]]" = (
+        _fixed if sender is not None else
+        (sender_for if sender_for is not None else _demo_sender))
     tz = tz_name if tz_name is not None else os.environ.get("COGNO_COORDINATOR_TZ", "")
     mcp = FastMCP(name)
 
@@ -634,7 +656,7 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         report = ReadReport()
         return _guard(lambda: _calendar_proposal_text(
             svc.preview_schedule_to_calendar(
-                sender=snd, professor=professor, month=month, turma=turma,
+                sender=_resolve_sender(), professor=professor, month=month, turma=turma,
                 identity_label=identity_label, role=role, identity_email=identity_email,
                 describe=_fmt_entry, report=report),
             report))
@@ -657,7 +679,7 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         report = ReadReport()
         try:
             count, to, dropped = await svc.send_schedule_to_calendar(
-                sender=snd, professor=professor, month=month, turma=turma,
+                sender=_resolve_sender(), professor=professor, month=month, turma=turma,
                 identity_label=identity_label, role=role, identity_email=identity_email,
                 tz_name=tz, describe=_fmt_entry, report=report)
         except CoordinatorAccessError as exc:
@@ -771,12 +793,18 @@ def _demo_service() -> CoordinatorService:
 
 
 def _demo_sender() -> Optional[CalendarSender]:
-    """The calendar mailer for a standalone/subprocess run: whatever SMTP the environment
-    declares, else ``None``.
+    """The calendar mailer for a standalone/subprocess run: whatever THIS tenant declared in
+    ``COGNO_COORDINATOR_SMTP``, else ``None``.
 
-    ``None`` is a real, shipped state and not a degraded one: most deployments have no mail
+    Called on every calendar tool call, never once at build. The environment of a stdio child
+    is the channel a host configures it through, and a host that stamps the variable per turn
+    only gets per-turn behaviour if somebody reads it per turn.
+
+    ``None`` is a real, shipped state and not a degraded one: most tenants declare no mail
     server, and the tool's answer there is an honest refusal with zero send. What must never
-    happen is the third possibility — a sender that accepts the message and drops it."""
+    happen is the third possibility — a sender that accepts the message and drops it. It no
+    longer falls back to the deployment's ``SMTP_*``: see ``mailer`` for why a class calendar
+    and a booking invite differ on exactly that point."""
     from cogno_praxis.coordinator.mailer import sender_from_env
     return sender_from_env()
 
