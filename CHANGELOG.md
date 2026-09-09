@@ -20,7 +20,10 @@
   Agora `mailer.sender_for_tenant(tenant_config)` é uma função **pura** do que aquele inquilino
   DECLAROU: sem declaração, `None`, e o `None` é a recusa honesta que o vertical já sabia dar
   (levanta, portanto `ok=False`/`side_effect=False`, e nada a jusante conta o turno como
-  escrita). **Não há recurso ao `SMTP_*` do deploy** — e a assimetria com o convite de marcação
+  escrita). A forma da declaração **verifica-se a cada nível** em vez de se confiar — quem a
+  passa é o host, e um `AttributeError` a sair de dentro do mailer mataria um turno que só
+  estava a LER um horário; uma forma ilegível significa **nada declarado**, logo nada enviado,
+  nunca um recurso a outra caixa. **Não há recurso ao `SMTP_*` do deploy** — e a assimetria com o convite de marcação
   (`cogno_host.api.pg_app`, que continua a usar a cadeia completa) é deliberada: uma confirmação
   de marcação é o produto a funcionar e a caixa da casa é o default certo; um calendário de aulas
   é uma instituição a escrever ao seu corpo docente, e um inquilino que não declarou caixa não
