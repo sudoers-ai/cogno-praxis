@@ -799,8 +799,24 @@ class CoordinatorService:
         # part of the months and no sign that it did — which is the export's "3 of 6" defect
         # said about money, where the reader has no way at all to notice the shortfall. A named
         # ``period`` still filters exactly as it does everywhere else.
+        # ``professor=me``, NOT ``professor=""``, and the empty string is the whole defect this
+        # line was carrying. ``_visible`` reads an EMPTY ``professor`` as "no filter", which for
+        # a non-oversight caller means "pin them to their own name" and for an oversight one
+        # means THE MASTER SCHEDULE — every professor's classes, in one list. The guard eleven
+        # lines above refuses ``professor='<somebody else>'`` to every role, oversight included,
+        # on the stated ground that "another professor's remuneration is not something this
+        # assistant discloses to anyone"; delegating with an empty argument handed an oversight
+        # role in BULK exactly what that guard refuses by NAME, and labelled the sum as the
+        # caller's OWN pay. Measured on a seeded sheet before the fix: EMPLOYEE 12 h/R$ 1.440,00
+        # (hers), SUPERVISOR 16 h/R$ 1.920,00 — the extra 4 h being another professor's class.
+        # So the caller's own name is passed EXPLICITLY and the same filter does the rest: for a
+        # non-oversight role this is byte-for-byte the path that already ran (``_visible`` sets
+        # ``target = identity_label``, and ``me`` IS ``identity_label``), and for an oversight
+        # role it now narrows instead of widening. It stays a filter argument rather than a
+        # ``role=""`` override because lying to the callee about the caller's role would be a
+        # second, quieter contract for the next reader to get wrong.
         entries = self.get_professor_schedule(
-            professor="", role=role, identity_label=me, month=period, turma=turma,
+            professor=me, role=role, identity_label=me, month=period, turma=turma,
             apply_horizon=False, report=report)
         hours_by_sheet: dict[str, dict[str, float]] = {}
         # keyed by (class group, sortable year-month) so the two grouping axes the answer
