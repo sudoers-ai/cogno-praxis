@@ -396,6 +396,69 @@ def test_naming_YOURSELF_is_allowed_because_it_is_the_same_person():
     assert est.base > 0
 
 
+# ── twin 5: the EMPTY argument, which is the door the named one was locking ───────────
+#
+# The guard above refuses ``professor=OTHER`` to every role. It was measured on 2026-09-09 that
+# leaving ``professor`` EMPTY walked straight past it for an oversight role, because the estimate
+# delegated to ``get_professor_schedule`` with ``professor=""`` and the caller's own ``role`` —
+# and there an empty professor means "no filter", i.e. THE MASTER SCHEDULE. On a seeded sheet:
+# EMPLOYEE 12 h / R$ 1.440,00 (hers) against SUPERVISOR 16 h / R$ 1.920,00, the extra four hours
+# being another professor's class, summed into a block whose every line says what the CALLER
+# earns. The shape is the one this repository already has a name for: the wrapper is careful and
+# the thing it delegates to is not. The file already half-knew — the no-label twin's own
+# docstring says "an empty professor filter would otherwise aggregate the WHOLE faculty's
+# classes into one estimate" — but it guarded the missing LABEL and not the widening ROLE.
+_EVERY_ROLE = ["", "GUEST", "EMPLOYEE", "SUPERVISOR", "ADMIN", "OWNER"]
+
+
+@pytest.mark.parametrize("role", _EVERY_ROLE)
+def test_an_EMPTY_professor_gets_the_callers_OWN_pay_whatever_their_role(role):
+    """``professor=""`` means "me", never "everybody" — and for an oversight role it used to
+    mean everybody. ``Prof Beta``'s October class is the witness: it sits in the same class
+    group and the same month as one of ``Prof Alfa``'s, so a leak does not add a group or a
+    line, it doubles a COUNT — which is exactly how it went unnoticed."""
+    est = _svc().estimate_professor_pay(professor="", identity_label=ME, role=role)
+    assert est.hours == pytest.approx(32 + 20 + 8)        # 60 h, and 80 h with Beta's class in
+    assert est.base == pytest.approx(60 * 120.0)
+    october = [g for g in est.groups if (g.turma, g.month) == ("Turma AA_01", "10/2026")]
+    assert [(ln.subject, ln.classes) for g in october for ln in g.lines] == [
+        ("Estatistica Aplicada", 1)]                      # 1 = mine; 2 = mine AND Beta's
+
+
+def test_the_estimate_is_the_SAME_FIGURE_whatever_the_callers_role():
+    """The positive statement of the rule, in one comparison rather than six assertions.
+
+    Every OTHER read in this service widens for oversight, on purpose. This one is the single
+    capability whose scope argument is the asker, so a role may not move its number at all —
+    and a test that says so cannot be satisfied by a fix that merely narrows SUPERVISOR while
+    leaving ADMIN or OWNER behind."""
+    figures = {role: _svc().estimate_professor_pay(professor="", identity_label=ME, role=role)
+               for role in _EVERY_ROLE}
+    assert len({(e.hours, e.base) for e in figures.values()}) == 1
+
+
+def test_the_SCHEDULE_still_widens_for_oversight_and_only_the_ESTIMATE_does_not():
+    """The other half of the fix, and the reason it is a fix and not a regression.
+
+    ``get_professor_schedule`` SHOULD hand an oversight role the master grid — that is its
+    documented scope and a coordinator's whole job. The defect was never that the schedule read
+    widens; it was that the pay estimate INHERITED the widening from it while promising, in its
+    own docstring and in its tool description, "self-only, for every role". So this pins the
+    divergence itself: same service, same sheet, same caller — the schedule widens, the money
+    does not. A future simplification that puts ``professor=""`` back kills this."""
+    svc = _svc()
+    master = svc.get_professor_schedule(professor="", identity_label=ME, role="SUPERVISOR",
+                                        apply_horizon=False)
+    own = svc.get_professor_schedule(professor="", identity_label=ME, role="EMPLOYEE",
+                                     apply_horizon=False)
+    assert OTHER in {e.professor for e in master}         # the coordinator sees everybody
+    assert OTHER not in {e.professor for e in own}
+    assert len(master) > len(own)
+
+    pay = svc.estimate_professor_pay(professor="", identity_label=ME, role="SUPERVISOR")
+    assert pay.hours == pytest.approx(60)                 # …and still earns only their own
+
+
 # ── (A) what the block a professor reads may contain ─────────────────────────────────
 def test_the_block_carries_no_row_verbatim_and_no_third_party_field():
     """The listing formatter beside this one emits EVERY non-empty column of a sheet row
