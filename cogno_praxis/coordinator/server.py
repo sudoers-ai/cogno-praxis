@@ -340,6 +340,31 @@ def _daily_checks_text(dc: DailyChecks, *, report: Optional[ReadReport] = None,
     body = "\n\n".join(blocks)
     return f"{body}\n\n{footer}" if footer else body
 
+
+# -- the PUBLIC door of the daily digest -------------------------------------------------
+#
+# ``cogno-host``'s ``workers/sofia_daily.py`` renders the professor's daily digest OUT of
+# process -- a sweep, not a turn, so it never goes through ``build_server`` -- and until now it
+# reached in and imported ``_daily_checks_text`` and ``_status_args`` by their private names.
+#
+# **A ``_`` name is this library promising nothing.** The host pins us by commit SHA, so an
+# ordinary rename here is a refactor we are entitled to make, and the host PR that bumps the
+# pin does not touch the import that breaks. What it costs there is not a red build: that
+# import sits inside a per-tenant ``except Exception``, which logs the TENANT and never the
+# cause -- so every professor silently stops being messaged and the sweep still exits 0.
+#
+# So the two names are promised. They are ALIASES rather than renames on purpose: the two
+# definitions above and the six call sites in ``build_server`` are untouched, so this commit
+# adds a promise and moves no code (0 lost / 0 gained under ``refactor_digest --by symbol``,
+# but for the two new assignments and the two new ``__all__`` entries). The private names stay
+# valid for a consumer pinned to an older revision -- and this comment is what a future
+# refactor of either function has to read before renaming it: **the promise is the public
+# name**, and an alias that stops pointing at a real implementation is the same silence in a
+# new place.
+daily_checks_text = _daily_checks_text
+status_args = _status_args
+
+
 def _calendar_proposal_text(p: CalendarProposal,
                             report: Optional[ReadReport] = None) -> str:
     """The question a calendar send owes the professor, GROUNDED in what was just read.

@@ -38,7 +38,11 @@ from cogno_praxis.coordinator.rsvp import (
     parse_answer,
     state_of,
 )
-from cogno_praxis.coordinator.server import build_server
+from cogno_praxis.coordinator.server import (
+    build_server,
+    daily_checks_text,
+    status_args,
+)
 from cogno_praxis.coordinator.service import (
     CalendarProposal,
     CoordinatorAccessError,
@@ -62,6 +66,10 @@ __all__ = [
     "CoordinatorConfigError",
     "SpreadsheetStore", "InMemorySpreadsheetStore", "ClassEntry", "ColumnLayout",
     "ReadReport", "SheetReadError", "build_server", "is_perishable_edge",
+    # The daily digest rendered OUT of process: cogno-host's sofia_daily sweep runs no
+    # server, so it renders the same three answers itself. Public because a consumer
+    # pinned to a SHA cannot survive us renaming a `_` name -- see server.py.
+    "daily_checks_text", "status_args",
     # the whole day in one composed read: today's classes, the deadlines, the survey trigger
     "DailyChecks", "DeadlineDue",
     # the calendar export (.ics by e-mail) — the pure builder plus its delivery port
