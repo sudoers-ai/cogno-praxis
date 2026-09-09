@@ -3,8 +3,11 @@
 Everything the domain does with a send is read off one boolean, so this file is about where that
 boolean comes from. ``cogno-herald`` does the actual SMTP — the same function
 ``cogno_host.invites`` mails every booking invite with — and what is tested here is the wiring:
-the organizer derivation, the argument order, and the fact that "no SMTP configured" produces
-``None`` rather than a sender that silently swallows the message.
+the organizer derivation, the argument order, and the fact that "this tenant configured no SMTP"
+produces ``None`` rather than a sender that silently swallows the message — or, as it did until
+this file's twin was flipped, a sender pointing at the deployment's own account. The per-tenant
+rule and the per-call resolution are pinned next door, in
+``test_the_mailer_belongs_to_one_tenant.py``.
 """
 
 from __future__ import annotations
@@ -92,18 +95,43 @@ def test_with_nothing_configured_there_is_no_sender_at_all():
                 os.environ[k] = v
 
 
-def test_the_environment_half_of_heralds_chain_is_what_builds_it(monkeypatch):
+def test_the_deployments_own_SMTP_is_NOT_this_verticals_mailbox(monkeypatch):
+    """**This test used to assert the opposite, and that is the whole change.**
+
+    It read ``the environment half of herald's chain is what builds it`` and it was true: with no
+    tenant declaration, the coordinator resolved the box's ``SMTP_*`` and mailed a professor's
+    calendar from the deployment's own account. On the live box that is not a hypothetical — the
+    ``.env`` declares ``SMTP_HOST`` and declares no ``COGNO_COORDINATOR_SMTP``, and the child
+    inherits the whole environment — so EVERY tenant, declared or not, sent through it.
+
+    A booking invite still resolves that way on purpose (``cogno_host.api.pg_app``): a
+    confirmation for a booking somebody just made should leave, and the box's mailbox is the
+    right default for it. A class calendar is an institution writing to its faculty, and a tenant
+    that declared no mailbox has not asked to write to anybody.
+
+    The control is one line down: the same environment, plus a declaration, builds a sender.
+    """
     pytest.importorskip("cogno_herald")
     monkeypatch.delenv("COGNO_COORDINATOR_SMTP", raising=False)
     monkeypatch.setenv("SMTP_HOST", "smtp.env.test")
     monkeypatch.setenv("SMTP_FROM_EMAIL", "env@escola.test")
-    sender = sender_from_env()
-    assert sender is not None and sender.organizer()[0] == "env@escola.test"
+    assert sender_from_env() is None
+
+    # CONTROL, same test, same environment: the machinery works, so the None above is a
+    # decision about provenance and not a fixture that failed to load.
+    monkeypatch.setenv("COGNO_COORDINATOR_SMTP",
+                       '{"host": "smtp.tenant.test", "from_email": "tenant@escola.test"}')
+    built = sender_from_env()
+    assert built is not None and built.organizer()[0] == "tenant@escola.test"
 
 
-def test_a_tenant_override_beats_the_environment(monkeypatch):
-    """The same precedence the booking invite resolves per tenant (override → global env →
-    None), reached here through the one variable the host can stamp per turn."""
+def test_only_what_the_tenant_declared_builds_a_sender(monkeypatch):
+    """The declaration is not a *preference over* the environment — it is the only input.
+
+    (The booking invite's precedence — override → global env → None — is herald's and is
+    unchanged there. Here only herald's tenant branch is reachable, by construction: the
+    resolver refuses before it calls, on the same non-empty ``host`` predicate herald branches
+    on.)"""
     pytest.importorskip("cogno_herald")
     monkeypatch.setenv("SMTP_HOST", "smtp.env.test")
     monkeypatch.setenv("SMTP_FROM_EMAIL", "env@escola.test")

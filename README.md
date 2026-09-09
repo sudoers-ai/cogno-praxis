@@ -43,12 +43,19 @@ Three things about it are worth knowing before you wire it:
   *position*: insert one class at the top of the sheet and every index below it shifts, so
   row-derived identifiers would make the next send duplicate the professor's whole term instead
   of updating it. Send it again after a room change and the entries update in place.
-- **Delivery is a port.** `CalendarSender` (`coordinator/ics.py`) is injected into
-  `build_server(service, sender=…)`. `coordinator/mailer.py` is the SMTP adapter over
+- **Delivery is a port, and the mailbox belongs to ONE tenant.** `CalendarSender`
+  (`coordinator/ics.py`) is injected into `build_server(service, sender=…)` when the host has
+  already resolved it, or `build_server(service, sender_for=…)` — a callable asked **on every
+  calendar tool call**, which is what a process serving more than one tenant needs.
+  `coordinator/mailer.py` is the SMTP adapter over
   [`cogno-herald`](https://github.com/sudoers-ai/cogno-herald) — an **optional** dependency
-  (install it from git; it is not on PyPI yet, so it is not declarable as an extra). No SMTP
-  configured → **no sender**, and the tool refuses honestly and sends **nothing**. It never
-  swallows a message.
+  (install it from git; it is not on PyPI yet, so it is not declarable as an extra). The mailbox
+  is **only ever what THIS tenant declared** (`COGNO_COORDINATOR_SMTP`, or whatever `sender_for`
+  answers): nothing declared → **no sender**, and the tool refuses honestly and sends
+  **nothing**. It deliberately does **not** fall back to the deployment's `SMTP_*` — a booking
+  invite does, because every tenant's confirmations should leave, but a class calendar is an
+  institution writing to its own faculty and a tenant that declared no mailbox has not asked to
+  write to anybody. It never swallows a message either.
 - **Every path that did not send RAISES**, so the MCP bridge reports `ok=False` /
   `side_effect=False` and the turn is never recorded as a write that did not happen. The one
   non-error answer starts with `SENT:`.

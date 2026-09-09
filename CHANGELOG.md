@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+### Fixed
+
+- **`coordinator` — a caixa de correio é do INQUILINO, e é escolhida no momento do envio.** O
+  remetente do calendário resolvia-se em `sender_from_env()` pela cadeia da herald (declaração do
+  tenant → `SMTP_*` do ambiente → `None`) e ficava preso em `mcp = build_server()`, **no import**
+  do subprocesso MCP. Medido na caixa que corre isto: o `.env` do deploy declara
+  `SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD`/`SMTP_FROM_EMAIL` e **não** declara
+  `COGNO_COORDINATOR_SMTP`; `cogno_host.modules` entrega ao filho `{**os.environ, **env_extra}` e
+  o seu próprio comentário diz que essa variável «is genuinely the box's and nothing per-turn
+  re-injects it». Isso é uma frase só: **todo o inquilino, tivesse declarado ou não, enviava pela
+  conta real do deploy** — um inquilino de ensaio incluído, cujo correio aterraria em caixas de
+  entrada de estranhos vindo do endereço da casa. E a única configuração que o travava — apontar
+  a variável partilhada para um sink — redireccionava **também** a COORDINATOR do dono, porque as
+  duas pontas lêem a mesma variável do processo. Não era saída: era troca.
+
+  Agora `mailer.sender_for_tenant(tenant_config)` é uma função **pura** do que aquele inquilino
+  DECLAROU: sem declaração, `None`, e o `None` é a recusa honesta que o vertical já sabia dar
+  (levanta, portanto `ok=False`/`side_effect=False`, e nada a jusante conta o turno como
+  escrita). **Não há recurso ao `SMTP_*` do deploy** — e a assimetria com o convite de marcação
+  (`cogno_host.api.pg_app`, que continua a usar a cadeia completa) é deliberada: uma confirmação
+  de marcação é o produto a funcionar e a caixa da casa é o default certo; um calendário de aulas
+  é uma instituição a escrever ao seu corpo docente, e um inquilino que não declarou caixa não
+  pediu para escrever a ninguém. A `resolve_smtp_config` da herald continua a ser quem
+  **normaliza** a declaração (porta, `from_email`, `use_tls`) — só se lhe chama com uma
+  declaração na mão, o que torna o ramo do ambiente inalcançável por construção e não por ordem
+  de chamadas.
+
+  E `build_server` ganha `sender_for=` — um chamável perguntado **em cada chamada** das duas
+  ferramentas de calendário —, a mesma forma que `cogno_host.api.pg_app._build_invite_sender` já
+  usa para o convite (`_smtp_of(tenant_id)`, resolvido no envio). `sender=` mantém-se para quem já
+  resolveu o inquilino; dar os dois levanta `ValueError`, porque um servidor com duas respostas a
+  «que caixa» não consegue dizer por qual saiu a mensagem. Sem nenhum dos dois, o default é o
+  mesmo `sender_from_env()` — mas perguntado por chamada, não congelado no arranque.
+
+  Os gémeos estão em `tests/unit/test_the_mailer_belongs_to_one_tenant.py`, e o terceiro é o que
+  impede o conserto de nascer inerte: **um servidor, construído uma vez, dois inquilinos, duas
+  contas**. Um teste do `test_coordinator_mailer.py` afirmava exactamente o contrário
+  (`the_environment_half_of_heralds_chain_is_what_builds_it`) — está virado, com o controlo da
+  presença dentro do próprio teste.
+
 ### Added
 
 - **`coordinator` — a resposta ao convite de aula passa a ficar gravada, pela metade CHAT.** O

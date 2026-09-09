@@ -49,7 +49,8 @@ postgres = [
 # NOT declared here: `cogno-herald`, which the coordinator's calendar export mails the .ics
 # through (`coordinator/mailer.py`). It is not on PyPI yet, and a direct git URL in an extra is
 # rejected at upload — so it is installed alongside (`pip install "cogno-herald @ git+..."`) and
-# imported lazily. Absent, `sender_from_env()` returns None and the tool refuses honestly.
+# imported lazily. Absent — or with no mailbox declared for this tenant — `sender_from_env()`
+# returns None and the tool refuses honestly.
 coordinator = [
     "openpyxl>=3.1",
     "httpx>=0.24",
