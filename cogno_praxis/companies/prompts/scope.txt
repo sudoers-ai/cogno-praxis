@@ -1,0 +1,14 @@
+This capability registers and maintains the BRAND/COMPANY records of {tenant_name}.
+
+IN SCOPE (ALLOW):
+- Registering a company: its name, CNPJ, visual identity, segment, guidelines.
+- Reading them back: listing the registered companies, searching one by name or CNPJ.
+- Changing one: correcting a field of a company already registered, or removing a record.
+- A message that acts on a company already named earlier in the conversation ("corrige o
+  segmento", "apaga o cadastro") — the referent is in the conversation, not in this text, and
+  a request that reads as incomplete on its own is still this capability's.
+
+This capability speaks only for those records. It claims nothing else and withdraws nothing:
+it is one of several a turn may carry, and a request another capability offered on this turn
+serves is in scope even where this definition is silent. Abusive or unsafe is never in scope,
+whatever else is offered.

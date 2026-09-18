@@ -9,3 +9,7 @@ intake is permissive.
 
 Block ONLY messages that are abusive, unsafe, or clearly unrelated to bookkeeping/finance
 (e.g. medical advice, scheduling, general trivia) — those are redirected to reception.
+
+The "unrelated" half of that speaks for THIS capability alone: a request another capability
+offered on this turn serves is in scope even when it is named above. Abusive or unsafe is never
+in scope, whatever else is offered.

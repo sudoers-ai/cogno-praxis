@@ -47,6 +47,29 @@ The prompts carry host-injected placeholders kept literal in the files: `{secret
 `{{ROLE_CAPABILITIES}}` / `{{TENANT_PERSONAS}}`. The host fills them (RBAC, identity,
 departments) when it renders the persona — the vertical knows none of it.
 
+### `scope.txt` is ONE capability's scope — the host composes the persona's
+
+Each vertical ships a `scope.txt` that answers *"is this request mine?"* for **that capability
+alone**. None of them may claim the assistant: a turn routinely carries several capabilities
+(another vertical, the host's own skills), and the one whose prompts happen to be the persona's
+primary has no way to know what the others are. So every file here states its own IN/OUT lists
+and then says, in as many words, that a request another capability offered on this turn serves
+is in scope even where this text is silent or appears to forbid it.
+
+That sentence was earned rather than designed. A front desk holding a published-material reader
+refused a contact's question about that material, because the scheduler's scope said the
+assistant `ONLY handles … scheduling` and listed `homework` under BLOCK — and it kept refusing
+after the host put the turn's tool table into the same prompt, and again after the table was
+promoted above the definition. Prose that claims exclusivity outranks a rule stacked on top of
+it, so the claim had to go.
+
+Two things are NEVER waived by another capability, and each file says so itself: performing a
+specialist's actual domain work (diagnose, prescribe, advise) and abusive/unsafe input. A
+retraction that waived those would be the guard removed under another name.
+
+**The composition is the HOST's.** This repo ships the fragments; which of them a turn gets —
+and in what order — is decided where the bindings and the tool surface live.
+
 **Customizing.** A company that needs a richer receptionist does **not** edit the bundled
 SECRETARY. It defines its **own** persona (host-side, via cogno-persona) that targets the
 same `scheduler` capability and composes extra tool sources (other verticals, cortex
