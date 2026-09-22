@@ -46,6 +46,13 @@ from cogno_praxis.companies.store import (
 )
 
 
+# The ONE refusal for a write to a company that is not the caller's — `_mine_or_refuse` (update,
+# delete) and `register` over a name already on file. One text, so the two write paths leave the
+# same auditable outcome and a reader of the trace cannot tell them apart by wording.
+_NOT_YOURS = ("Essa empresa foi cadastrada por outra pessoa — só posso alterar ou remover as "
+              "que você mesmo cadastrou.")
+
+
 class CompanyError(RuntimeError):
     """A call that was REFUSED — nothing was written.
 
@@ -147,8 +154,17 @@ class CompanyService:
         """Persist one company and return the stored row. Raises :class:`CompanyError`.
 
         ``identity_id`` is the AUTHOR — an opaque string the host injects (it is never a value
-        the model chooses). It is recorded on creation and, on a later correction, the original
-        author survives: a correction is not a new registration by a new person.
+        the model chooses). It is recorded on creation and never replaced afterwards.
+
+        **Registering a name already on file is a WRITE to that row**, because the key is the
+        name — the same write :meth:`update` makes — so it is decided by the same ownership
+        rule (:meth:`_registered_by`) and refused with the same :class:`CompanyError`. Only the
+        author corrects a company this way. A company whose author is blank has NO owner, so
+        nobody does — identified or anonymous; adopting one is an admin path this vertical does
+        not have. There is no staff bypass HERE, deliberately: this tool declares no ``role``,
+        so the host injects none, and staff correct someone else's company through
+        :meth:`update`, which takes one. A refusal never falls back to "create
+        another": a second row for the same name is exactly what the derived key prevents.
 
         **A field that was NOT supplied is left as it is**, which is the same rule
         :meth:`update` states and, until 2026-09-06, the rule this method did not keep. The tool
@@ -194,6 +210,8 @@ class CompanyService:
             # model say "não consegui cadastrar agora".
             raise CompanyError(
                 f"Não consegui salvar o cadastro da empresa agora ({type(exc).__name__}).") from exc
+        if prior is not None and not self._registered_by(prior, identity_id):
+            raise CompanyError(_NOT_YOURS)
         brand = dict(prior.visual_identity or {}) if prior is not None else {}
         for field, value in (("visual_identity", visual_identity), ("guidelines", guidelines)):
             if value:
@@ -319,9 +337,7 @@ class CompanyService:
                 f"Não encontrei nenhuma empresa com o identificador {company_id!r}. "
                 "Busque a empresa primeiro e use o identificador que a busca devolver.")
         if not is_oversight(role) and not self._registered_by(row, identity_id):
-            raise CompanyError(
-                "Essa empresa foi cadastrada por outra pessoa — só posso alterar ou remover "
-                "as que você mesmo cadastrou.")
+            raise CompanyError(_NOT_YOURS)
         return row
 
     # ── reads ────────────────────────────────────────────────────────────────────────────
@@ -497,4 +513,5 @@ class CompanyService:
         """What this vertical does (scope guardrail)."""
         return ("I register the companies/brands this business works with: the name, an "
                 "optional CNPJ, the visual identity and the brand guidelines. Registering the "
-                "same company again UPDATES its record — it does not create a second one.")
+                "same company again UPDATES its record — it does not create a second one — "
+                "and only the person who registered it can do that.")

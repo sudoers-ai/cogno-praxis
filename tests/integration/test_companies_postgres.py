@@ -29,6 +29,9 @@ pytestmark = pytest.mark.skipif(
 
 from cogno_praxis.companies import CompanyError, CompanyService              # noqa: E402
 from cogno_praxis.companies.stores.postgres import PgCompanyStore            # noqa: E402
+from tests.unit.test_companies_service import (                              # noqa: E402
+    _an_upsert_never_replaces_the_recorded_author,
+)
 
 _CNPJ_OK = "11.222.333/0001-81"
 _CNPJ_BAD = "11.222.333/0001-99"
@@ -54,8 +57,8 @@ def test_a_registration_round_trips_through_postgres():
 
 def test_the_derived_key_makes_a_second_registration_an_UPDATE():
     svc = CompanyService(_fresh_store("acme"))
-    svc.register("Padaria São João", visual_identity="azul")
-    svc.register("padaria sao joao", visual_identity="verde")
+    svc.register("Padaria São João", visual_identity="azul", identity_id="u1")
+    svc.register("padaria sao joao", visual_identity="verde", identity_id="u1")
     rows = svc.list_companies()
     assert len(rows) == 1
     assert rows[0].visual_identity == {"visual_identity": "verde"}
@@ -63,13 +66,22 @@ def test_the_derived_key_makes_a_second_registration_an_UPDATE():
 
 def test_created_at_and_author_survive_an_update():
     """`ON CONFLICT DO UPDATE` deliberately leaves `created_at`/`created_by_user_id` alone: a
-    correction is not a new registration by a new author."""
+    correction is not a new registration. It is the AUTHOR's correction — someone else's is
+    refused before the store is reached (`service.register`); the store's own half of that rule
+    is the parity twin below."""
     store = _fresh_store("acme")
     first = CompanyService(store).register("Acme", identity_id="u1")
-    again = CompanyService(store).register("Acme", identity_id="u2")
+    again = CompanyService(store).register("Acme", segment="varejo", identity_id="u1")
     assert again.created_by_user_id == "u1"
     assert again.created_at == first.created_at
     assert again.updated_at >= first.updated_at
+
+
+def test_an_upsert_never_replaces_the_recorded_author_IN_POSTGRES():
+    """The Postgres half of the parity twin — the SAME scenario the in-memory store runs in
+    `tests/unit/test_companies_service.py`, so the two adapters cannot disagree on a blank
+    author again."""
+    _an_upsert_never_replaces_the_recorded_author(_fresh_store("acme"))
 
 
 def test_the_scope_isolates_tenants():

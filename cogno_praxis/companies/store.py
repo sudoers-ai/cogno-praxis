@@ -102,9 +102,12 @@ class InMemoryCompanyStore:
         prior = self.companies.get(company.company_id)
         if prior is not None:
             # created_at/created_by survive an update, exactly as the SQL ON CONFLICT clause
-            # leaves them alone: a correction is not a new registration by a new author.
+            # leaves them alone: a correction is not a new registration by a new author. The
+            # author is kept even when it is BLANK — this used to be `prior or new`, which
+            # handed an authorless company to whoever upserted its name next, something the
+            # Postgres adapter never did. A blank author means "no owner", not "first come".
             company.created_at = prior.created_at
-            company.created_by_user_id = prior.created_by_user_id or company.created_by_user_id
+            company.created_by_user_id = prior.created_by_user_id
         self.companies[company.company_id] = company
         return company
 

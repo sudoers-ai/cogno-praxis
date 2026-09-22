@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from cogno_praxis.companies import (
+    Company,
     CompanyError,
     CompanyService,
     InMemoryCompanyStore,
@@ -81,8 +82,8 @@ def test_a_normaliser_that_deleted_LETTERS_would_store_a_lie():
 # ── the key is the NAME, folded — which is this vertical's whole undo story ──────────────
 def test_registering_the_same_company_again_UPDATES_one_row():
     svc = _svc()
-    svc.register("Padaria São João", visual_identity="azul")
-    svc.register("padaria sao joao", visual_identity="verde")
+    svc.register("Padaria São João", visual_identity="azul", identity_id="u1")
+    svc.register("padaria sao joao", visual_identity="verde", identity_id="u1")
     rows = svc.list_companies()
     assert len(rows) == 1, "the accent-folded name is the key — this must not be two rows"
     assert rows[0].visual_identity == {"visual_identity": "verde"}
@@ -94,10 +95,14 @@ def test_a_name_that_folds_to_nothing_still_gets_a_deterministic_key():
 
 
 def test_the_original_author_survives_a_correction():
-    """A correction is not a new registration by a new person."""
-    svc = _svc()
+    """A correction is not a new registration: the author and ``created_at`` stay. It is the
+    AUTHOR's correction — someone else's is refused
+    (``test_registering_a_company_SOMEONE_ELSE_registered_is_refused_and_writes_nothing``)."""
+    svc = CompanyService(InMemoryCompanyStore(), clock=iter([1.0, 2.0]).__next__)
     svc.register("Acme", identity_id="u1")
-    assert svc.register("Acme", identity_id="u2").created_by_user_id == "u1"
+    again = svc.register("Acme", segment="varejo", identity_id="u1")
+    assert again.created_by_user_id == "u1"
+    assert again.created_at == 1.0 and again.updated_at == 2.0
 
 
 def test_an_empty_brand_field_is_left_OUT_rather_than_stored_blank():
@@ -337,6 +342,96 @@ def test_the_read_view_and_the_write_gate_apply_ONE_blank_id_rule():
              for caller in expected}
     assert seen == expected
     assert wrote == expected
+
+
+# ── registering a name already on file is a WRITE to that row — decided by the same rule ──
+#
+#  The key is the accent-folded NAME, so `register` over a name that exists is not a new
+#  registration: it rewrites THAT row, the same write `company_update` makes, and it has to be
+#  decided by the same ownership rule. Refused, it writes nothing and it never falls back to
+#  "create another" — a second row for the same name is the defect the derived key exists to
+#  prevent. A company whose author is blank has NO OWNER: nobody corrects it by registering it
+#  again, identified or not. Adopting one is an admin path this vertical does not have.
+def _rows(svc: CompanyService) -> "list[tuple[str, str, str, dict]]":
+    return [(c.company_id, c.name, c.created_by_user_id, c.visual_identity)
+            for c in svc.list_companies()]
+
+
+def test_registering_a_company_SOMEONE_ELSE_registered_is_refused_and_writes_nothing():
+    svc = _authorless()
+    before = _rows(svc)
+    with pytest.raises(CompanyError, match="só posso"):
+        svc.register("ACME", guidelines="por cima", segment="outro", identity_id="lead-2")
+    assert _rows(svc) == before                       # nothing moved, and no second row
+
+
+def test_the_AUTHOR_still_corrects_their_own_company_by_registering_it_again():
+    """The twin that keeps the refusal from being bought by refusing the author too."""
+    svc = _authorless()
+    row = svc.register("Acme", segment="varejo", identity_id="lead-1")
+    assert row.created_by_user_id == "lead-1"
+    assert row.segment == "varejo" and row.visual_identity == {"guidelines": "tom formal"}
+    assert len(svc.list_companies()) == 2
+
+
+@pytest.mark.parametrize("blank_author", ["", "   "])
+@pytest.mark.parametrize("anonymous", ["", "   "])
+def test_an_ANONYMOUS_caller_cannot_register_over_a_company_whose_author_is_blank(
+        blank_author, anonymous):
+    svc = _svc()
+    svc.register("Padaria Anonima", guidelines="tom formal", identity_id=blank_author)
+    before = _rows(svc)
+    with pytest.raises(CompanyError, match="só posso"):
+        svc.register("Padaria Anonima", guidelines="outra", identity_id=anonymous)
+    with pytest.raises(CompanyError, match="só posso"):
+        svc.update("padaria-anonima", guidelines="outra", identity_id=anonymous, role="GUEST")
+    assert _rows(svc) == before
+
+
+@pytest.mark.parametrize("blank_author", ["", "   "])
+def test_a_company_with_a_blank_author_has_NO_OWNER_not_even_an_identified_caller(blank_author):
+    """Refused to an identified caller too — and the author stays blank: the store must not
+    hand the row to whoever registers its name next."""
+    svc = _svc()
+    svc.register("Padaria Anonima", guidelines="tom formal", identity_id=blank_author)
+    before = _rows(svc)
+    with pytest.raises(CompanyError, match="só posso"):
+        svc.register("Padaria Anonima", guidelines="minha agora", identity_id="lead-1")
+    with pytest.raises(CompanyError, match="só posso"):
+        svc.update("padaria-anonima", guidelines="minha agora", identity_id="lead-1",
+                   role="GUEST")
+    assert _rows(svc) == before
+    assert svc.list_visible(identity_id="lead-1", role="GUEST") == []
+
+
+def test_the_REAL_author_with_whitespace_around_the_id_still_writes():
+    """The caller's id is compared STRIPPED, on both write paths. Without this twin, dropping the
+    `.strip()` from the ownership rule survives every other test here."""
+    svc = _authorless()
+    padded = "  lead-1  "
+    assert svc.update("acme", segment="varejo", identity_id=padded,
+                      role="GUEST").company.segment == "varejo"
+    assert svc.register("Acme", guidelines="tom informal", identity_id=padded).visual_identity \
+        == {"guidelines": "tom informal"}
+    assert svc.get("acme").created_by_user_id == "lead-1"
+
+
+def _an_upsert_never_replaces_the_recorded_author(store) -> None:
+    """ONE scenario, run over BOTH stores (the Postgres half is
+    `tests/integration/test_companies_postgres.py`): the store's `ON CONFLICT` leaves
+    `created_by_user_id` alone, and the in-memory store has to say the same — a blank author
+    included, which it used to hand to the next upsert."""
+    for key, first, second in (("sem-dono", "", "lead-1"), ("em-branco", "   ", "lead-1"),
+                               ("com-dono", "lead-1", "lead-2")):
+        store.upsert(Company(company_id=key, name=key, cnpj="", created_by_user_id=first))
+        again = store.upsert(Company(company_id=key, name=key, cnpj="",
+                                     created_by_user_id=second))
+        assert again.created_by_user_id == first, key
+        assert store.get(key).created_by_user_id == first, key
+
+
+def test_an_upsert_never_replaces_the_recorded_author_IN_MEMORY():
+    _an_upsert_never_replaces_the_recorded_author(InMemoryCompanyStore())
 
 
 def test_update_applies_only_what_was_GIVEN():
