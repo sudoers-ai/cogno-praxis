@@ -160,17 +160,17 @@ def test_two_sided_visibility_survives_postgres():
     # professional (auto_confirm off → PENDING); the SAME row must be found by BOTH the doctor
     # (host_id) and the guest (guest_id), and guest_id must persist on the row.
     store = _drop_and_store("clinic")
-    store.add_host(Host("dr_vini", "Dr. Vinicius Vale", "Cardio", auto_confirm=False))
+    store.add_host(Host("dr_heitor", "Dr. Heitor Lacerda", "Cardio", auto_confirm=False))
     svc = SchedulerService(store, today=lambda: _TODAY)
 
-    appt = svc.book("dr_vini", "2026-07-01", "09:00", "Ana",
-                    guest_id="ana_id", host_name="Dr. Vinicius Vale")
+    appt = svc.book("dr_heitor", "2026-07-01", "09:00", "Ana",
+                    guest_id="ana_id", host_name="Dr. Heitor Lacerda")
     assert appt.status == "PENDING"
 
     # EMPLOYEE view (host_id) sees the guest's PENDING booking
-    doc = svc.list_appointments(identity_id="dr_vini", role="EMPLOYEE")
+    doc = svc.list_appointments(identity_id="dr_heitor", role="EMPLOYEE")
     assert [a.appointment_id for a in doc] == [appt.appointment_id]
-    assert doc[0].guest_id == "ana_id" and doc[0].host_name == "Dr. Vinicius Vale"
+    assert doc[0].guest_id == "ana_id" and doc[0].host_name == "Dr. Heitor Lacerda"
 
     # GUEST view (guest_id) sees the same row; a different guest sees nothing
     assert [a.appointment_id for a in svc.list_appointments(identity_id="ana_id", role="GUEST")] \
@@ -183,7 +183,7 @@ def test_two_sided_visibility_survives_postgres():
         row = c.execute("SELECT guest_id, host_name FROM appointments "
                         "WHERE scope='clinic' AND appointment_id=%s",
                         (appt.appointment_id,)).fetchone()
-    assert row == ("ana_id", "Dr. Vinicius Vale")
+    assert row == ("ana_id", "Dr. Heitor Lacerda")
     store.close()
 
 

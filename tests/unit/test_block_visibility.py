@@ -1,6 +1,6 @@
 """Reproduction: a self-block is invisible/indistinguishable in list_appointments.
 
-Mirrors the live bug (Dr. Vinicius blocked 16/17 July, but the agent could not
+Mirrors the live bug (Dr. Heitor blocked 16/17 July, but the agent could not
 surface it): block_schedule stores the marker in `notes` (never rendered) and
 leaves `with_name=""`, so the list render flattens a block into a nameless
 CONFIRMED row indistinguishable from a broken client booking.
@@ -21,7 +21,7 @@ _TODAY = date(2026, 6, 30)
 
 def _server():
     store = InMemoryAppointmentStore()
-    store.hosts["dr_vinicius"] = Host("dr_vinicius", "Dr. Vinicius Vale", "GP")
+    store.hosts["dr_heitor"] = Host("dr_heitor", "Dr. Heitor Lacerda", "GP")
     return build_server(SchedulerService(store, today=lambda: _TODAY))
 
 
@@ -36,17 +36,17 @@ async def test_block_then_list_loses_block_semantics():
 
     # 1) A real client booking on the 15th.
     await mcp.call_tool("book_appointment", {
-        "host_id": "dr_vinicius", "date": "2026-07-15", "time": "10:00",
+        "host_id": "dr_heitor", "date": "2026-07-15", "time": "10:00",
         "with_name": "Neymar Junior"})
 
     # 2) The user blocks the whole day on the 16th (self-occupation).
     blocked = _text(await mcp.call_tool("block_schedule", {
-        "host_id": "dr_vinicius", "date": "2026-07-16"}))
+        "host_id": "dr_heitor", "date": "2026-07-16"}))
     assert "Blocked" in blocked  # the write itself succeeds
 
     # 3) Now ask for the agenda, exactly like "traga minha agenda".
     listed = _text(await mcp.call_tool("list_appointments", {
-        "host_id": "dr_vinicius"}))
+        "host_id": "dr_heitor"}))
 
     print("\n----- list_appointments output -----\n" + listed + "\n------------------------------------")
 
@@ -74,7 +74,7 @@ async def test_block_then_list_loses_block_semantics():
     # guest would be — the marker occupies the "who" field outright.
     assert " with " not in block_line
     # Real client bookings still name the guest and the professional, in that order.
-    assert client_line.index("Neymar Junior") < client_line.index("Dr. Vinicius Vale")
+    assert client_line.index("Neymar Junior") < client_line.index("Dr. Heitor Lacerda")
 
 
 def _day_header_above(lines: "list[str]", row: str) -> str:

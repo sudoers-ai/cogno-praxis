@@ -4,7 +4,7 @@ Measured 2026-09-06 on the owner's own live COORDINATOR conversation, turns 56 a
 
 * t56 "traga minhas aulas" came back as
   ``- Mês: 2026-09-08 00:00:00 | Dia: 2026-09-08 00:00:00 | Data: 2026-09-08 00:00:00 |
-  Disciplina: NoSQL and Distributed Databases | Professor: Vinicius Vale`` — the same day said
+  Disciplina: NoSQL and Distributed Databases | Professor: Heitor Lacerda`` — the same day said
   THREE times and the class group said none. He teaches four groups; nothing on that line told
   him which one each class belonged to.
 * t57 "e das outras turmas?" was read as *other PROFESSORS* and refused on scope ("só posso
