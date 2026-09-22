@@ -373,6 +373,79 @@ def _settings_read(tools: Sequence[ToolCall]) -> bool:
                 or ok_results(tools, "set_schedule_settings"))
 
 
+# ── a read that is NOT the scheduler's: the host's registered-material lookup ─────────
+# `consult_material` is not a tool this vertical ships. It is the HOST's read over the tenant's
+# REGISTERED material — a timetable, a syllabus: documents a person wrote — offered to the same
+# persona beside the scheduler's tools. Rule 6 admitted only the scheduler's own reads, so a
+# reply grounded in that lookup was repaired as "answered from memory" (measured 2/2 in the
+# rehearsal tenant, 2026-09-22: "60 horas" over a syllabus saying "(60h)", and a class's
+# "19h00 às 22h30" over the timetable that says exactly that — each paid a repair re-step, and
+# in one the re-step called a `list_appointments` nobody had asked for).
+#
+# The name alone does NOT admit it, and that is the whole rule — THE VALUE, NOT THE SOURCE, the
+# judge's own ruler for a preserved term. A read of the scheduler's own kind is evidence by
+# construction (a listing IS what is booked); a lookup over free text is evidence only of what
+# it returned, so it grounds a schedule claim exactly when its output HOLDS a figure the reply
+# states. Keyed to this one tool rather than "any read whose output holds the figure", because
+# a graph read whose query echoes the request hands back the model's own earlier sentence — the
+# echo the host's `_Call.echo` bit exists for — and a figure invented last turn must not ground
+# itself this turn. Registered material is written by a person, not learned from the model.
+MATERIAL_READ_TOOL = "consult_material"
+
+# A figure is a NUMBER WITH A TIME UNIT — a time of day or a duration — and nothing else: the
+# bare "30" inside the read's "22h30" is not a figure, so it can never stand in for a claimed
+# "30 minutos" (a digit-run comparison would let it). Alternatives are ordered longest-first so
+# "3 horas e 30 minutos" is one figure (3:30), not "3 horas" and "30 minutos".
+_SCHEDULE_FIGURE_RE = re.compile(
+    r"\b(?P<ch>\d{1,3})\s*(?:h|hs|hrs?|horas?|hours?)\s*(?:e|and|y|,)?\s*"
+    r"(?P<cm>\d{1,2})\s*(?:min(?:utos?|utes?)?|m)\b"                     # 3 horas e 30 minutos
+    r"|\b(?P<th>\d{1,2})\s*[h:]\s*(?P<tm>\d{2})\b"                       # 19h00, 19:00, 3h30
+    r"|\b(?P<dh>\d{1,3})(?:[.,](?P<dd>\d))?\s*(?:h|hs|hrs?|horas?|hours?)\b"  # 60h, 60 horas, 3.5 hours
+    r"|\b(?P<ah>\d{1,2})\s*(?P<ap>[ap])\.?m\b"                             # 7pm, 8 am
+    r"|\b(?P<mm>\d{1,3})\s*min(?:utos?|utes?)?\b",                         # 30 minutos
+    re.IGNORECASE)
+
+
+def schedule_figures(text: str) -> "set[str]":
+    """Every time-of-day or duration figure in ``text``, normalised to ``H:MM`` so the same
+    VALUE spelled differently compares equal: "60 horas" and "(60h)" are both ``60:00``;
+    "3 horas e 30 minutos", "3h30" and "3.5 hours" are all ``3:30``; "19h00", "19:00" and
+    "7pm" are all ``19:00``. Language-agnostic: the units are the three locales' (h/horas/hours,
+    min/minutos/minutes) and the digits are the digits."""
+    out: "set[str]" = set()
+    for m in _SCHEDULE_FIGURE_RE.finditer(text or ""):
+        g = m.groupdict()
+        if g["ch"] is not None:
+            h, mi = int(g["ch"]), int(g["cm"])
+        elif g["th"] is not None:
+            h, mi = int(g["th"]), int(g["tm"])
+        elif g["dh"] is not None:
+            h, mi = int(g["dh"]), (int(g["dd"]) * 6 if g["dd"] else 0)
+        elif g["ah"] is not None:
+            h, mi = int(g["ah"]) % 12 + (12 if g["ap"].lower() == "p" else 0), 0
+        else:
+            h, mi = 0, int(g["mm"])
+        out.add(f"{h}:{mi:02d}")
+    return out
+
+
+def _material_holds_a_claimed_figure(reply: str, tools: Sequence[ToolCall]) -> bool:
+    """A successful ``consult_material`` read whose output holds a schedule figure the reply
+    states. Over the WHOLE reply, like :func:`_lists_dated_appointment`: the clause that trips
+    the occupancy pattern is often a courtesy tail with no figure in it ("ajuda com
+    agendamentos"), and the figures live in the sentences before. ANY figure in common, not
+    every one: the specimen states a duration DERIVED from the read (22h30 − 19h00 = 3h30) beside
+    the times it repeats verbatim, and demanding every figure would repair the very turn this
+    exists to leave alone. Which figures the reply reproduces correctly is the judge's question
+    and the preserved-term backstop's — see the sibling note in ``bookkeeper/grounding.py`` on
+    why these rules are never figure-wise. A reply that states no figure at all is not admitted:
+    there is no value the read could hold."""
+    claimed = schedule_figures(reply)
+    if not claimed:
+        return False
+    return any(claimed & schedule_figures(out) for out in ok_results(tools, MATERIAL_READ_TOOL))
+
+
 def _contradicts_booking(tools: Sequence[ToolCall]) -> bool:
     """In-hand evidence that the user has NO relevant booking / the commit did not happen:
     an empty list read, or a book that was attempted but did not succeed. Never fires on
@@ -515,10 +588,13 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
     #     conversation history instead of reading). This is the "qual dia eu bloquiei?" bug:
     #     the model confabulated "já estão ocupados" without ever querying the agenda.
     #     Repairable: the re-step forces a real listing. Suppressed when a listing OR an
-    #     availability read is in hand (that claim is grounded; availability is rule 2's turf).
+    #     availability read is in hand (that claim is grounded; availability is rule 2's turf),
+    #     or when the host's registered-material read holds a figure the reply states — the
+    #     VALUE admits that read, never its name (see `MATERIAL_READ_TOOL`).
     if (is_read_query and affirmed(reply, b.occupancy_claim, neg=b.loc.neg)
             and not ok_results(tools, "list_appointments")
-            and not _availability_read(tools)):
+            and not _availability_read(tools)
+            and not _material_holds_a_claimed_figure(reply, tools)):
         return GroundingVerdict(rule="unread_schedule_claim", message=b.unread_schedule,
                                 repairable=True, critique=_UNREAD_SCHEDULE_CRITIQUE)
 
