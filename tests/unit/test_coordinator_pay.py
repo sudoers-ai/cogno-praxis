@@ -202,11 +202,105 @@ def test_COLUMN_HOURS_is_optional_and_without_it_no_workload_is_said_or_sniffed(
     rules = _BASE_RULES + "HOURS_PER_CLASS: 4\nPAY_RATE_PER_HOUR: 120,00\n"
     est = _svc(rules).estimate_professor_pay(identity_label=ME, period="2026-09", turma="AA_01")
     assert est.base == pytest.approx(960.0)
-    assert est.workload_declared is False and est.workload_missing == ()
+    assert est.workload_read is False and est.workload_missing == ()
     assert all(ln.workload is None for g in est.groups for ln in g.lines)
     block = render_pay_block(est)
     assert WORKLOAD_HEADER not in block
     assert "carga" not in block.lower()
+
+
+def test_a_COLUMN_HOURS_declared_but_ABSENT_from_the_sheet_is_ignored_without_error():
+    """The tenant's rules will say ``COLUMN_HOURS: <a name>`` over a tab that has no column by
+    that name. That is context the tenant cannot have and nothing more: the estimate comes out
+    whole — classes × HOURS_PER_CLASS × rate, bonus and all — with no context section, no
+    refusal, no "NOT CONFIGURED" and no PARTIAL RESULT on its account. Three-way twin:
+    declared+absent renders BYTE-IDENTICAL to not-declared; declared+present carries the
+    section."""
+    from cogno_praxis.coordinator.server import build_server
+    absent = _svc(_BASE_RULES + 'COLUMN_HOURS: "Horas por aula"\n' + _PAY_RULES.split("\n", 1)[1])
+    not_declared = _svc(_BASE_RULES + _PAY_RULES.split("\n", 1)[1])
+    present = _svc()                                          # "Total de Horas" IS on the sheet
+    assert absent.cfg.column_hours == "Horas por aula" and not_declared.cfg.column_hours == ""
+
+    est = absent.estimate_professor_pay(identity_label=ME)
+    assert est.workload_read is False and est.workload_missing == ()
+    assert est.hours == pytest.approx(16) and est.base == pytest.approx(1920.0)
+    assert [h.per_hour for h in est.hypotheses] == [0.0, 30.0, 40.0]   # the bonus half intact
+    assert render_pay_block(est) == render_pay_block(
+        not_declared.estimate_professor_pay(identity_label=ME))
+    assert WORKLOAD_HEADER not in render_pay_block(est)
+    assert WORKLOAD_HEADER in render_pay_block(present.estimate_professor_pay(identity_label=ME))
+    # …and at the layer the model reads: a complete block, nothing refused, nothing partial
+    out = build_server(absent)._tool_manager._tools["estimate_professor_pay"].fn(identity_label=ME)
+    assert "R$ 960,00" in out and "*Base*" in out
+    assert "NOT CONFIGURED" not in out and "PARTIAL RESULT" not in out and "ERROR" not in out
+
+
+def _svc_mid_month(today: date = date(2026, 9, 15)) -> CoordinatorService:
+    """Two September classes already GIVEN (03/09, 08/09) and one still to give (24/09), plus
+    one in October — read on the 15th, so the past/future cut has something to cut."""
+    cfg = CoordinatorConfig(_BASE_RULES + _PAY_RULES)
+    store = InMemorySpreadsheetStore()
+    store.put(AA, "Secretaria", [_SCHEDULE_AA[0],
+                                 ["03/09/2026", "Qui", ME, "Bancos NoSQL", "Sala Verde"],
+                                 ["08/09/2026", "Ter", ME, "Bancos NoSQL", "Sala Verde"],
+                                 ["24/09/2026", "Qui", ME, "Bancos NoSQL", "Sala Verde"],
+                                 ["03/10/2026", "Sab", ME, "Estatistica Aplicada", "Sala Verde"]])
+    store.put(BB, "Secretaria", [_SCHEDULE_BB[0]])
+    store.put(AA, "Informacoes Adicionais", _HOURS_AA)
+    return CoordinatorService(store, cfg, today=lambda: today)
+
+
+def test_the_estimate_reads_the_WHOLE_month_given_classes_included():
+    """Turn 104, 2026-09-22: «quanto recebo pelas aulas de setembro», asked mid-month, came back
+    as «1 aula» — the two classes already taught were cut as "past", because the estimate
+    inherited the LISTING's from-today-onward default. Pay is the month, given and to give:
+    2 past + 1 future = 3 × 4 h × R$ 120,00 = R$ 1.440,00."""
+    est = _svc_mid_month().estimate_professor_pay(identity_label=ME, period="2026-09")
+    assert [(g.turma, g.month) for g in est.groups] == [("Turma AA_01", "09/2026")]
+    assert [(ln.subject, ln.classes) for ln in est.groups[0].lines] == [("Bancos NoSQL", 3)]
+    assert est.hours == pytest.approx(12) and est.base == pytest.approx(1440.0)
+    block = render_pay_block(est)
+    assert "Bancos NoSQL · 3 aulas · 12 h · R$ 1.440,00" in block
+    assert "R$ 480,00" not in block                       # not the «1 aula» the listing gives
+
+
+def test_an_EMPTY_period_is_the_current_month_in_full_plus_what_comes_and_no_earlier_month():
+    """No period named → the current month whole (its given classes included) and everything
+    onward — and NOT the academic year's earlier months, which ``include_past`` alone would
+    drag in. August is the control: one class there, and it must stay out."""
+    svc = _svc_mid_month()
+    svc.store.put(BB, "Secretaria", [_SCHEDULE_BB[0], ["20/08/2026", "Qui", ME, "Bancos NoSQL", "Sala Azul"]])
+    est = svc.estimate_professor_pay(identity_label=ME, period="")
+    assert [(g.turma, g.month) for g in est.groups] == [("Turma AA_01", "09/2026"), ("Turma AA_01", "10/2026")]
+    assert est.groups[0].lines[0].classes == 3           # 03/09 and 08/09 are in, 20/08 is not
+    assert est.hours == pytest.approx(12 + 4)
+
+
+def test_the_LIST_read_keeps_hiding_past_classes_only_the_estimate_reads_the_month_whole():
+    """The other half of the rule: ``get_professor_schedule`` called as a list is untouched — a
+    professor reading a list still gets what is coming, and the report still counts the cut."""
+    from cogno_praxis.coordinator.service import ReadReport
+    svc = _svc_mid_month()
+    report = ReadReport()
+    listed = svc.get_professor_schedule(identity_label=ME, month="2026-09", report=report)
+    assert [e.when.day for e in listed if e.when] == [24]
+    assert report.hidden_past == 2
+    assert svc.estimate_professor_pay(identity_label=ME, period="2026-09").groups[0].lines[0].classes == 3
+
+
+def test_HOURS_PER_CLASS_reads_the_same_grammar_as_every_other_numeric_key():
+    """``KEY: value``, the number alone — ``4``, ``4,5``, ``4.5``. No key here takes a suffix
+    (``IBOPE_MIN_RESPONSE_PCT: 30%`` is already undeclared today), so ``4h`` is not invented
+    into a 4: it is UNDECLARED and the refusal names the key, loudly."""
+    assert CoordinatorConfig("HOURS_PER_CLASS: 4").hours_per_class == 4.0
+    assert CoordinatorConfig("HOURS_PER_CLASS: 4,5").hours_per_class == 4.5
+    assert CoordinatorConfig("HOURS_PER_CLASS: 4.5").hours_per_class == 4.5
+    assert CoordinatorConfig('HOURS_PER_CLASS: "4"').hours_per_class == 4.0
+    assert CoordinatorConfig("IBOPE_MIN_RESPONSE_PCT: 30%").ibope_min_response_pct is None
+    assert CoordinatorConfig("HOURS_PER_CLASS: 4h").hours_per_class is None
+    assert "HOURS_PER_CLASS" in CoordinatorConfig("HOURS_PER_CLASS: 4h\nPAY_RATE_PER_HOUR: 120,00"
+                                                  ).pay_undeclared
 
 
 def test_the_same_discipline_may_carry_a_DIFFERENT_workload_in_different_class_groups():

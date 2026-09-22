@@ -49,6 +49,8 @@ Format (all sections optional; sensible defaults shown)::
     # estimate and prices "the whole discipline" (workload × rate); it is NEVER multiplied
     # by the number of classes. Until 2026-09-22 it was, and a 16 h discipline taught twice
     # in a month came out as 32 h — R$ 3.840,00 where the tenant's rule paid R$ 960,00.
+    # A declared name the sheet does NOT carry is IGNORED: no context, no error, the same
+    # estimate a tenant who declared no column gets.
     COLUMN_HOURS: "Carga Horária"       # optional — the discipline's total workload
     TAB_HOURS: "Informações Adicionais" # optional — defaults to TAB_PROFESSORS
     RANGE_HOURS: "A1:E50"               # optional — defaults to RANGE_PROFESSORS

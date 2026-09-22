@@ -598,9 +598,10 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         and what the WHOLE discipline is worth — a different question from the period's pay,
         and never to be presented as it. Use it for "quanto eu recebo/vou receber", "qual minha remuneração", "quanto dá
         o meu mês". ``period`` is a month exactly like get_professor_schedule's ``month``
-        ("setembro", "September", "09", "2026-09"); leave it EMPTY for everything from today
-        onward, and call once per month when the user names two. ``turma`` narrows to one class
-        group. Nothing is written and nothing is sent.
+        ("setembro", "September", "09", "2026-09") and is read WHOLE — classes already given
+        this month count, unlike the listing; leave it EMPTY for the current month in full plus
+        everything onward, and call once per month when the user names two. ``turma`` narrows
+        to one class group. Nothing is written and nothing is sent.
         This is ONLY ever about the person asking: leave ``professor`` EMPTY. Another
         professor's remuneration is not available here to anyone, whatever their role.
         Its answer is a READY-MADE BLOCK — relay it as it came, keeping the bold headers and the

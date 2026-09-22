@@ -222,11 +222,13 @@ class PayEstimate:
     rate: float
     hours_per_class: float
     groups: list[PayGroup] = field(default_factory=list)
-    #: ``COLUMN_HOURS`` was declared, so the context section below the estimate renders — with
-    #: a workload per discipline, or "não declarada" for one the sheet does not name. False
-    #: means the tenant declared no such column, and then nothing about workloads is said.
-    workload_declared: bool = False
-    workload_missing: tuple[str, ...] = ()  # disciplines the workload column does not name
+    #: The ``COLUMN_HOURS`` column was READ off at least one sheet, so the context section below
+    #: the estimate renders — with a workload per discipline, or "não declarada" for one the
+    #: column does not name. False means there was no such column to read: the tenant declared
+    #: none, OR declared a name no sheet carries — and those two render IDENTICALLY, because a
+    #: name that matches nothing is context the tenant cannot have, not a defect of the pay.
+    workload_read: bool = False
+    workload_missing: tuple[str, ...] = ()  # disciplines a workload column that EXISTS does not name
     tiers: tuple[BonusTier, ...] = ()
     ibope_found: bool = False
     ibope_pct: Optional[float] = None
@@ -409,13 +411,14 @@ WORKLOAD_HEADER = "Carga horária total das disciplinas"
 def _workload_lines(est: PayEstimate) -> list[str]:
     """The CONTEXT section — the discipline's total workload, and what the whole of it is worth.
 
-    Rendered only when the tenant declared ``COLUMN_HOURS``; a tenant who did not gets no
-    section and no sentence about one. Deliberately LAST and under a header of its own: these
+    Rendered only when a ``COLUMN_HOURS`` column was actually READ (:attr:`PayEstimate.workload_read`);
+    a tenant who declared none — or declared a name no sheet carries — gets no section and no
+    sentence about one. Deliberately LAST and under a header of its own: these
     are figures about a different question ("quanto vale a disciplina inteira") than the
     estimate above ("quanto recebo este mês"), and a figure that sits beside the month's line
     reads as part of it — which is precisely the confusion the 2026-09-22 change removed.
     """
-    if not est.workload_declared:
+    if not est.workload_read:
         return []
     out: list[str] = ["", _H.format(WORKLOAD_HEADER),
                       "Contexto, declarado na planilha — não entra na remuneração do período "

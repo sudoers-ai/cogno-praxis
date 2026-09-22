@@ -34,7 +34,19 @@
   aula declaradas nas regras: 4 h»; a linha «Fora desta soma, por não terem carga horária
   declarada» desaparece (nada fica fora da soma por causa da planilha). `PayLine.hours_each` →
   `hours_per_class` + `workload`; `PayEstimate.hours_missing` → `workload_missing`, mais
-  `hours_per_class` e `workload_declared`.
+  `hours_per_class` e `workload_read`.
+
+  Duas fronteiras a mais, do mesmo dia: **`COLUMN_HOURS` declarada nas regras mas AUSENTE na
+  aba é inerte** — `_workload_by_subject` devolve `None` (coluna não existe) em vez de `{}`
+  (coluna existe, disciplina sem linha), a secção de contexto só se renderiza quando a coluna foi
+  LIDA em pelo menos uma planilha (`PayEstimate.workload_read`), e declarada-mas-ausente rende
+  byte a byte o mesmo bloco de quem não declarou: sem `NOT CONFIGURED`, sem `PARTIAL RESULT`,
+  estimativa e bónus intactos (a ordem do dono é «não vamos mexer nas planilhas, se quiser mexer
+  que seja no prompt»). E **a estimativa lê SEMPRE o mês inteiro** (`include_past=True`, período
+  nomeado; período vazio = mês corrente completo + o que vem): medido no turno real 104, «quanto
+  recebo pelas aulas de setembro» a meio do mês devolveu «1 aula» porque a leitura de lista
+  esconde as passadas — para remuneração o mês é o mês, dadas e por dar (2 passadas + 1 futura
+  → 3 × 4 h × R$ 120 = R$ 1.440). A LISTA (`get_professor_schedule`) não muda.
 
 - **`scheduler/grounding` — a regra `unread_schedule_claim` passa a conhecer a leitura de material
   do host, e admite-a pelo VALOR, nunca pelo nome.** A regra 6 só aceitava como leitura as do próprio

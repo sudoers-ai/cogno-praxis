@@ -657,8 +657,9 @@ class CoordinatorService:
 
     # ── the professor's OWN pay (read-only, self-only) ───────────────────────────────
     def _workload_by_subject(self, sheet_id: str, sheet_key: str,
-                             report: Optional[ReadReport]) -> dict[str, float]:
-        """``{normalised discipline: TOTAL workload}`` from the tenant's declared hours column.
+                             report: Optional[ReadReport]) -> Optional[dict[str, float]]:
+        """``{normalised discipline: TOTAL workload}`` from the tenant's declared hours column —
+        or ``None`` when that column is NOT THERE to be read.
 
         The tab, the range and the column all come from the config. Nothing here looks for a
         header that "seems like" hours: only :attr:`CoordinatorConfig.column_hours`, matched the
@@ -666,8 +667,15 @@ class CoordinatorService:
         declared it never reaches this method — the column is OPTIONAL and the caller skips the
         read (2026-09-22: the workload is context, not a factor of the pay).
 
-        A row this cannot read is simply absent from the map, which downstream becomes "carga
-        não declarada na planilha" for that discipline in the context section. Never a zero.
+        **``None`` and ``{}`` are different answers.** ``None`` says the sheet carries no such
+        column at all (the tab is empty, unreadable, or its header does not name the column);
+        a dict says the column exists and names whatever rows it names. The distinction is what
+        lets a declared-but-absent column be IGNORED: the tenant's rules will say
+        ``COLUMN_HOURS: <a name>`` over a tab that has no column by that name, and the estimate
+        must come out whole — classes × HOURS_PER_CLASS × rate, bonus and all — with the context
+        section simply not rendered, never a refusal and never "NOT CONFIGURED" on its account.
+        A discipline missing from a column that DOES exist is the other case: it becomes "carga
+        não declarada na planilha" in the context section. Never a zero, in either case.
         """
         try:
             rows = self.store.read_range(sheet_id, self.cfg.tab_hours, self.cfg.range_hours)
@@ -676,19 +684,23 @@ class CoordinatorService:
                          sheet_key, sheet_id, exc)
             if report is not None:
                 report.errors.append(_read_error(sheet_key, sheet_id, exc))
-            return {}
+            return None
         if not rows:
-            return {}
+            return None
         header = [c.strip().lower() for c in rows[0]]
         h_idx = next((i for i, c in enumerate(header)
                       if c == self.cfg.column_hours.strip().lower()), None)
         s_idx = next((i for i, c in enumerate(header)
                       if c == self.cfg.column_subject.strip().lower()), None)
         if h_idx is None or s_idx is None:
-            _log.warning("coordinator: hours tab %r of %r has no %r/%r column — no hours read",
+            # Declared in the rules, absent on the sheet: CONTEXT the tenant cannot have, and
+            # nothing else. Logged so an operator can see the name does not match; never raised,
+            # never reported as a read error — the estimate does not depend on this column.
+            _log.warning("coordinator: hours tab %r of %r has no %r/%r column — the workload "
+                         "context is skipped, the estimate is unaffected",
                          self.cfg.tab_hours, sheet_key, self.cfg.column_hours,
                          self.cfg.column_subject)
-            return {}
+            return None
         out: dict[str, float] = {}
         for row in rows[1:]:
             subject = self._cell(row, s_idx)
@@ -764,7 +776,10 @@ class CoordinatorService:
         The arithmetic is ``classes × HOURS_PER_CLASS × rate``, plus an IBOPE bonus per hour
         when — and only when — a survey result was actually read. The discipline's total
         workload (``COLUMN_HOURS``, optional) is CONTEXT rendered beside it and is never a
-        factor. It is READ-ONLY: nothing here writes to a spreadsheet, sends anything, or
+        factor. The month is read WHOLE — classes already given included — for a named
+        ``period`` and, when none is named, for the current month plus everything onward; the
+        listing's "from today onward" default is a reading convenience this method does not
+        inherit. It is READ-ONLY: nothing here writes to a spreadsheet, sends anything, or
         records a figure.
         """
         me = identity_label.strip()
@@ -801,6 +816,8 @@ class CoordinatorService:
         hours_per_class = self.cfg.hours_per_class
         assert rate is not None                        # pay_undeclared already refused a None
         assert hours_per_class is not None             # likewise — never inferred, never divided
+        # DECLARED is not the same as READ: a name in the rules that no sheet carries yields
+        # no context and no complaint (see ``_workload_by_subject``).
         workload_declared = bool(self.cfg.column_hours.strip())
 
         # ``apply_horizon=False``, for the reason the calendar export already opts out: the
@@ -825,10 +842,25 @@ class CoordinatorService:
         # role it now narrows instead of widening. It stays a filter argument rather than a
         # ``role=""`` override because lying to the callee about the caller's role would be a
         # second, quieter contract for the next reader to get wrong.
+        #
+        # ``include_past=True``, ALWAYS — the estimate reads the WHOLE month, classes already
+        # given included. The listing hides past classes unless asked (a professor reading a
+        # list wants what is coming), and the estimate inherited that: measured on a live turn
+        # (2026-09-22, turn 104), "quanto recebo pelas aulas de setembro" asked mid-month came
+        # back as «1 aula» — the two classes already taught that month were cut as "past", and
+        # a person was shown a third of their month as the month. Pay is not a reading
+        # convenience: the month is the month, given and to give. A NAMED period is therefore
+        # read in full; an EMPTY one is the current month in full plus everything onward —
+        # cut here at the first day of the month, because ``include_past`` with no month would
+        # otherwise hand back every class of the academic year. The LIST read keeps its own
+        # behaviour untouched: this is a fact about the estimate, not about the listing.
         entries = self.get_professor_schedule(
             professor=me, role=role, identity_label=me, month=period, turma=turma,
-            apply_horizon=False, report=report)
-        workload_by_sheet: dict[str, dict[str, float]] = {}
+            include_past=True, apply_horizon=False, report=report)
+        if not _resolve_month(period):
+            month_start = self._today().replace(day=1)
+            entries = [e for e in entries if e.when is None or e.when >= month_start]
+        workload_by_sheet: dict[str, Optional[dict[str, float]]] = {}
         # keyed by (class group, sortable year-month) so the two grouping axes the answer
         # promises are the two axes it is actually ordered by. Chronological order across the
         # whole read interleaves the groups, which reads as one list that keeps changing subject.
@@ -845,13 +877,17 @@ class CoordinatorService:
             k = (e.sheet_key, (e.when.year, e.when.month))
             buckets.setdefault(k, {})
             buckets[k][e.subject.strip()] = buckets[k].get(e.subject.strip(), 0) + 1
+        # READ on at least one sheet — the condition the context section renders under. A
+        # column declared in the rules and found on no sheet is ignored: same block as a tenant
+        # who never declared it, byte for byte, and no error anywhere.
+        workload_read = any(m is not None for m in workload_by_sheet.values())
 
         groups: list[PayGroup] = []
         for (turma_key, (year, month)) in sorted(buckets):
             lines: list[PayLine] = []
             for subject, count in buckets[(turma_key, (year, month))].items():
-                workload = workload_by_sheet.get(turma_key, {}).get(_norm(subject))
-                if workload_declared and workload is None and subject not in workload_missing:
+                workload = (workload_by_sheet.get(turma_key) or {}).get(_norm(subject))
+                if workload_read and workload is None and subject not in workload_missing:
                     workload_missing.append(subject)
                 lines.append(PayLine(subject=subject, classes=count,
                                      hours_per_class=hours_per_class, workload=workload))
@@ -860,7 +896,7 @@ class CoordinatorService:
         pct = self._ibope_result(identity_label=me, report=report)
         return PayEstimate(
             rate=rate, hours_per_class=hours_per_class, groups=groups,
-            workload_declared=workload_declared, workload_missing=tuple(workload_missing),
+            workload_read=workload_read, workload_missing=tuple(workload_missing),
             tiers=self.cfg.ibope_bonus, ibope_found=pct is not None, ibope_pct=pct,
             ibope_tab=self.cfg.tab_ibope.strip(), period=month_label(period),
             ibope_min_response_pct=self.cfg.ibope_min_response_pct)
