@@ -4,6 +4,28 @@
 
 ### Fixed
 
+- **`scheduler/grounding` — a regra `unread_schedule_claim` passa a conhecer a leitura de material
+  do host, e admite-a pelo VALOR, nunca pelo nome.** A regra 6 só aceitava como leitura as do próprio
+  scheduler (`list_appointments`, `check_availability`); uma resposta fundamentada num
+  `consult_material` com `ok=True` — a grade horária e a ementa REGISTADAS do inquilino — era
+  reescrita como «respondeu de memória». Medido no tenant de ensaio (host `ad3b3920`, 22/09, n=2,
+  espécimes `P1_P11_S2-horas-derivacao` e `P1_P12_S2p-carga-horaria-total`): 2/2 disparos, o
+  gatilho nas duas foi a cauda de cortesia «ajuda com agendamentos» (`agendament` no padrão de
+  ocupação), cada um pagou um re-passo da voz e num deles o executor chamou um `list_appointments`
+  que ninguém pediu. Agora um `consult_material` bem-sucedido suprime a regra **quando o seu
+  `output` contém uma figura de horário/duração que a resposta afirma** — «60 horas» sobre uma
+  ementa que diz «(60h)», «19h00 às 22h30» sobre a grade que diz exactamente isso — comparadas
+  por `schedule_figures`, que normaliza a H:MM para que a mesma grandeza escrita de outra maneira
+  seja igual e um mero «30» dentro de «22h30» nunca valha por «30 minutos». Pelo nome sozinho a
+  leitura lavaria qualquer figura inventada sobre uma consulta sem relação (gémeo 3); a listagem
+  do scheduler continua a fundamentar por ESPÉCIE, como sempre (gémeo 4). É QUALQUER figura em
+  comum e não todas: o espécime afirma uma duração DERIVADA da leitura (22h30 − 19h00 = 3h30) ao
+  lado dos horários que repete tal e qual, e exigir todas repararia o próprio turno que isto
+  existe para deixar em paz — qual figura a resposta reproduz bem é pergunta do juiz e do
+  backstop de termos preservados, não desta rede. Limite nomeado, não decidido aqui: uma resposta
+  que afirme SÓ a duração derivada, com os horários largados, não tem figura em comum com a
+  leitura e continua a ser reparada como hoje.
+
 - **`coordinator` — a caixa de correio é do INQUILINO, e é escolhida no momento do envio.** O
   remetente do calendário resolvia-se em `sender_from_env()` pela cadeia da herald (declaração do
   tenant → `SMTP_*` do ambiente → `None`) e ficava preso em `mcp = build_server()`, **no import**

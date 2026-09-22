@@ -113,3 +113,22 @@ def test_the_schedulers_own_listing_still_grounds_by_kind():
     # …and beside a material read that holds nothing of the reply, the listing still decides.
     both = [listing, _material(_EMENTA)]
     assert ground_reply(reply, tools=both, had_executor=True, is_read_query=True) is None
+
+
+# ── the ruler itself: a figure compares by VALUE, never by spelling ───────────────────
+def test_schedule_figures_compare_by_value_not_by_spelling():
+    from cogno_praxis.scheduler.grounding import schedule_figures
+
+    assert schedule_figures("60 horas") == schedule_figures("(60h)") == {"60:00"}
+    assert (schedule_figures("3 horas e 30 minutos") == schedule_figures("3h30")
+            == schedule_figures("3.5 hours") == schedule_figures("3 hours and 30 minutes")
+            == {"3:30"})
+    assert schedule_figures("quarta-feira, 19h00 às 22h30") == {"19:00", "22:30"}
+    assert schedule_figures("7pm") == schedule_figures("19:00") == {"19:00"}
+    assert schedule_figures("às 11h") == {"11:00"}
+    # a digit run is not a figure: the "30" of "22h30" is not "30 minutos", nor "3h30"
+    assert schedule_figures("22h30") == {"22:30"}
+    assert not (schedule_figures("22h30") & schedule_figures("30 minutos"))
+    assert not (schedule_figures("22h30") & schedule_figures("3 horas e 30 minutos"))
+    # a number with no time unit is nothing
+    assert schedule_figures("sala B-204, dias 16 e 17, R$ 1.234,56, 60%") == set()
