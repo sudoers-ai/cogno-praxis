@@ -334,8 +334,10 @@ def test_every_undoable_tool_really_undoes():
 
     from cogno_praxis.companies import CompanyService, InMemoryCompanyStore  # register → register
     co = CompanyService(InMemoryCompanyStore())
-    co.register("Padaria São João", visual_identity="azul")
-    co.register("padaria sao joao", visual_identity="verde")   # the correction, same call
+    # The undo is the AUTHOR's: registering a name already on file is refused to anybody else,
+    # and a company with no recorded author has no owner to undo it (`service.register`).
+    co.register("Padaria São João", visual_identity="azul", identity_id="e1")
+    co.register("padaria sao joao", visual_identity="verde", identity_id="e1")   # the correction
     rows = co.list_companies()
     # The claim is that the wrong value LEAVES and no second row appears. Asserting only the
     # new value would pass over an undo that added a row beside the mistake instead of

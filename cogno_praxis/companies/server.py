@@ -234,7 +234,9 @@ def build_server(service: Optional[CompanyService] = None, *,
         guidelines replaces the brand's tone of voice and leaves the segment wrong.
 
         Registering a company that is already on file UPDATES its record — it does not create
-        a second one — and a field you do not send is left exactly as it was.
+        a second one — and a field you do not send is left exactly as it was. Only the person
+        who registered a company can update it this way: for anybody else the call is refused
+        and nothing is written.
         """
         row = svc.register(company_name, cnpj=cnpj, visual_identity=visual_identity,
                            guidelines=guidelines, segment=segment, identity_id=identity_id)
