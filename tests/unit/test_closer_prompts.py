@@ -214,7 +214,7 @@ def test_the_voice_defers_to_the_configured_checklist_without_losing_its_questio
 def test_the_voice_knows_how_to_open_a_conversation_it_started():
     """Live failure (2026-08-03): on a proactive opening the voicer saw "[ABERTURA]" in the
     user slot and no history, matched the arc's continuation rule — the only branch the voice
-    slot had — and answered a contact who had said nothing: "Claro, Vinicius. Pode perguntar."
+    slot had — and answered a contact who had said nothing: "Claro, Heitor. Pode perguntar."
     The voice slot presumed the opening had already happened; on a turn the AGENT starts, it
     hasn't. So the opening is a branch of its own, and it comes FIRST."""
     voice = (PROMPTS / "voice.txt").read_text()

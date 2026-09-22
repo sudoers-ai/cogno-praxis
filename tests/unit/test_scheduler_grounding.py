@@ -33,7 +33,7 @@ def _ok_call(tool: str, result: str) -> ToolCall:
 
 
 def _book(ok: bool, date: str = "2026-07-08", time: str = "11:00") -> ToolCall:
-    res = f"Booked abc: Vinicius with dr_jose on {date} at {time} [PENDING]." if ok else ""
+    res = f"Booked abc: Heitor with dr_jose on {date} at {time} [PENDING]." if ok else ""
     return ToolCall(tool="book_appointment", ok=ok, side_effect=True, result=res)
 
 
@@ -67,7 +67,7 @@ def test_filtered_empty_with_hint_but_reply_lists_appointments_is_repaired():
     # LIVE (turn 44): the only read was status-filtered and empty-with-hint, yet the voice
     # re-issued a days-old listing ("aguardando confirmação") copied from history.
     reply = ("Aqui estão os seus agendamentos:\n"
-             "- Vinicius Aquino em 13/07 às 11h (aguardando confirmação)\n"
+             "- Heitor Lacerda em 13/07 às 11h (aguardando confirmação)\n"
              "- Aval Teste2 em 21/07 às 09h (aguardando confirmação)")
     fixed = ground_reply(reply, tools=[_list(_FILTERED_HINT)])
     assert fixed is not None and fixed.message == STALE_FILTERED_LISTING_MSG
@@ -119,7 +119,7 @@ def test_successful_booking_is_never_touched():
 
 def test_truthful_list_with_appointment_is_not_touched():
     reply = "Você tem uma consulta agendada para o dia 08/07 às 11:00."
-    read = _list("abc: Vinicius with dr_jose on 2026-07-08 at 11:00 [CONFIRMED]")
+    read = _list("abc: Heitor with dr_jose on 2026-07-08 at 11:00 [CONFIRMED]")
     assert ground_reply(reply, tools=[read]) is None
 
 
@@ -171,7 +171,7 @@ def test_pending_confirmation_claims_done_without_mutation_is_corrected():
 
 
 def test_pending_context_but_confirmed_in_hand_is_kept():
-    read = _list("abc: Vinicius with dr_jose on 2026-07-09 at 09:00 [CONFIRMED]")
+    read = _list("abc: Heitor with dr_jose on 2026-07-09 at 09:00 [CONFIRMED]")
     assert ground_reply("Seus agendamentos estão confirmados: 09:00 com o Dr. José. 😊",
                         tools=[read], pending_confirmation=True) is None
 
@@ -195,13 +195,13 @@ def test_booked_pending_but_reply_says_confirmed_is_corrected():
 
 
 def test_listed_pending_but_reply_says_confirmed_is_corrected():
-    read = _list("abc: Vinicius with dr_jose on 2026-07-08 at 11:00 [PENDING]")
+    read = _list("abc: Heitor with dr_jose on 2026-07-08 at 11:00 [PENDING]")
     fixed = ground_reply("Sua consulta está confirmada para 08/07 às 11h!", tools=[read])
     assert fixed is not None and fixed.rule == "pending_not_confirmed"
 
 
 def test_confirmed_in_hand_says_confirmed_is_kept():
-    read = _list("abc: Vinicius with dr_jose on 2026-07-08 at 11:00 [CONFIRMED]")
+    read = _list("abc: Heitor with dr_jose on 2026-07-08 at 11:00 [CONFIRMED]")
     assert ground_reply("Sua consulta está confirmada para 08/07 às 11h!", tools=[read]) is None
 
 
@@ -215,7 +215,7 @@ _CONFIRMED_REPLY = "Sua consulta está confirmada para 08/07 às 11h!"
 
 
 def _list_status(mark: str) -> ToolCall:
-    return _list(f"abc: Vinicius with dr_jose on 2026-07-08 at 11:00 {mark}")
+    return _list(f"abc: Heitor with dr_jose on 2026-07-08 at 11:00 {mark}")
 
 
 @pytest.mark.parametrize("pending, tool_mark, expected", [
@@ -234,7 +234,7 @@ def test_confirmation_status_matrix(pending, tool_mark, expected):
 
 # ── (5) conclusion-now with no executor trace ────────────────────────────────────────
 def test_voice_only_claims_it_just_booked_is_corrected():
-    reply = "Prontinho, Vinicius! ✅ Sua consulta ficou marcada para 08/07 às 11h."
+    reply = "Prontinho, Heitor! ✅ Sua consulta ficou marcada para 08/07 às 11h."
     fixed = ground_reply(reply, had_executor=False)
     assert fixed is not None and fixed.message == NO_ACTION_TAKEN_MSG
     assert fixed.rule == "no_action_taken" and fixed.repairable and fixed.critique
@@ -307,10 +307,10 @@ def test_pending_listing_with_offer_phrasing_is_not_conjured_slots():
     # LIVE FALSE POSITIVE (2026-07-10): "traga só os pendentes" → the voice lists the real
     # pendings (dates + "Gostaria de confirmar algum deles?") — offer-shaped, but grounded
     # in a real list_appointments read. Must NOT be rewritten to the availability deflection.
-    read = _list("9858fb82: Vinicius Aquino with Dr. Vinicius on 2026-07-13 at 10:00 [PENDING]\n"
-                 "d973ed23: Vinicius Sudoers with Dr. Vinicius on 2026-07-20 at 15:00 [PENDING]")
+    read = _list("9858fb82: Heitor Lacerda with Dr. Heitor on 2026-07-13 at 10:00 [PENDING]\n"
+                 "d973ed23: Heitor Sudoers with Dr. Heitor on 2026-07-20 at 15:00 [PENDING]")
     reply = ("Aqui estão os seus agendamentos pendentes:\n"
-             "- Vinicius Aquino: 13/07 às 10:00\n- Vinicius Sudoers: 20/07 às 15:00\n"
+             "- Heitor Lacerda: 13/07 às 10:00\n- Heitor Sudoers: 20/07 às 15:00\n"
              "Gostaria de confirmar algum deles? Qual prefere?")
     assert ground_reply(reply, tools=[read]) is None
 
@@ -326,7 +326,7 @@ def test_conjured_menu_with_no_read_at_all_is_still_caught():
 def test_read_query_claims_occupied_with_no_listing_is_repaired():
     # The live turn-2 confabulation: EGO answered from history, called NO tool, yet stated
     # the days "já estão ocupados com compromissos". No list_appointments behind it.
-    reply = ("Dr. Vinicius, não consegui bloquear os dias 16 e 17 de julho, pois já estão "
+    reply = ("Dr. Heitor, não consegui bloquear os dias 16 e 17 de julho, pois já estão "
              "ocupados com compromissos.")
     v = ground_reply(reply, tools=(), had_executor=True, is_read_query=True)
     assert v is not None and v.rule == "unread_schedule_claim"
@@ -418,7 +418,7 @@ def test_slot_offer_is_not_a_working_hours_claim():
 def test_professional_attends_phrasing_is_not_a_working_hours_claim():
     # "a Dra atende amanhã" / "quem atende de coração" — bare "atende" must NOT trip rule 7.
     for reply in ("A Dra. Silva atende amanhã de manhã.",
-                  "Quem atende de coração é o Dr. Vinicius."):
+                  "Quem atende de coração é o Dr. Heitor."):
         v = ground_reply(reply, tools=(), is_read_query=True)
         assert v is None or v.rule != "unread_settings_claim", reply
 

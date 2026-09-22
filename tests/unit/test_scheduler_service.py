@@ -116,7 +116,7 @@ def test_book_resolves_a_name_slug_host_id():
 def test_book_resolves_a_single_specialty():
     # "marca com o cardiologista" is valid when exactly one host has that specialty (role).
     store = InMemoryAppointmentStore()
-    store.hosts["dr_silva"] = Host("dr_silva", "Dr. Vinicius Vale", "Cardiologista")
+    store.hosts["dr_silva"] = Host("dr_silva", "Dr. Heitor Lacerda", "Cardiologista")
     store.hosts["dr_m"] = Host("dr_m", "Dr. Manzoli", "Endócrino")
     svc = SchedulerService(store, today=lambda: _TODAY)
     appt = svc.book("cardiologista", "2026-07-01", "09:00", "Ana")
@@ -688,15 +688,15 @@ def test_role_visibility_guest_doctor_supervisor():
     # A guest books WITH a doctor. The SAME row must be visible to BOTH sides — the guest
     # (guest_id) and the doctor (host_id) — which the old with_name-only model failed at.
     store = InMemoryAppointmentStore()
-    store.hosts["dr_vini"] = Host("dr_vini", "Dr. Vinicius Vale", "Cardio", auto_confirm=False)
+    store.hosts["dr_heitor"] = Host("dr_heitor", "Dr. Heitor Lacerda", "Cardio", auto_confirm=False)
     svc = SchedulerService(store, today=lambda: _TODAY)
 
-    appt = svc.book("dr_vini", "2026-07-06", "09:00", "Ana",
-                    guest_id="ana_id", host_name="Dr. Vinicius Vale")
+    appt = svc.book("dr_heitor", "2026-07-06", "09:00", "Ana",
+                    guest_id="ana_id", host_name="Dr. Heitor Lacerda")
     assert appt.status == PENDING and appt.guest_id == "ana_id"
 
     # the DOCTOR (EMPLOYEE) sees the guest's PENDING booking in their own agenda
-    doc_view = svc.list_appointments(identity_id="dr_vini", role="EMPLOYEE")
+    doc_view = svc.list_appointments(identity_id="dr_heitor", role="EMPLOYEE")
     assert [a.appointment_id for a in doc_view] == [appt.appointment_id]
 
     # the GUEST sees their own booking
