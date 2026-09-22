@@ -282,6 +282,63 @@ def test_staff_may_update_a_company_they_did_not_register(role):
                       identity_id="staff-1", role=role).company.segment == "varejo"
 
 
+# ── a BLANK identity is nobody — on the way in exactly as on the way out ─────────────────
+#
+#  `created_by_user_id` defaults to '' — a company registered by an anonymous visitor carries
+#  it, and so does any row whose author is later blanked by a purge. The host STRIPS
+#  `identity_id` from the call when it has no id for the caller, so an anonymous GUEST arrives
+#  here as ''. `_visible` has always refused that ('' sees nothing); the write gate compared ''
+#  with '' and let it through, so the visitor who could not SEE the company could rewrite it.
+def _authorless() -> CompanyService:
+    svc = _svc()
+    svc.register("Padaria Anonima", guidelines="tom formal", identity_id="")   # author ''
+    svc.register("Acme", guidelines="tom formal", identity_id="lead-1")
+    return svc
+
+
+@pytest.mark.parametrize("anonymous", ["", "   "])
+def test_an_ANONYMOUS_caller_cannot_write_to_a_company_whose_author_is_blank(anonymous):
+    svc = _authorless()
+    with pytest.raises(CompanyError, match="só posso"):
+        svc.update("padaria-anonima", guidelines="outra", identity_id=anonymous, role="GUEST")
+    with pytest.raises(CompanyError, match="só posso"):
+        svc.delete("padaria-anonima", identity_id=anonymous, role="GUEST")
+    assert svc.get("padaria-anonima").visual_identity == {"guidelines": "tom formal"}
+    assert svc.confirmations.tokens == {}      # refused BEFORE a removal token was minted
+
+
+def test_the_REAL_author_still_writes_to_their_own_company():
+    """The twin that keeps the refusal from being bought by refusing everybody."""
+    svc = _authorless()
+    out = svc.update("acme", guidelines="tom informal", identity_id="lead-1", role="GUEST")
+    assert [(c.field, c.after) for c in out.changes] == [("guidelines", "tom informal")]
+    proposal = svc.delete("acme", identity_id="lead-1", role="GUEST").proposal
+    assert proposal is not None and proposal.company.company_id == "acme"
+
+
+def test_the_read_view_and_the_write_gate_apply_ONE_blank_id_rule():
+    """What a scoped caller may WRITE is exactly what they may SEE — the blank id included.
+
+    Two copies of one rule drift, and this pair already had: the view refused a blank id and
+    the gate did not. So both are asked the same question, over the same rows, and must give
+    the same answer — which is also the answer the rule states."""
+    svc = _authorless()
+
+    def writable(company_id, caller):
+        try:
+            svc._mine_or_refuse(company_id, caller, "GUEST")
+        except CompanyError:
+            return False
+        return True
+
+    expected = {"": set(), "   ": set(), "lead-1": {"acme"}, "lead-2": set()}
+    seen = {caller: {c.company_id for c in svc._visible(caller, "GUEST")} for caller in expected}
+    wrote = {caller: {c.company_id for c in svc.list_companies() if writable(c.company_id, caller)}
+             for caller in expected}
+    assert seen == expected
+    assert wrote == expected
+
+
 def test_update_applies_only_what_was_GIVEN():
     """A partial update that read "" as "clear this field" would erase the brand guidelines of
     every company whose name a caller merely corrected."""

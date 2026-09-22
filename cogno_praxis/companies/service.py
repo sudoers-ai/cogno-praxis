@@ -252,6 +252,25 @@ class CompanyService:
         }
 
     # ── visibility ───────────────────────────────────────────────────────────────────────
+    @staticmethod
+    def _registered_by(row: Company, identity_id: str) -> bool:
+        """Did ``identity_id`` register ``row``? A BLANK id registered nothing.
+
+        The ONE ownership rule, read by :meth:`_visible` (what a scoped caller sees) and by
+        :meth:`_mine_or_refuse` (what they may write). It is one function because it was two
+        copies and they had drifted: the view refused a blank id, the write gate compared
+        ``'' != ''``, found them equal and let the write through.
+
+        The blank case is not an edge. ``created_by_user_id`` defaults to ``''`` — a company
+        registered by an anonymous visitor carries it, and so does any row whose author is
+        later blanked by an identity purge — and the host STRIPS ``identity_id`` from the call
+        when it has no id for the caller (``cogno_host/rbac.py``), so an anonymous visitor
+        arrives here as ``''``. Matching blank to blank would hand that visitor every
+        authorless company there is.
+        """
+        me = (identity_id or "").strip()
+        return bool(me) and row.created_by_user_id == me
+
     def _visible(self, identity_id: str, role: str) -> "list[Company]":
         """Every company this caller may see, newest identity rule first.
 
@@ -262,15 +281,13 @@ class CompanyService:
 
         A blank ``identity_id`` on a scoped caller sees NOTHING rather than everything. That is
         the direction a missing value has to take: an anonymous visitor with no id would
-        otherwise match every row whose author was also never recorded.
+        otherwise match every row whose author was also never recorded
+        (:meth:`_registered_by`).
         """
         rows = self.store.list_companies()
         if is_oversight(role):
             return rows
-        me = (identity_id or "").strip()
-        if not me:
-            return []
-        return [c for c in rows if c.created_by_user_id == me]
+        return [c for c in rows if self._registered_by(c, identity_id)]
 
     def scope_note(self, identity_id: str, role: str) -> str:
         """The LIMIT, in words, for a scoped caller — ``""`` when the caller sees everything.
@@ -292,13 +309,16 @@ class CompanyService:
         ``padaria-sol-nascente``. A caller who cannot see a company through
         :meth:`_visible` can still name it, so the scope has to be re-decided on the way in
         rather than assumed from how the id was obtained.
+
+        It is re-decided with the SAME rule the view uses (:meth:`_registered_by`), blank id
+        included: what a scoped caller may write is exactly what they may see.
         """
         row = self.store.get((company_id or "").strip())
         if row is None:
             raise CompanyError(
                 f"Não encontrei nenhuma empresa com o identificador {company_id!r}. "
                 "Busque a empresa primeiro e use o identificador que a busca devolver.")
-        if not is_oversight(role) and row.created_by_user_id != (identity_id or "").strip():
+        if not is_oversight(role) and not self._registered_by(row, identity_id):
             raise CompanyError(
                 "Essa empresa foi cadastrada por outra pessoa — só posso alterar ou remover "
                 "as que você mesmo cadastrou.")
