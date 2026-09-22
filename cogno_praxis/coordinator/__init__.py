@@ -15,8 +15,14 @@ from cogno_praxis.coordinator.ics import (
     class_event_uid,
     sequence_now,
 )
-from cogno_praxis.coordinator.config import CoordinatorConfig
+from cogno_praxis.coordinator.config import (
+    CoordinatorConfig,
+    ProseHint,
+    find_pay_in_prose,
+    pay_refusal,
+)
 from cogno_praxis.coordinator.pay import (
+    WORKLOAD_HEADER,
     BonusTier,
     PayEstimate,
     PayGroup,
@@ -80,6 +86,10 @@ __all__ = [
     # the professor's own pay: the estimate, its declared bonus bands, and its block
     "PayEstimate", "PayGroup", "PayLine", "PayHypothesis", "BonusTier",
     "render_pay_block", "parse_bonus_tiers", "parse_money", "fmt_money", "fmt_hours",
+    "WORKLOAD_HEADER",
+    # the pay figures a tenant wrote in PROSE instead of as KEY: value lines — recognised,
+    # named beside the key each should be, never read as a number
+    "ProseHint", "find_pay_in_prose", "pay_refusal",
     # the ANSWER to a class invitation: three states, of which only two are ever written
     "RSVP_PENDING", "RSVP_ACCEPTED", "RSVP_DECLINED", "VALID_RSVP",
     "parse_answer", "state_of", "label_for",

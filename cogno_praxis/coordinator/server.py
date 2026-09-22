@@ -591,9 +591,12 @@ def build_server(service: Optional[CoordinatorService] = None, *,
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def estimate_professor_pay(period: str = "", turma: str = "", professor: str = "",
                                identity_label: str = "", role: str = "") -> str:
-        """Estimate what the CALLER'S OWN classes come to: classes × the discipline's hour total
-        × the institution's declared hourly rate, plus the IBOPE bonus when a survey result
-        exists. Use it for "quanto eu recebo/vou receber", "qual minha remuneração", "quanto dá
+        """Estimate what the CALLER'S OWN classes come to: classes in the period × the hours
+        one class is worth (HOURS_PER_CLASS) × the institution's declared hourly rate, plus the
+        IBOPE bonus when a survey result exists. When the institution also declares a workload
+        column, the block ends with a CONTEXT section giving each discipline's total workload
+        and what the WHOLE discipline is worth — a different question from the period's pay,
+        and never to be presented as it. Use it for "quanto eu recebo/vou receber", "qual minha remuneração", "quanto dá
         o meu mês". ``period`` is a month exactly like get_professor_schedule's ``month``
         ("setembro", "September", "09", "2026-09"); leave it EMPTY for everything from today
         onward, and call once per month when the user names two. ``turma`` narrows to one class
@@ -605,7 +608,10 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         FOUND, that sentence and the hypotheses under it must survive into the reply, all of
         them: they are what stops a single figure being read as the amount that will be paid.
         If it comes back NOT CONFIGURED, this institution has not declared the pay figures —
-        say exactly that and do not estimate anything from memory."""
+        say exactly that and do not estimate anything from memory. When that answer says the
+        rules DESCRIBE a figure in prose ("found … in the rules, but KEY is not declared"),
+        relay that sentence too, with the key names: it tells whoever administers the persona
+        exactly which line to add."""
         report = ReadReport()
 
         def _run() -> str:

@@ -1,20 +1,29 @@
 """The professor-pay estimate — pure types, tenant-declared money, and the block that renders it.
 
 **Nothing in this module invents a number.** Every figure it can state came from somewhere the
-tenant declared: the hour total from a column the tenant NAMED, the hourly rate and the bonus
-tiers from the tenant's own rules text. When a source is missing the estimate says so and stops
-short of the total, because a made-up figure about a person's own pay is the one error they
-cannot check and will act on.
+tenant declared: the hours one class is worth and the hourly rate from the tenant's own rules
+text (``HOURS_PER_CLASS``, ``PAY_RATE_PER_HOUR``), the bonus tiers likewise, and the discipline's
+total workload from a column the tenant NAMED. When a source is missing the estimate says so and
+stops short of the total, because a made-up figure about a person's own pay is the one error
+they cannot check and will act on.
 
-The three shapes that follow from that, and each one exists because the alternative is a lie:
+**The month's pay is classes × HOURS_PER_CLASS × rate** — fixed 2026-09-22 by the tenant's own
+sentence: "na planilha tem a carga horária completa da disciplina, cada linha na planilha
+equivale a 4 horas". Until then the sheet's workload column was read as hours PER CLASS and
+multiplied by the class count, so a 16 h discipline taught twice in a month came out as 32 h and
+R$ 3.840,00 where the rule pays 2 × 4 h × R$ 120,00 = R$ 960,00. The workload survives as
+CONTEXT (:attr:`PayLine.workload`): it is shown beside the line and prices the whole discipline,
+and it is never again a factor of the month.
 
-* a discipline whose hours the sheet does not carry is LISTED BY NAME and left out of the
-  total (:attr:`PayEstimate.hours_missing`), never counted as zero — zero hours reads as
-  "that class pays nothing", which is a different and false statement;
+The shapes that follow from that, and each one exists because the alternative is a lie:
+
 * an IBOPE result that was not found produces the declared HYPOTHESES, all of them, none
   chosen (:attr:`PayEstimate.hypotheses`) — the bonus tiers are a fact about the rules, the
   bonus itself is a fact about a survey nobody read;
-* an undeclared rate or an undeclared hours column produces no estimate at all. That refusal
+* a discipline whose total workload the sheet does not carry is LISTED BY NAME in the context
+  section (:attr:`PayEstimate.workload_missing`) — its month's pay is unaffected, because that
+  figure never depended on the sheet; what is unknown is said to be unknown, never zero;
+* an undeclared rate or an undeclared hours-per-class produces no estimate at all. That refusal
   lives in the service; what lives here is that neither has a default to fall back to.
 """
 
@@ -155,23 +164,31 @@ def parse_bonus_tiers(raw: str) -> "tuple[tuple[BonusTier, ...], tuple[str, ...]
 class PayLine:
     """One discipline inside one (turma, month) bucket.
 
-    ``hours_each`` is ``None`` exactly when the tenant's hours column carried no row for this
-    discipline. Then ``amount`` is ``None`` too and the line is excluded from every total — it
-    is not zero. A professor told "Workshop de Abertura: R$ 0,00" reads that as a class that
-    pays nothing; told "horas não declaradas" they read the truth, which is that this system
-    does not know.
+    ``hours_per_class`` is the tenant's ``HOURS_PER_CLASS`` — carried on every line so the line
+    is self-describing, and the same on every line of one estimate. ``hours_total`` is
+    ``classes × hours_per_class`` and is what the month pays for.
+
+    ``workload`` is the discipline's TOTAL workload from the tenant's ``COLUMN_HOURS``, or
+    ``None`` when the column is not declared or carries no row for this discipline. It is
+    CONTEXT: it is rendered beside the estimate and prices the whole discipline, and it enters
+    no sum. Until 2026-09-22 this field was ``hours_each`` and ``hours_total`` multiplied it by
+    the class count — the workload of a discipline charged once per class taught.
     """
     subject: str
     classes: int
-    hours_each: Optional[float]
+    hours_per_class: float
+    workload: Optional[float] = None
 
     @property
-    def hours_total(self) -> Optional[float]:
-        return None if self.hours_each is None else self.hours_each * self.classes
+    def hours_total(self) -> float:
+        return self.hours_per_class * self.classes
 
-    def amount(self, rate: float) -> Optional[float]:
-        h = self.hours_total
-        return None if h is None else h * rate
+    def amount(self, rate: float) -> float:
+        return self.hours_total * rate
+
+    def workload_amount(self, rate: float) -> Optional[float]:
+        """What the WHOLE discipline is worth (workload × rate, no bonus) — ``None`` unknown."""
+        return None if self.workload is None else self.workload * rate
 
 
 @dataclass(frozen=True)
@@ -183,7 +200,7 @@ class PayGroup:
 
     @property
     def hours(self) -> float:
-        return sum(ln.hours_total or 0.0 for ln in self.lines)
+        return sum(ln.hours_total for ln in self.lines)
 
 
 @dataclass(frozen=True)
@@ -203,8 +220,13 @@ class PayEstimate:
     hypothesis and picks none.
     """
     rate: float
+    hours_per_class: float
     groups: list[PayGroup] = field(default_factory=list)
-    hours_missing: tuple[str, ...] = ()     # disciplines the hours source does not name
+    #: ``COLUMN_HOURS`` was declared, so the context section below the estimate renders — with
+    #: a workload per discipline, or "não declarada" for one the sheet does not name. False
+    #: means the tenant declared no such column, and then nothing about workloads is said.
+    workload_declared: bool = False
+    workload_missing: tuple[str, ...] = ()  # disciplines the workload column does not name
     tiers: tuple[BonusTier, ...] = ()
     ibope_found: bool = False
     ibope_pct: Optional[float] = None
@@ -306,28 +328,32 @@ def render_pay_block(est: PayEstimate) -> str:
     """
     period = f" — {est.period}" if est.period else ""
     out: list[str] = [_H.format(f"Remuneração estimada{period}"),
-                      f"Valor/hora declarado nas regras: {fmt_money(est.rate)}", ""]
+                      f"Valor/hora declarado nas regras: {fmt_money(est.rate)}",
+                      f"Horas por aula declaradas nas regras: {fmt_hours(est.hours_per_class)}",
+                      ""]
     for g in est.groups:
         out.append(_H.format(f"{g.turma} — {g.month}"))
         for ln in g.lines:
             aulas = f"{ln.classes} aula" + ("s" if ln.classes != 1 else "")
-            if ln.hours_each is None:
-                out.append(f"{ln.subject} · {aulas} · horas não declaradas · —")
-            else:
-                out.append(f"{ln.subject} · {aulas} · {fmt_hours(ln.hours_total or 0.0)} · "
-                           f"{fmt_money(ln.amount(est.rate) or 0.0)}")
+            out.append(f"{ln.subject} · {aulas} · {fmt_hours(ln.hours_total)} · "
+                       f"{fmt_money(ln.amount(est.rate))}")
         out.append("")
     out.append(_H.format("Base"))
     out.append(f"{fmt_hours(est.hours)} · {fmt_money(est.base)}")
-    if est.hours_missing:
-        out.append(f"Fora desta soma, por não terem carga horária declarada na planilha: "
-                   f"{', '.join(est.hours_missing)}.")
     out.append("")
+    out += _bonus_lines(est)
+    out += _workload_lines(est)
+    return "\n".join(out).strip()
 
+
+def _bonus_lines(est: PayEstimate) -> list[str]:
+    """The bonus section — one of the four worlds of :attr:`PayEstimate.bonus_state`, or the
+    sentence for a tenant that declares no band at all."""
+    out: list[str] = []
     if not est.tiers:
         out.append(_H.format("Bônus IBOPE"))
         out.append("As regras deste tenant não declaram nenhuma faixa de bônus.")
-        return "\n".join(out).strip()
+        return out
 
     state = est.bonus_state
     tier = est.matched_tier
@@ -338,7 +364,7 @@ def render_pay_block(est: PayEstimate) -> str:
         out += _condition_lines(est)
         out.append(_H.format("Total"))
         out.append(fmt_money(est.base + bonus))
-        return "\n".join(out).strip()
+        return out
 
     if state == "below":
         lowest = min(t.low for t in est.tiers)
@@ -348,7 +374,7 @@ def render_pay_block(est: PayEstimate) -> str:
         out += _condition_lines(est)
         out.append(_H.format("Total"))
         out.append(fmt_money(est.base))
-        return "\n".join(out).strip()
+        return out
 
     if state == "gap":
         out.append(_H.format(f"Bônus IBOPE — {est.ibope_pct:g}% — FAIXA NÃO DECLARADA"))
@@ -359,7 +385,7 @@ def render_pay_block(est: PayEstimate) -> str:
             extra = "sem adicional" if h.per_hour == 0 else f"+{fmt_money(h.per_hour)}/h"
             out.append(f"{h.label} · {extra} · {fmt_money(h.total)}")
         out += _condition_lines(est)
-        return "\n".join(out).strip()
+        return out
 
     where = f" na aba «{est.ibope_tab}»" if est.ibope_tab else ""
     out.append(_H.format("Bônus IBOPE — RESULTADO NÃO ENCONTRADO"))
@@ -370,7 +396,45 @@ def render_pay_block(est: PayEstimate) -> str:
         extra = "sem adicional" if h.per_hour == 0 else f"+{fmt_money(h.per_hour)}/h"
         out.append(f"{h.label} · {extra} · {fmt_money(h.total)}")
     out += _condition_lines(est)
-    return "\n".join(out).strip()
+    return out
+
+
+#: The header of the context section. It carries NO month stamp on purpose: a reader that
+#: attributes figures to the ``*Turma — MM/YYYY*`` header above them (the host bench's
+#: ``month_figures`` does) must see this header CLOSE the month, so "what the whole discipline
+#: is worth" is never read as what one month pays.
+WORKLOAD_HEADER = "Carga horária total das disciplinas"
+
+
+def _workload_lines(est: PayEstimate) -> list[str]:
+    """The CONTEXT section — the discipline's total workload, and what the whole of it is worth.
+
+    Rendered only when the tenant declared ``COLUMN_HOURS``; a tenant who did not gets no
+    section and no sentence about one. Deliberately LAST and under a header of its own: these
+    are figures about a different question ("quanto vale a disciplina inteira") than the
+    estimate above ("quanto recebo este mês"), and a figure that sits beside the month's line
+    reads as part of it — which is precisely the confusion the 2026-09-22 change removed.
+    """
+    if not est.workload_declared:
+        return []
+    out: list[str] = ["", _H.format(WORKLOAD_HEADER),
+                      "Contexto, declarado na planilha — não entra na remuneração do período "
+                      "acima. O valor de cada disciplina inteira é a carga total × valor/hora, "
+                      "sem bônus."]
+    seen: set[str] = set()
+    for g in est.groups:
+        for ln in g.lines:
+            key = f"{g.turma}::{ln.subject}"
+            if key in seen:
+                continue
+            seen.add(key)
+            worth = ln.workload_amount(est.rate)
+            if ln.workload is None or worth is None:
+                out.append(f"{ln.subject} ({g.turma}) · carga não declarada na planilha")
+            else:
+                out.append(f"{ln.subject} ({g.turma}) · {fmt_hours(ln.workload)} · "
+                           f"a disciplina inteira: {fmt_money(worth)}")
+    return out
 
 
 def _condition_lines(est: PayEstimate) -> list[str]:

@@ -24,8 +24,14 @@ figures are round numbers chosen so a wrong multiplication is visible by eye.
 What the tests are about, in one line each:
 
 * the estimate exists and groups by class group and month (the two axes the answer promises);
+* the month's pay is classes × HOURS_PER_CLASS × the rate — the tenant's own sentence, fixed
+  2026-09-22: "na planilha tem a carga horária completa da disciplina, cada linha na planilha
+  equivale a 4 horas". Two September classes × 4 h × R$ 120,00 = R$ 960,00; the discipline's
+  workload (16 h) is CONTEXT and is never multiplied by the classes again (the old 3.840);
 * an IBOPE result that was NOT found produces every declared hypothesis and chooses none;
-* rules that declare no rate — or no hours column — produce a refusal, never a figure;
+* rules that declare no rate — or no hours per class — produce a refusal, never a figure, and
+  never an inferred "4"; rules that DESCRIBE them in prose are refused NAMING the prose and the
+  key (``test_pay_declared_in_prose.py`` has the detector; the twin beside "nada" is here);
 * another professor's pay is refused to EVERY role, which is the victim of an opened scope;
 * the block a professor reads cannot carry a third party's data, because it is built from
   derived fields and never copies a spreadsheet row.
@@ -38,11 +44,14 @@ from datetime import date
 import pytest
 
 from cogno_praxis.coordinator import (
+    WORKLOAD_HEADER,
     CoordinatorAccessError,
     CoordinatorConfig,
+    CoordinatorConfigError,
     CoordinatorError,
     CoordinatorService,
     InMemorySpreadsheetStore,
+    fmt_money,
     parse_bonus_tiers,
     parse_money,
     render_pay_block,
@@ -68,10 +77,13 @@ COLUMN_PROFESSOR: "Professor"
 COLUMN_SUBJECT: "Disciplina"
 """
 
-# The tenant's own declaration of the two things this library will not guess. The column name is
+# The tenant's own declaration of the things this library will not guess. The column name is
 # deliberately NOT one this code could have inferred — it is the tenant's phrasing, and a test
-# that used "Carga Horária" would pass just as well against a hardcoded guess.
+# that used "Carga Horária" would pass just as well against a hardcoded guess. HOURS_PER_CLASS
+# is the tenant's own sentence ("cada linha na planilha equivale a 4 horas") and, like the rate,
+# has no default anywhere: the tests that omit it assert a refusal, never a 4.
 _PAY_RULES = """COLUMN_HOURS: "Total de Horas"
+HOURS_PER_CLASS: 4
 PAY_RATE_PER_HOUR: 120,00
 IBOPE_BONUS: 80-89=30; 90+=40
 """
@@ -89,6 +101,9 @@ _SCHEDULE_BB = [
 ]
 # The hours tab carries a person's e-mail beside the hours ON PURPOSE: the PII test below needs
 # a third-party field that a row-copying formatter would have carried out with it.
+# "Total de Horas" is the discipline's TOTAL workload — context, never a factor of the month.
+# The 16 is the tenant's own twin: read as hours per class it produced 2 × 16 = 32 h · R$ 3.840,00
+# for a month that pays 2 × 4 h × R$ 120,00 = R$ 960,00.
 _HOURS_AA = [
     ["Disciplina", "Total de Horas", "Professor", "E-mail"],
     ["Bancos NoSQL", "16", ME, "alfa@exemplo.invalid"],
@@ -115,35 +130,96 @@ def _svc(rules: str = _BASE_RULES + _PAY_RULES, *, hours: bool = True,
     return CoordinatorService(store, cfg, today=lambda: today)
 
 
-# ── twin 1: rules present + classes in the period → a value, grouped by turma and month ──
-def test_the_estimate_is_the_hours_times_the_declared_rate_grouped_by_turma_and_month():
+# ── twin 1: rules present + classes in the period → classes × HOURS_PER_CLASS × rate ─────
+def test_the_estimate_is_classes_times_HOURS_PER_CLASS_times_the_rate_grouped_by_turma_and_month():
     est = _svc().estimate_professor_pay(identity_label=ME)
 
-    # AA_01 September: 2 × 16h; AA_01 October: 1 × 20h; BB_02 September: 1 × 8h
+    # AA_01 September: 2 classes; AA_01 October: 1; BB_02 September: 1 — 4 h each, by the rules
     assert [(g.turma, g.month) for g in est.groups] == [
         ("Turma AA_01", "09/2026"), ("Turma AA_01", "10/2026"), ("Turma BB_02", "09/2026")]
-    assert est.hours == pytest.approx(32 + 20 + 8)
-    assert est.base == pytest.approx(60 * 120.0)
+    assert est.hours_per_class == 4.0
+    assert est.hours == pytest.approx(8 + 4 + 4)
+    assert est.base == pytest.approx(16 * 120.0)
     assert est.rate == 120.0
     # the other professor's October class is not in it — the schedule read is already self-scoped
     assert all(ln.subject != "Estatistica Aplicada" or g.month == "10/2026"
                for g in est.groups for ln in g.lines)
 
     block = render_pay_block(est)
+    assert "Horas por aula declaradas nas regras: 4 h" in block
     assert "*Turma AA_01 — 09/2026*" in block
     assert "*Turma BB_02 — 09/2026*" in block
-    assert "Bancos NoSQL · 2 aulas · 32 h · R$ 3.840,00" in block
-    assert "R$ 7.200,00" in block                    # 60 h × 120
+    assert "Bancos NoSQL · 2 aulas · 8 h · R$ 960,00" in block
+    assert "*Base*\n16 h · R$ 1.920,00" in block          # 4 classes × 4 h × 120
 
 
-def test_the_same_discipline_may_carry_DIFFERENT_hours_in_different_class_groups():
-    """The hours are read per SPREADSHEET, and the tenant's own course lists prove why: the same
-    discipline is 16h in one MBA and 8h in another. Keying the map globally would let whichever
-    group was read first decide what the other one pays."""
+def test_the_owners_numbers_two_september_classes_at_four_hours_and_120_are_960():
+    """The sentence the semantics were fixed by, 2026-09-22: "cada linha na planilha equivale a
+    4 horas". Two September classes in one class group × 4 h × R$ 120,00 = R$ 960,00 — with no
+    IBOPE result, that is the "Sem bônus" hypothesis and the base."""
+    est = _svc().estimate_professor_pay(identity_label=ME, period="2026-09", turma="AA_01")
+    assert [(g.turma, g.month) for g in est.groups] == [("Turma AA_01", "09/2026")]
+    assert est.hours == pytest.approx(8)
+    assert est.base == pytest.approx(960.0)
+    block = render_pay_block(est)
+    assert "Bancos NoSQL · 2 aulas · 8 h · R$ 960,00" in block
+    assert "*Base*\n8 h · R$ 960,00" in block
+    assert "Sem bônus · sem adicional · R$ 960,00" in block
+
+
+@pytest.mark.parametrize("pct,per_hour,total", [("85", 30.0, 1200.0), ("92", 40.0, 1280.0)])
+def test_the_owners_numbers_with_an_IBOPE_result_add_the_band_per_hour(pct, per_hour, total):
+    """85% → +R$ 30,00/h over 8 h → R$ 1.200,00; 92% → +R$ 40,00/h → R$ 1.280,00."""
+    rules = _BASE_RULES + _PAY_RULES + 'TAB_IBOPE: "Resultados IBOPE"\nCOLUMN_IBOPE: "Resultado"\n'
+    svc = _svc(rules, ibope=[["Professor", "Resultado"], [ME, pct]])
+    est = svc.estimate_professor_pay(identity_label=ME, period="2026-09", turma="AA_01")
+    assert est.matched_tier is not None and est.matched_tier.per_hour == per_hour
+    assert est.hypotheses == ()
+    block = render_pay_block(est)
+    assert f"*Total*\n{fmt_money(total)}" in block
+
+
+def test_the_workload_is_NEVER_multiplied_by_the_classes_and_the_old_3840_is_gone():
+    """The defect, pinned as its own twin. ``COLUMN_HOURS`` = 16 was read as hours PER CLASS and
+    multiplied by the 2 September classes: 32 h · R$ 3.840,00, where the tenant's rule pays
+    R$ 960,00. The workload survives as CONTEXT — under its own header, AFTER everything the
+    period is about, pricing the whole discipline — and is a factor of nothing."""
+    est = _svc().estimate_professor_pay(identity_label=ME, period="2026-09", turma="AA_01")
+    line = est.groups[0].lines[0]
+    assert (line.classes, line.workload, line.hours_total) == (2, 16.0, 8.0)
+    block = render_pay_block(est)
+    assert "R$ 3.840,00" not in block and "32 h" not in block
+    assert WORKLOAD_HEADER in block
+    assert "Bancos NoSQL (Turma AA_01) · 16 h · a disciplina inteira: R$ 1.920,00" in block
+    assert block.index(WORKLOAD_HEADER) > block.index("*Base*")
+    assert block.index(WORKLOAD_HEADER) > block.index("Bônus IBOPE")
+
+
+def test_COLUMN_HOURS_is_optional_and_without_it_no_workload_is_said_or_sniffed():
+    """A tenant that names no workload column gets the same estimate with less context — and no
+    header is looked for on the sheet, because a column that "seems like" hours is the guess
+    this config refuses to make."""
+    rules = _BASE_RULES + "HOURS_PER_CLASS: 4\nPAY_RATE_PER_HOUR: 120,00\n"
+    est = _svc(rules).estimate_professor_pay(identity_label=ME, period="2026-09", turma="AA_01")
+    assert est.base == pytest.approx(960.0)
+    assert est.workload_declared is False and est.workload_missing == ()
+    assert all(ln.workload is None for g in est.groups for ln in g.lines)
+    block = render_pay_block(est)
+    assert WORKLOAD_HEADER not in block
+    assert "carga" not in block.lower()
+
+
+def test_the_same_discipline_may_carry_a_DIFFERENT_workload_in_different_class_groups():
+    """The workload is read per SPREADSHEET, and the tenant's own course lists prove why: the
+    same discipline is 16h in one MBA and 8h in another. Keying the map globally would let
+    whichever group was read first describe the other one."""
     est = _svc().estimate_professor_pay(identity_label=ME)
     by_key = {(g.turma, g.month): g for g in est.groups}
-    assert by_key[("Turma AA_01", "09/2026")].lines[0].hours_each == 16
-    assert by_key[("Turma BB_02", "09/2026")].lines[0].hours_each == 8
+    assert by_key[("Turma AA_01", "09/2026")].lines[0].workload == 16
+    assert by_key[("Turma BB_02", "09/2026")].lines[0].workload == 8
+    block = render_pay_block(est)
+    assert "Bancos NoSQL (Turma AA_01) · 16 h · a disciplina inteira: R$ 1.920,00" in block
+    assert "Bancos NoSQL (Turma BB_02) · 8 h · a disciplina inteira: R$ 960,00" in block
 
 
 def test_the_estimate_is_not_cut_by_the_listing_horizon():
@@ -157,28 +233,31 @@ def test_the_estimate_is_not_cut_by_the_listing_horizon():
     months = {g.month for g in est.groups}
     assert "10/2026" in months, (
         f"October is {DEFAULT_HORIZON_DAYS}+ days out and belongs in the estimate")
-    assert est.hours == pytest.approx(60)
+    assert est.hours == pytest.approx(16)
 
 
 def test_a_NAMED_period_still_narrows_the_estimate():
     """The twin: opting out of the default window is not opting out of filtering."""
     est = _svc().estimate_professor_pay(identity_label=ME, period="2026-10")
     assert [(g.turma, g.month) for g in est.groups] == [("Turma AA_01", "10/2026")]
-    assert est.hours == pytest.approx(20)
+    assert est.hours == pytest.approx(4)
 
 
-def test_a_discipline_whose_hours_the_sheet_does_not_carry_is_NAMED_never_zeroed():
-    """Zero is a figure and it is false: it reads as "that class pays nothing". The honest
-    answer names the discipline and leaves it out of the sum."""
+def test_a_discipline_whose_workload_the_sheet_does_not_carry_is_NAMED_never_zeroed():
+    """Zero is a figure and it is false. The month's pay does not depend on the sheet any more —
+    that discipline is paid classes × HOURS_PER_CLASS like every other — so what is unknown is
+    only its TOTAL workload, and the context section says exactly that, by name."""
     svc = _svc()
     svc.store.put(AA, "Informacoes Adicionais",
                   [_HOURS_AA[0], _HOURS_AA[1]])       # Estatistica Aplicada dropped
     est = svc.estimate_professor_pay(identity_label=ME)
-    assert est.hours_missing == ("Estatistica Aplicada",)
-    assert est.hours == pytest.approx(32 + 8)         # the 20h discipline is NOT counted as 0
+    assert est.workload_missing == ("Estatistica Aplicada",)
+    assert est.hours == pytest.approx(16)             # its October class is still 4 h, not 0
     block = render_pay_block(est)
-    assert "Estatistica Aplicada · 1 aula · horas não declaradas · —" in block
-    assert "Fora desta soma" in block and "Estatistica Aplicada" in block
+    assert "Estatistica Aplicada · 1 aula · 4 h · R$ 480,00" in block
+    assert "Estatistica Aplicada (Turma AA_01) · carga não declarada na planilha" in block
+    assert "Fora desta soma" not in block             # nothing is outside the sum any more
+    assert "0 h" not in block and "R$ 0,00" not in block
 
 
 # ── twin 2: IBOPE absent → the hypotheses AND the sentence ───────────────────────────
@@ -192,7 +271,7 @@ def test_an_absent_IBOPE_result_yields_every_declared_hypothesis_and_chooses_non
     assert len(est.hypotheses) == len(est.tiers) + 1 == 3
     assert [h.per_hour for h in est.hypotheses] == [0.0, 30.0, 40.0]
     assert [h.total for h in est.hypotheses] == pytest.approx(
-        [60 * 120.0, 60 * 150.0, 60 * 160.0])
+        [16 * 120.0, 16 * 150.0, 16 * 160.0])
 
     block = render_pay_block(est)
     assert "RESULTADO NÃO ENCONTRADO" in block
@@ -234,7 +313,7 @@ def test_an_IBOPE_result_that_WAS_found_applies_its_band_and_offers_no_hypothesi
     assert est.hypotheses == ()
     block = render_pay_block(est)
     assert "RESULTADO NÃO ENCONTRADO" not in block
-    assert "R$ 9.600,00" in block                     # 60 h × (120 + 40)
+    assert "R$ 2.560,00" in block                     # 16 h × (120 + 40)
 
 
 def test_a_result_BELOW_every_declared_band_is_ZERO_and_the_zero_is_SAID():
@@ -252,7 +331,7 @@ def test_a_result_BELOW_every_declared_band_is_ZERO_and_the_zero_is_SAID():
     block = render_pay_block(est)
     assert "Abaixo da faixa mais baixa declarada (80%)" in block
     assert "Isto é um valor apurado, não uma falta de informação." in block
-    assert "R$ 7.200,00" in block                     # the base, unchanged
+    assert "*Total*\nR$ 1.920,00" in block            # the base, unchanged
     assert "NÃO ENCONTRADO" not in block
 
 
@@ -328,33 +407,71 @@ def test_a_free_slot_is_not_a_class_and_earns_nothing():
     svc = _svc()
     svc.store.put(BB, "Secretaria", _SCHEDULE_BB + [["26/09/2026", "Sab", ME, "Livre", "Sala Azul"]])
     est = svc.estimate_professor_pay(identity_label=ME)
-    assert est.hours == pytest.approx(60)             # unchanged by the free slot
+    assert est.hours == pytest.approx(16)             # unchanged by the free slot
     assert "Livre" not in render_pay_block(est)
 
 
 # ── twin 3: rules absent → a clean refusal, no invented rate ─────────────────────────
 def test_rules_without_a_rate_refuse_and_NAME_the_missing_key():
-    svc = _svc(_BASE_RULES + 'COLUMN_HOURS: "Total de Horas"\n')
+    svc = _svc(_BASE_RULES + 'COLUMN_HOURS: "Total de Horas"\nHOURS_PER_CLASS: 4\n')
     with pytest.raises(CoordinatorError) as exc:
         svc.estimate_professor_pay(identity_label=ME)
     assert "PAY_RATE_PER_HOUR" in str(exc.value)
     assert "has not configured" in str(exc.value)
+    assert "HOURS_PER_CLASS" not in str(exc.value)    # only what is missing is named
 
 
-def test_rules_without_an_hours_COLUMN_refuse_rather_than_guessing_a_header():
-    """The column name belongs to the tenant. There is no default and no sniffing: a header that
-    "looks like" hours is how a room number becomes a workload."""
-    svc = _svc(_BASE_RULES + "PAY_RATE_PER_HOUR: 120,00\n")
-    with pytest.raises(CoordinatorError) as exc:
+def test_rules_without_HOURS_PER_CLASS_refuse_and_never_infer_four_nor_divide_the_workload():
+    """The number belongs to the tenant. "4" is what every tenant so far has meant, which is
+    exactly why a default would be right until the day it is not; and 16 h ÷ 2 classes = 8 h
+    is a derivation nobody wrote. Both are wrong numbers about a person's pay, so with the key
+    absent there is no estimate — and the refusal names the key, not the column, which is no
+    longer required."""
+    svc = _svc(_BASE_RULES + 'COLUMN_HOURS: "Total de Horas"\nPAY_RATE_PER_HOUR: 120,00\n')
+    with pytest.raises(CoordinatorConfigError) as exc:
         svc.estimate_professor_pay(identity_label=ME)
-    assert "COLUMN_HOURS" in str(exc.value)
+    msg = str(exc.value)
+    assert "HOURS_PER_CLASS" in msg and "has not configured" in msg
+    assert "COLUMN_HOURS" not in msg
+    assert "R$" not in msg                            # nothing was estimated on any assumption
+    # …and a zero or junk value is UNDECLARED, never "a class is worth nothing"
+    for junk in ("0", "-4", "abc", ""):
+        assert CoordinatorConfig(f"HOURS_PER_CLASS: {junk}").hours_per_class is None
+    assert CoordinatorConfig("HOURS_PER_CLASS: 4,5").hours_per_class == 4.5
 
 
 def test_a_tenant_that_declared_NEITHER_is_told_about_BOTH():
     cfg = CoordinatorConfig(_BASE_RULES)
-    assert cfg.pay_undeclared == ("PAY_RATE_PER_HOUR", "COLUMN_HOURS")
+    assert cfg.pay_undeclared == ("PAY_RATE_PER_HOUR", "HOURS_PER_CLASS")
     assert cfg.pay_rate_per_hour is None
+    assert cfg.hours_per_class is None
     assert cfg.ibope_bonus == ()
+    # "nada": NOTHING in prose either, so the refusal names the keys and nothing else
+    assert cfg.pay_in_prose == ()
+    with pytest.raises(CoordinatorConfigError) as exc:
+        _svc(_BASE_RULES).estimate_professor_pay(identity_label=ME)
+    assert "PAY_RATE_PER_HOUR, HOURS_PER_CLASS are missing" in str(exc.value)
+    assert "found" not in str(exc.value)
+
+
+def test_a_tenant_that_declared_them_in_PROSE_is_told_what_was_found_and_which_key_it_needs():
+    """The twin of "nada", and the 2026-09-22 turn: the same two keys missing, but the rules
+    plainly CONTAIN the figures — in Portuguese prose the parser does not read. The refusal
+    has to say so, sentence by sentence, or it is "missing" over rules that are not."""
+    prose = (_BASE_RULES + "\n# Valores Financeiros\n"
+             " - Aula - R$ 120,00 por hora, sendo o mínimo 4 horas por aula.\n")
+    cfg = CoordinatorConfig(prose)
+    assert cfg.pay_undeclared == ("PAY_RATE_PER_HOUR", "HOURS_PER_CLASS")
+    assert [(h.key, h.excerpts) for h in cfg.pay_in_prose] == [
+        ("PAY_RATE_PER_HOUR", ("R$ 120,00 por hora",)),
+        ("HOURS_PER_CLASS", ("4 horas por aula",))]
+    with pytest.raises(CoordinatorConfigError) as exc:
+        _svc(prose).estimate_professor_pay(identity_label=ME)
+    msg = str(exc.value)
+    assert "PAY_RATE_PER_HOUR, HOURS_PER_CLASS are missing" in msg
+    assert 'found "R$ 120,00 por hora" in the rules, but PAY_RATE_PER_HOUR is not declared' in msg
+    assert 'found "4 horas por aula" in the rules, but HOURS_PER_CLASS is not declared' in msg
+    assert "R$ 960" not in msg and "R$ 480" not in msg   # named, never computed
 
 
 def test_the_refusal_is_not_worded_as_a_malfunction():
@@ -365,7 +482,7 @@ def test_the_refusal_is_not_worded_as_a_malfunction():
     tools = build_server(svc)._tool_manager._tools
     out = tools["estimate_professor_pay"].fn(identity_label=ME)
     assert out.startswith("NOT CONFIGURED:")
-    assert "PAY_RATE_PER_HOUR" in out and "COLUMN_HOURS" in out
+    assert "PAY_RATE_PER_HOUR" in out and "HOURS_PER_CLASS" in out
 
 
 # ── twin 4 (the negative twin): somebody else's pay, for EVERY role ──────────────────
@@ -418,8 +535,8 @@ def test_an_EMPTY_professor_gets_the_callers_OWN_pay_whatever_their_role(role):
     group and the same month as one of ``Prof Alfa``'s, so a leak does not add a group or a
     line, it doubles a COUNT — which is exactly how it went unnoticed."""
     est = _svc().estimate_professor_pay(professor="", identity_label=ME, role=role)
-    assert est.hours == pytest.approx(32 + 20 + 8)        # 60 h, and 80 h with Beta's class in
-    assert est.base == pytest.approx(60 * 120.0)
+    assert est.hours == pytest.approx(8 + 4 + 4)          # 16 h, and 20 h with Beta's class in
+    assert est.base == pytest.approx(16 * 120.0)
     october = [g for g in est.groups if (g.turma, g.month) == ("Turma AA_01", "10/2026")]
     assert [(ln.subject, ln.classes) for g in october for ln in g.lines] == [
         ("Estatistica Aplicada", 1)]                      # 1 = mine; 2 = mine AND Beta's
@@ -456,7 +573,7 @@ def test_the_SCHEDULE_still_widens_for_oversight_and_only_the_ESTIMATE_does_not(
     assert len(master) > len(own)
 
     pay = svc.estimate_professor_pay(professor="", identity_label=ME, role="SUPERVISOR")
-    assert pay.hours == pytest.approx(60)                 # …and still earns only their own
+    assert pay.hours == pytest.approx(16)                 # …and still earns only their own
 
 
 # ── (A) what the block a professor reads may contain ─────────────────────────────────
@@ -549,8 +666,8 @@ def test_a_comma_is_a_DECIMAL_separator_and_never_a_band_separator():
 def test_an_unreadable_band_REFUSES_THE_ESTIMATE_and_names_the_entry():
     """The loud half, at the layer the professor reaches: not a dropped band, a refused turn."""
     from cogno_praxis.coordinator import CoordinatorConfigError
-    svc = _svc(_BASE_RULES + 'COLUMN_HOURS: "Total de Horas"\nPAY_RATE_PER_HOUR: 120,00\n'
-               "IBOPE_BONUS: 80-89=30; isto nao e uma faixa\n")
+    svc = _svc(_BASE_RULES + 'COLUMN_HOURS: "Total de Horas"\nHOURS_PER_CLASS: 4\n'
+               "PAY_RATE_PER_HOUR: 120,00\nIBOPE_BONUS: 80-89=30; isto nao e uma faixa\n")
     with pytest.raises(CoordinatorConfigError) as exc:
         svc.estimate_professor_pay(identity_label=ME)
     msg = str(exc.value)
@@ -561,7 +678,8 @@ def test_an_unreadable_band_REFUSES_THE_ESTIMATE_and_names_the_entry():
 
 def test_rules_that_declare_no_bonus_say_so_instead_of_hypothesising():
     """No tier is not the same fact as no IBOPE result: one is a complete answer."""
-    svc = _svc(_BASE_RULES + 'COLUMN_HOURS: "Total de Horas"\nPAY_RATE_PER_HOUR: 120,00\n')
+    svc = _svc(_BASE_RULES + 'COLUMN_HOURS: "Total de Horas"\nHOURS_PER_CLASS: 4\n'
+               "PAY_RATE_PER_HOUR: 120,00\n")
     est = svc.estimate_professor_pay(identity_label=ME)
     assert est.tiers == () and est.hypotheses == ()
     block = render_pay_block(est)
@@ -607,8 +725,10 @@ def test_the_executor_is_told_never_to_do_the_arithmetic_itself():
 def test_the_executor_is_told_the_three_sentences_that_must_survive_into_the_reply():
     system = _prompt("system")
     assert "RESULTADO NÃO ENCONTRADO" in system and "Relay ALL of them" in system
-    assert "horas não declaradas" in system
+    assert "Carga horária total das disciplinas" in system   # context, never the month's amount
+    assert "never present one as the month's amount" in system
     assert "NOT CONFIGURED" in system
+    assert "but PAY_RATE_PER_HOUR is not declared" in system  # the prose sentence must survive
 
 
 def test_the_judge_reads_an_unknown_bonus_as_a_COMPLETE_answer():

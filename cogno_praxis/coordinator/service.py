@@ -29,7 +29,7 @@ from cogno_praxis.coordinator.ics import (
     parse_time,
     sequence_now,
 )
-from cogno_praxis.coordinator.config import CoordinatorConfig
+from cogno_praxis.coordinator.config import CoordinatorConfig, pay_refusal
 from cogno_praxis.coordinator.pay import (
     PayEstimate,
     PayGroup,
@@ -656,17 +656,18 @@ class CoordinatorService:
             ibope_today=list(ibope))
 
     # ── the professor's OWN pay (read-only, self-only) ───────────────────────────────
-    def _hours_by_subject(self, sheet_id: str, sheet_key: str,
-                          report: Optional[ReadReport]) -> dict[str, float]:
-        """``{normalised discipline: hours}`` from the tenant's declared hours column.
+    def _workload_by_subject(self, sheet_id: str, sheet_key: str,
+                             report: Optional[ReadReport]) -> dict[str, float]:
+        """``{normalised discipline: TOTAL workload}`` from the tenant's declared hours column.
 
         The tab, the range and the column all come from the config. Nothing here looks for a
         header that "seems like" hours: only :attr:`CoordinatorConfig.column_hours`, matched the
         same way :meth:`_resolve_columns` matches the other three roles. A tenant who has not
-        declared it never reaches this method — :meth:`estimate_professor_pay` refuses first.
+        declared it never reaches this method — the column is OPTIONAL and the caller skips the
+        read (2026-09-22: the workload is context, not a factor of the pay).
 
-        A row this cannot read is simply absent from the map, which downstream becomes "horas
-        não declaradas" for that discipline. It never becomes a zero.
+        A row this cannot read is simply absent from the map, which downstream becomes "carga
+        não declarada na planilha" for that discipline in the context section. Never a zero.
         """
         try:
             rows = self.store.read_range(sheet_id, self.cfg.tab_hours, self.cfg.range_hours)
@@ -753,13 +754,18 @@ class CoordinatorService:
         raises :class:`CoordinatorAccessError`; an unauthenticated caller (no
         ``identity_label``) raises too, because with nobody named "their own" has no referent.
 
-        Refuses with :class:`CoordinatorError` when the tenant's rules do not declare the rate
-        or the hours column, NAMING the keys — see :attr:`CoordinatorConfig.pay_undeclared`.
-        There is no branch that estimates without them.
+        Refuses with :class:`CoordinatorConfigError` when the tenant's rules do not declare the
+        rate or the hours per class, NAMING the keys — see
+        :attr:`CoordinatorConfig.pay_undeclared` — and, when the rules DESCRIBE a figure in
+        prose instead ("R$ 120,00 por hora", "4 horas por aula"), naming what it found and the
+        key each should have been (:attr:`CoordinatorConfig.pay_in_prose`). There is no
+        branch that estimates without them, and none that reads a sentence as a number.
 
-        The arithmetic is ``classes × hours-per-discipline × rate``, plus an IBOPE bonus when —
-        and only when — a survey result was actually read. It is READ-ONLY: nothing here writes
-        to a spreadsheet, sends anything, or records a figure.
+        The arithmetic is ``classes × HOURS_PER_CLASS × rate``, plus an IBOPE bonus per hour
+        when — and only when — a survey result was actually read. The discipline's total
+        workload (``COLUMN_HOURS``, optional) is CONTEXT rendered beside it and is never a
+        factor. It is READ-ONLY: nothing here writes to a spreadsheet, sends anything, or
+        records a figure.
         """
         me = identity_label.strip()
         if not me:
@@ -771,13 +777,14 @@ class CoordinatorService:
             raise CoordinatorAccessError(
                 "You can only see your own pay estimate — another professor's remuneration is "
                 "not something this assistant discloses to anyone.")
+        # A REQUIRED key missing, or a figure the rules describe in PROSE that no ``KEY: value``
+        # line declares — either refuses, and the sentence names what was found where. The
+        # second is the 2026-09-22 defect: rules that plainly said "R$ 120,00 por hora" were
+        # answered "PAY_RATE_PER_HOUR is missing", which was true and told nobody what to do.
         missing = self.cfg.pay_undeclared
-        if missing:
-            raise CoordinatorConfigError(
-                f"This institution has not configured the pay figures: {', '.join(missing)} "
-                f"{'is' if len(missing) == 1 else 'are'} missing from the persona rules. "
-                f"Nothing can be estimated without {'it' if len(missing) == 1 else 'them'}, "
-                f"and nothing here will be assumed.")
+        prose = self.cfg.pay_in_prose
+        if missing or prose:
+            raise CoordinatorConfigError(pay_refusal(missing, prose))
         # A band the parser could not read REFUSES THE WHOLE ESTIMATE, and it names the entry.
         # Dropping it would be the worse of the two available wrongs: the professor is paid less
         # and the reply is word-for-word the one a tenant with no bonus scheme gets, so nobody —
@@ -791,7 +798,10 @@ class CoordinatorService:
                 f"separated by SEMICOLONS (a comma is a decimal separator). Nothing is estimated "
                 f"until that line is fixed — a bonus band that is silently skipped pays less.")
         rate = self.cfg.pay_rate_per_hour
+        hours_per_class = self.cfg.hours_per_class
         assert rate is not None                        # pay_undeclared already refused a None
+        assert hours_per_class is not None             # likewise — never inferred, never divided
+        workload_declared = bool(self.cfg.column_hours.strip())
 
         # ``apply_horizon=False``, for the reason the calendar export already opts out: the
         # 30-day default exists so a professor READING a list does not have to scroll, and this
@@ -818,18 +828,20 @@ class CoordinatorService:
         entries = self.get_professor_schedule(
             professor=me, role=role, identity_label=me, month=period, turma=turma,
             apply_horizon=False, report=report)
-        hours_by_sheet: dict[str, dict[str, float]] = {}
+        workload_by_sheet: dict[str, dict[str, float]] = {}
         # keyed by (class group, sortable year-month) so the two grouping axes the answer
         # promises are the two axes it is actually ordered by. Chronological order across the
         # whole read interleaves the groups, which reads as one list that keeps changing subject.
         buckets: dict[tuple[str, tuple[int, int]], dict[str, int]] = {}
-        missing_hours: list[str] = []
+        workload_missing: list[str] = []
         for e in entries:
             if e.is_free_slot or e.when is None or not e.subject.strip():
                 continue
-            if e.sheet_key not in hours_by_sheet:
-                hours_by_sheet[e.sheet_key] = self._hours_by_subject(e.sheet_id, e.sheet_key,
-                                                                     report)
+            # The workload column is read only when the tenant NAMED one: with no column there
+            # is no header to look for, and looking anyway is the sniffing this class refuses.
+            if workload_declared and e.sheet_key not in workload_by_sheet:
+                workload_by_sheet[e.sheet_key] = self._workload_by_subject(
+                    e.sheet_id, e.sheet_key, report)
             k = (e.sheet_key, (e.when.year, e.when.month))
             buckets.setdefault(k, {})
             buckets[k][e.subject.strip()] = buckets[k].get(e.subject.strip(), 0) + 1
@@ -838,15 +850,17 @@ class CoordinatorService:
         for (turma_key, (year, month)) in sorted(buckets):
             lines: list[PayLine] = []
             for subject, count in buckets[(turma_key, (year, month))].items():
-                hours = hours_by_sheet.get(turma_key, {}).get(_norm(subject))
-                if hours is None and subject not in missing_hours:
-                    missing_hours.append(subject)
-                lines.append(PayLine(subject=subject, classes=count, hours_each=hours))
+                workload = workload_by_sheet.get(turma_key, {}).get(_norm(subject))
+                if workload_declared and workload is None and subject not in workload_missing:
+                    workload_missing.append(subject)
+                lines.append(PayLine(subject=subject, classes=count,
+                                     hours_per_class=hours_per_class, workload=workload))
             groups.append(PayGroup(turma=turma_key, month=f"{month:02d}/{year}", lines=lines))
 
         pct = self._ibope_result(identity_label=me, report=report)
         return PayEstimate(
-            rate=rate, groups=groups, hours_missing=tuple(missing_hours),
+            rate=rate, hours_per_class=hours_per_class, groups=groups,
+            workload_declared=workload_declared, workload_missing=tuple(workload_missing),
             tiers=self.cfg.ibope_bonus, ibope_found=pct is not None, ibope_pct=pct,
             ibope_tab=self.cfg.tab_ibope.strip(), period=month_label(period),
             ibope_min_response_pct=self.cfg.ibope_min_response_pct)

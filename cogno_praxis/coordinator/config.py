@@ -37,10 +37,21 @@ Format (all sections optional; sensible defaults shown)::
     # The professor-pay estimate. NONE of these has a business default: every one of them
     # is a number or a column name only the tenant knows, and a default here would be this
     # library guessing at somebody's pay. Absent → the estimate refuses and names the key.
-    COLUMN_HOURS: "Carga Horária"       # the per-discipline hour total, on TAB_HOURS
+    #
+    # The MONTH's pay is  classes in the month × HOURS_PER_CLASS × PAY_RATE_PER_HOUR  (plus
+    # the IBOPE bonus per hour). HOURS_PER_CLASS is the hours ONE class (one row of the
+    # schedule sheet) is worth — the tenant's own sentence: "cada linha na planilha equivale
+    # a 4 horas". It is never inferred and never derived by dividing a workload by a count.
+    HOURS_PER_CLASS: 4                  # hours per class (per schedule row) — REQUIRED
+    PAY_RATE_PER_HOUR: 120,00           # the hourly rate — REQUIRED
+    # COLUMN_HOURS is the discipline's TOTAL workload ("carga horária completa da
+    # disciplina"), read off TAB_HOURS. OPTIONAL, and CONTEXT ONLY: it is shown beside the
+    # estimate and prices "the whole discipline" (workload × rate); it is NEVER multiplied
+    # by the number of classes. Until 2026-09-22 it was, and a 16 h discipline taught twice
+    # in a month came out as 32 h — R$ 3.840,00 where the tenant's rule paid R$ 960,00.
+    COLUMN_HOURS: "Carga Horária"       # optional — the discipline's total workload
     TAB_HOURS: "Informações Adicionais" # optional — defaults to TAB_PROFESSORS
     RANGE_HOURS: "A1:E50"               # optional — defaults to RANGE_PROFESSORS
-    PAY_RATE_PER_HOUR: 120,00           # the hourly rate
     IBOPE_BONUS: 80-89=30; 90+=40       # optional bonus bands, R$/hour. SEMICOLONS separate
                                         # them — the comma is the decimal separator here.
     IBOPE_MIN_RESPONSE_PCT: 30          # optional: the share of the class that must have
@@ -54,6 +65,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from typing import Optional
 
 from cogno_praxis.coordinator.pay import BonusTier, parse_bonus_tiers, parse_money
@@ -87,6 +99,16 @@ def _find_int(rules: str, key: str, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return value if value > 0 else default
+
+
+def _find_positive(rules: str, key: str) -> Optional[float]:
+    """A ``KEY: 4`` / ``KEY: 4,5`` line as a positive number; anything else is ``None``.
+
+    ``None`` means UNDECLARED. A zero or a negative is treated the same way rather than kept:
+    "a class is worth 0 hours" is not a declaration anyone made about pay, it is a typo, and the
+    estimate refuses and names the key instead of paying nothing."""
+    value = parse_money(_find(rules, key, ""))
+    return value if value is not None and value > 0 else None
 
 
 def _find_pct(raw: str) -> Optional[float]:
@@ -184,10 +206,21 @@ class CoordinatorConfig:
         # A missing key must reach the professor as "this institution has not declared it",
         # which is a true sentence they can act on, and never as a number this library chose.
         #
-        # WHERE the hours live is two questions, and only the second one is required. The TAB
-        # falls back to the professors tab because that tab is itself a tenant declaration —
-        # falling back to another of the tenant's own answers is not a guess. The COLUMN has no
-        # such fallback: it is the one name nothing else in this config can stand in for.
+        # HOW MANY HOURS ONE CLASS IS WORTH. The month's pay is classes × this × the rate, and
+        # this is the number that used to be read off the sheet's workload column and
+        # multiplied by the class count — see ``column_hours`` below for what that cost.
+        # REQUIRED, never inferred: "4" is the only value any tenant has ever meant, and a
+        # library that assumed it would be right for every tenant until the one it is not.
+        self.hours_per_class: Optional[float] = _find_positive(rules, "HOURS_PER_CLASS")
+        # WHERE the discipline's TOTAL workload lives. The TAB falls back to the professors tab
+        # because that tab is itself a tenant declaration — falling back to another of the
+        # tenant's own answers is not a guess. The COLUMN has no fallback and is OPTIONAL:
+        # the workload is CONTEXT ("carga total da disciplina: 16 h", and what the whole
+        # discipline is worth), it is not a factor of the month's pay. It WAS one until
+        # 2026-09-22 — ``PayLine.hours_total = hours_each × classes`` — and the docstring of
+        # this very field already said "the per-discipline hour total": three declarations
+        # of one key, in disagreement, and the one that decided a person's pay was the one
+        # multiplying a discipline's whole workload by every class taught in the month.
         self.tab_hours: str = _find(rules, "TAB_HOURS", self.tab_professors)
         self.range_hours: str = _find(rules, "RANGE_HOURS", self.range_professors)
         self.column_hours: str = _find(rules, "COLUMN_HOURS", "")
@@ -213,6 +246,18 @@ class CoordinatorConfig:
         self.tab_ibope: str = _find(rules, "TAB_IBOPE", "")
         self.range_ibope: str = _find(rules, "RANGE_IBOPE", "A1:Z200")
         self.column_ibope: str = _find(rules, "COLUMN_IBOPE", "")
+
+        # The same figures written in PROSE — "R$ 120,00 por hora", "4 horas por aula" — for a
+        # key the tenant did NOT declare as a ``KEY: value`` line. Read last, because "declared"
+        # is decided by the parsed fields above; see :func:`find_pay_in_prose`.
+        self.pay_in_prose: tuple[ProseHint, ...] = find_pay_in_prose(rules, declared={
+            "PAY_RATE_PER_HOUR": self.pay_rate_per_hour is not None,
+            "HOURS_PER_CLASS": self.hours_per_class is not None,
+            # a declared-but-unreadable band already refuses, louder, and names the entry
+            "IBOPE_BONUS": bool(self.ibope_bonus) or bool(self.ibope_bonus_unreadable),
+            "IBOPE_MIN_RESPONSE_PCT": self.ibope_min_response_pct is not None,
+        })
+        _warn_prose_once(self.pay_in_prose)
 
     # ── SPREADSHEETS parsing ─────────────────────────────────────────────────────────
     @staticmethod
@@ -279,15 +324,153 @@ class CoordinatorConfig:
 
     @property
     def pay_undeclared(self) -> tuple[str, ...]:
-        """The pay keys this tenant has NOT declared — ``()`` when an estimate is possible.
+        """The REQUIRED pay keys this tenant has NOT declared — ``()`` when an estimate is possible.
 
         One place answers "may this be attempted at all", and it answers by NAMING what is
         missing rather than with a bare no: the refusal a professor reads has to tell whoever
         administers the tenant which line to add, or it is a dead end wearing a sentence.
+
+        ``COLUMN_HOURS`` is not in it any more (2026-09-22): the workload column is context,
+        and an estimate without it is a complete estimate with less context.
         """
         missing: list[str] = []
         if self.pay_rate_per_hour is None:
             missing.append("PAY_RATE_PER_HOUR")
-        if not self.column_hours.strip():
-            missing.append("COLUMN_HOURS")
+        if self.hours_per_class is None:
+            missing.append("HOURS_PER_CLASS")
         return tuple(missing)
+
+
+# ── the same figures, written in PROSE ────────────────────────────────────────────────
+#
+# Measured 2026-09-22 on a live tenant: the persona rules carried "Aula - R$ 120,00 por hora,
+# sendo o mínimo 4 horas por aula", "Ibope > 80% e <89%: Adicional de R$ 30,00 por hora" and
+# "respondido por pelo menos 30% da turma" — every figure the estimate needs, in Portuguese
+# prose — and ``estimate_professor_pay`` ran, ``ok=True``, and answered "NOT CONFIGURED:
+# PAY_RATE_PER_HOUR, COLUMN_HOURS are missing from the persona rules". Both true. ``_find``
+# reads ``KEY: value`` lines and nothing else, and it returns the default in SILENCE, so the
+# same truth declared in two grammars counted in one and nothing told anybody. The model,
+# meanwhile, SAW the R$ 120 in its prompt and was (rightly) forbidden to do the arithmetic.
+#
+# This does not read the prose as configuration — a rate read out of a sentence is a guess
+# with a decimal point in it. It RECOGNISES the shapes, conservatively, and names each one
+# beside the key it should have been, so the refusal says "found X in the rules, but KEY is not
+# declared" instead of "KEY is missing" over rules that plainly contain it. Only the keys this
+# config already reads (plus HOURS_PER_CLASS, which arrived with this) — no new key is invented
+# here, and a sentence the table does not recognise is simply not mentioned.
+@dataclass(frozen=True)
+class ProseHint:
+    """One pay key found in PROSE and not as a ``KEY: value`` line, with the sentences seen."""
+    key: str
+    excerpts: tuple[str, ...]
+
+    def sentence(self) -> str:
+        quoted = ", ".join(f'"{e}"' for e in self.excerpts)
+        return f"found {quoted} in the rules, but {self.key} is not declared"
+
+
+#: A money literal as these rules write it: ``R$ 120,00``, ``R$ 1.234,56``, ``R$120``.
+_MONEY = r"R\$\s*\d[\d.]*(?:,\d{1,2})?"
+#: "…per hour", in the ways a coordinator writes it: ``por hora``, ``a hora``, ``/h``, ``/hora``.
+_PER_HOUR = r"(?:por|a|cada|/)\s*h(?:ora)?s?\b"
+#: A line that is about the BONUS rather than the base rate. Decided per LINE, so the two
+#: "Adicional de R$ 30,00 por hora" lines cannot be mistaken for two hourly rates.
+_BONUS_WORDS = re.compile(r"(?i)\b(?:ibope|adicional|b[ôo]nus|extra|acr[ée]scimo)\b")
+#: (key, pattern) — the recognised shapes, in the ORDER their sentences are listed. Each
+#: pattern is anchored to a figure ("R$ …", "4 horas", "30%") so the excerpt it produces is a
+#: figure with a few words around it and never a stretch of free text — which is also what makes
+#: it safe to log: nothing here can capture a name.
+_PROSE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("PAY_RATE_PER_HOUR", re.compile(rf"(?i){_MONEY}\s*{_PER_HOUR}")),
+    ("HOURS_PER_CLASS", re.compile(
+        r"(?i)(?:\d+(?:[.,]\d+)?\s*h(?:oras?)?\s+(?:por|para|em|a)?\s*(?:cada\s+)?aula\b"
+        r"|\baulas?\s+de\s+\d+(?:[.,]\d+)?\s*h(?:oras?)?\b)")),
+    ("IBOPE_BONUS", re.compile(rf"(?i)(?:adicional\s+de\s+)?{_MONEY}\s*{_PER_HOUR}")),
+    ("IBOPE_MIN_RESPONSE_PCT", re.compile(
+        r"(?i)respondid[oa]\s+por\s+(?:pelo\s+menos|no\s+m[íi]nimo|ao\s+menos)?\s*"
+        r"\d+(?:[.,]\d+)?\s*%")),
+)
+#: How much of a matched sentence travels into the message and the log. The patterns already
+#: bound it; this is the belt to their braces.
+_EXCERPT_MAX = 60
+
+
+def find_pay_in_prose(rules: str, *, declared: dict[str, bool]) -> tuple[ProseHint, ...]:
+    """The pay keys the rules describe in PROSE without declaring — ``()`` when none.
+
+    ``declared`` says, per key, whether the parsed config already holds a value; a key that is
+    declared is never reported, however many sentences also describe it (prose beside a declared
+    key is documentation, and this is not a linter). A key that is NOT declared is reported with
+    every distinct sentence that matched, in document order, so the message can quote what it
+    saw. Line by line, because the rate/bonus distinction is a property of the LINE ("Ibope …
+    Adicional de R$ 30,00 por hora" is a bonus, "Aula - R$ 120,00 por hora" is a rate).
+    """
+    found: dict[str, list[str]] = {}
+    for raw in (rules or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        bonus_line = bool(_BONUS_WORDS.search(line))
+        for key, pattern in _PROSE_PATTERNS:
+            if declared.get(key, False):
+                continue
+            if key == "PAY_RATE_PER_HOUR" and bonus_line:
+                continue
+            if key == "IBOPE_BONUS" and not bonus_line:
+                continue
+            for m in pattern.finditer(line):
+                excerpt = re.sub(r"\s+", " ", m.group(0)).strip()[:_EXCERPT_MAX]
+                bucket = found.setdefault(key, [])
+                if excerpt not in bucket:
+                    bucket.append(excerpt)
+    return tuple(ProseHint(key, tuple(excerpts))
+                 for key, _p in _PROSE_PATTERNS if (excerpts := found.get(key)))
+
+
+#: The configurations already warned about in this process — a config is rebuilt on every
+#: tool call, and a warning per call is a warning nobody reads.
+_PROSE_WARNED: set[tuple[ProseHint, ...]] = set()
+
+
+def _warn_prose_once(hints: tuple[ProseHint, ...]) -> None:
+    if not hints or hints in _PROSE_WARNED:
+        return
+    _PROSE_WARNED.add(hints)
+    _log.warning("coordinator: the persona rules describe pay figures in PROSE that this config "
+                 "does not read — %s. Only 'KEY: value' lines are read; the estimate refuses "
+                 "and names these until they are declared that way.",
+                 "; ".join(h.sentence() for h in hints))
+
+
+def pay_refusal(missing: tuple[str, ...], prose: tuple[ProseHint, ...]) -> str:
+    """The sentence the estimate refuses with — REQUIRED keys missing, prose found, or both.
+
+    Three shapes, and the difference between the first two is the whole 2026-09-22 change:
+
+    * keys missing, nothing in prose — the tenant never declared them; the sentence names them;
+    * keys missing AND the figures are in prose — the tenant DID declare them, in a grammar this
+      config does not read; the sentence names what it found and which key each should be, so
+      whoever administers the persona knows it is one line per figure and not a decision;
+    * nothing missing but a figure in prose for an OPTIONAL key (the bonus, the response-rate
+      condition) — refused too, for the reason an unreadable band is: an estimate that says
+      "this tenant declares no bonus" over rules that describe one pays less with the very
+      sentence a tenant with no bonus scheme legitimately gets.
+    """
+    assert missing or prose
+    parts: list[str] = []
+    if missing:
+        parts.append(
+            f"This institution has not configured the pay figures: {', '.join(missing)} "
+            f"{'is' if len(missing) == 1 else 'are'} missing from the persona rules. "
+            f"Nothing can be estimated without {'it' if len(missing) == 1 else 'them'}, "
+            f"and nothing here will be assumed.")
+    if prose:
+        seen = "; ".join(h.sentence() for h in prose)
+        parts.append(
+            f"The rules DO describe {'them' if missing else 'pay figures'} in prose, which this "
+            f"system does not read as configuration: {seen}. Each has to be written as its own "
+            f"KEY: value line (for example PAY_RATE_PER_HOUR: 120,00 or HOURS_PER_CLASS: 4) by "
+            f"whoever administers this persona; until then nothing is estimated, because a "
+            f"figure the rules describe and the estimate silently omits is a wrong number about "
+            f"a person's pay.")
+    return " ".join(parts)

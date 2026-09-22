@@ -4,6 +4,38 @@
 
 ### Fixed
 
+- **`coordinator` — a remuneração declarada em PROSA é NOMEADA na recusa, e as horas passam a
+  ser as de CADA AULA (`HOURS_PER_CLASS`), nunca a carga da disciplina vezes as aulas.** Medido
+  22/09/2026 em turnos reais (`turns.id` 1963–1968): `estimate_professor_pay` foi escolhida e
+  correu, `ok=true`, e devolveu `NOT CONFIGURED: PAY_RATE_PER_HOUR, COLUMN_HOURS are missing` —
+  sobre regras que TÊM os valores, em português corrido («Aula - R$ 120,00 por hora, sendo o
+  mínimo 4 horas por aula», «Ibope > 80% e <89%: Adicional de R$ 30,00 por hora», «respondido por
+  pelo menos 30% da turma»). `_find` lê só `CHAVE: valor` e devolve o default em silêncio, por
+  isso a mesma verdade em duas gramáticas contava numa e nada avisava. Agora `CoordinatorConfig`
+  RECONHECE essas formas (regex conservadora, por linha, ancorada numa figura — nunca lê a frase
+  como número), avisa UMA vez por configuração por processo, e a recusa diz «found "R$ 120,00 por
+  hora" in the rules, but PAY_RATE_PER_HOUR is not declared» para cada chave em prosa. Uma chave
+  OPCIONAL em prosa (`IBOPE_BONUS`, `IBOPE_MIN_RESPONSE_PCT`) recusa também, pela razão da banda
+  ilegível: «este tenant não declara bónus» sobre regras que o descrevem paga menos com a frase
+  que um tenant sem bónus recebe legitimamente.
+
+  A semântica das horas, fixada pelo dono («na planilha tem a carga horária completa da
+  disciplina, cada linha na planilha equivale a 4 horas»): **remuneração do mês = aulas do mês ×
+  `HOURS_PER_CLASS` × `PAY_RATE_PER_HOUR` (+ bónus IBOPE por hora)**. `HOURS_PER_CLASS` é chave
+  NOVA e obrigatória — sem ela `NOT CONFIGURED` nomeia-a; nunca se infere 4 nem se divide a carga
+  pelo número de aulas. `COLUMN_HOURS` passa a OPCIONAL e a CONTEXTO: a carga TOTAL da disciplina,
+  numa secção própria no fim do bloco («Carga horária total das disciplinas»), com o valor da
+  disciplina inteira (carga × valor/hora, sem bónus) — nunca mais multiplicada por aulas. Até
+  aqui havia três declarações em desacordo dentro do código (`config.py` «per-discipline hour
+  total»; `pay.py` `hours_each × classes`; o teste 16 h × 2 aulas → 32 h · R$ 3.840,00) e a que
+  decidia o salário era a errada: a regra do dono paga 2 × 4 h × R$ 120,00 = **R$ 960,00**. Os
+  testes fixam os números dele (960; IBOPE 85 % → 1.200; 92 % → 1.280) e o gémeo do erro antigo
+  (carga 16 h e 2 aulas → 3.840 AUSENTE, a carga só como contexto). Bloco: nova linha «Horas por
+  aula declaradas nas regras: 4 h»; a linha «Fora desta soma, por não terem carga horária
+  declarada» desaparece (nada fica fora da soma por causa da planilha). `PayLine.hours_each` →
+  `hours_per_class` + `workload`; `PayEstimate.hours_missing` → `workload_missing`, mais
+  `hours_per_class` e `workload_declared`.
+
 - **`scheduler/grounding` — a regra `unread_schedule_claim` passa a conhecer a leitura de material
   do host, e admite-a pelo VALOR, nunca pelo nome.** A regra 6 só aceitava como leitura as do próprio
   scheduler (`list_appointments`, `check_availability`); uma resposta fundamentada num
