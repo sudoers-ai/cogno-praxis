@@ -1414,6 +1414,25 @@ class CoordinatorService:
         leave a name out**: every folded key of these rows is in exactly one
         :class:`ProfessorGroup`.
 
+        **The LISTING and the REMUNERATION BLOCK can therefore show DIFFERENT spellings of the
+        same person, and that is deliberate rather than an oversight.** This map is read by the
+        listing, so a resolved spelling reaches a reader the way the faculty tab DECLARES it;
+        the remuneration block names every estimate :attr:`PayEstimate.professor`, which is the
+        group's ``canonical`` — and for a spelling that was only ever a LABEL, that is still the
+        schedule's own. The same professor can be «as the tab declares him» on the schedule
+        listing and «as the sheet types him» on the pay block, on the same day, over the same
+        rows.
+
+        The two surfaces answer two questions whose wrong answers cost different ORDERS OF
+        MAGNITUDE, and that is the whole reason the field is separate. The listing exists so
+        that somebody — a person, or the tool that notifies one — can FIND the professor: a
+        wrong name there is on a screen, read by a human, and corrected in the next sentence.
+        The block exists so that nobody is paid for somebody else's classes: a wrong name there
+        has already moved money, and there is no one left to see it. So the LABEL is decided on
+        evidence the SUM refuses (:attr:`ProfessorGroup.shown_as`), never the other way round —
+        and the divergence is never silent, because the same resolution puts that person on
+        ``maybe_same``, so the block states out loud that the two spellings were NOT summed.
+
         No ``report``: this is a DISPLAY refinement over a tab the listing does not otherwise
         read, and a tab it cannot read means "no cast", which is already the documented
         degradation. Announcing it in a schedule listing's error footer would report a failure
