@@ -40,6 +40,7 @@ from cogno_praxis.coordinator.pay import (
     parse_money,
 )
 from cogno_praxis.coordinator.rsvp import (
+    RSVP_DECLINED,
     RSVP_PENDING,
     label_for,
     parse_answer,
@@ -115,6 +116,82 @@ def _norm(text: str) -> str:
     """Accent-stripped, lowercased — for label/name comparison ('Ciência'→'ciencia')."""
     nfkd = unicodedata.normalize("NFKD", text or "")
     return "".join(c for c in nfkd if not unicodedata.combining(c)).lower().strip()
+
+
+#: The separator a secretary writes between a discipline and the exception she is annotating it
+#: with — a spaced dash, in the three shapes a spreadsheet produces (typed hyphen, and the two
+#: dashes an editor substitutes for it). SPACED on both sides on purpose: it is what tells an
+#: annotation from a hyphen inside a name ("Pós-Graduação" is one word, not a class put off).
+_ANNOTATION_SEP = re.compile(r"\s[-–—]\s")
+
+
+def _annotation(subject: str) -> str:
+    """What a subject cell says AFTER its last spaced dash — ``""`` when it says nothing.
+
+    ``"Machine Learning - Aula adiada"`` → ``"Aula adiada"``; ``"Machine Learning"`` → ``""``.
+
+    The LAST separator, not the first, because the annotation is appended to whatever was
+    already there, and disciplines carry dashes of their own ("Data Science - Advanced"). A
+    cell with no separator has no annotation: the caller then compares the whole cell, which
+    is what every label comparison in this module did before there was anything else to do.
+    """
+    parts = _ANNOTATION_SEP.split(subject or "")
+    return parts[-1].strip() if len(parts) > 1 else ""
+
+
+def _name_tokens(name: str) -> tuple[str, ...]:
+    """A person's name, folded and split — the unit every comparison below is made of."""
+    return tuple(t for t in _norm(name).split() if t)
+
+
+def _is_abbreviation_of(short: tuple[str, ...], long: tuple[str, ...]) -> bool:
+    """Could ``short`` be somebody writing ``long`` in fewer words — same first name, and every
+    word of it already in the long one?
+
+    True for «Helena Quintar» ⊂ «Helena Quintar Bonfim» and for «Tomás Alvim» ⊂ «Tomás
+    Nogueira de Alvim Prado». Containment of tokens and equality of the first one: no
+    ``difflib``, no edit distance, no threshold of resemblance anywhere in this file's
+    treatment of people's names.
+
+    **On its own this predicate is NOT a decision, and it is never used as one.** It says two
+    spellings are compatible, not that they are one person — «Tomás Alvim» is compatible with
+    every declared name beginning "Tomás" that contains "Alvim". What turns it into an answer
+    is the caller: :meth:`CoordinatorService._professor_groups` runs it against the tenant's
+    DECLARED people and acts only when exactly one fits. Pairwise, it would be a rule whose
+    safety has to be ARGUED; against a closed declared set, it is a rule whose safety can be
+    COUNTED, and the counting is what the twins pin.
+
+    It deliberately does NOT require the last token to agree. Requiring it is defensible in
+    the abstract and wrong in the data: counted over the 32 spellings the tenant this was
+    written for carries, first-AND-last joins 7 pairs and MISSES 7 more — every one of those
+    seven one person, confirmed against their disciplines and their declared address — because
+    the most ordinary way to shorten a name is to drop the family name.
+    """
+    return (bool(short) and len(short) < len(long) and short[0] == long[0]
+            and set(short) <= set(long))
+
+
+def _same_professor(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
+    """Are these two spellings ONE person, compared with nothing else to go on?
+
+    The PAIRWISE question, and it gets the strict answer precisely because there is no third
+    thing to check it against: equal, or one is the other written out with BOTH the first and
+    the last token agreeing. «Ana» is not «Ana Silva» here — it could be, and nothing in a pair
+    of strings can say so, and the caller is about to attach a survey result worth R$ 40,00 an
+    hour to whoever it picks.
+
+    Used where there is no declared cast to anchor to (the IBOPE tab). The looser
+    :func:`_is_abbreviation_of` is for the other shape — resolving against the people the
+    tenant declared, where a unique fit is a fact and not a preference.
+    """
+    if not a or not b:
+        return False
+    return a == b or _fuller(a, b) or _fuller(b, a)
+
+
+def _fuller(short: tuple[str, ...], long: tuple[str, ...]) -> bool:
+    """:func:`_is_abbreviation_of` with the FAMILY NAME required to agree as well."""
+    return _is_abbreviation_of(short, long) and short[-1] == long[-1]
 
 
 def _fuzzy_match_discipline(query: str, candidate: str,
@@ -305,6 +382,34 @@ def _ambiguous_year(matches: "list[ClassEntry]", raw: str) -> bool:
 
 
 @dataclass(frozen=True)
+class ProfessorGroup:
+    """ONE person, and every spelling of their name the tenant's data carries.
+
+    The faculty-wide estimate used to be keyed on the folded spelling, so a schedule that
+    wrote a professor's name out in full on some rows and shortened it on others produced TWO
+    blocks of half the pay each — and asking for either spelling by hand returned that half,
+    under a header naming the person, with nothing anywhere to say the other half existed. Measured on
+    the first real use of the supervision (turn 116): the faculty TOTAL was right all along,
+    because every class was counted once; what was broken is the per-person view, which is the
+    one somebody pays from.
+
+    ``canonical`` is the FULLEST spelling — the one the sheet writes out, the one a payroll
+    line should carry — and ``variants`` the others, which the block names out loud
+    (:attr:`PayEstimate.variants`): a merge a reader cannot see is a merge they cannot undo,
+    and this one is a guess about a person that a human must be able to check with their eyes.
+
+    ``maybe_same`` names people this refused to merge and a human might still — a spelling
+    that fits two declared professors or none, and two tab rows sharing an address their names
+    do not corroborate. It is carried on BOTH blocks of such a pair, because whichever one a
+    reader opens is where the warning has to be.
+    """
+    canonical: str                     # the fullest spelling — what the block is headed with
+    keys: tuple[str, ...]              # every folded key that belongs to this person
+    variants: tuple[str, ...]          # the OTHER spellings, as the sheet writes them
+    maybe_same: tuple[str, ...] = ()   # canonical spellings this might be, and would not merge
+
+
+@dataclass(frozen=True)
 class CalendarProposal:
     """What ONE calendar send WOULD put in the mail, read and NOT sent.
 
@@ -399,6 +504,38 @@ class CoordinatorService:
         n = _norm(subject)
         return any(n == _norm(lbl) for lbl in self.cfg.free_slot_labels)
 
+    def _is_postponed(self, subject: str) -> bool:
+        """Does this subject cell say the class was PUT OFF — the whole cell, or its annotation?
+
+        The one predicate here that does not read the cell WHOLE, and the reason is that the
+        fact is not written there. The secretary does not replace the discipline with an
+        exception label; she appends one, and the class keeps its name:
+        ``"<discipline> - Aula adiada"``. Every label comparison in this class had been
+        whole-cell, so that row read as an ordinary class and WAS PAID — measured on the
+        owner's own tenant (turn 105): R$ 1.440,00 for three classes where two were taught,
+        R$ 480,00 of somebody else's money in a figure a human was shown.
+
+        **Why the annotation and not a substring.** The two words the tenant appends to these
+        rows are opposites — a class ADIADA was not given, and the ``reposição`` that follows
+        it IS the day it was given — so the postponed row must stop paying while the make-up
+        row keeps paying, and a fix that matched anywhere in the cell would have taken the
+        second one down with the first ("Reposição" is a ``FREE_SLOT_LABEL``: a whole cell that
+        says only that is an open slot, and a substring rule would have read the annotated
+        make-up as one). It also protects the honest case the other way round: a discipline
+        whose own NAME contains one of these words is not an exception, it is a subject, and
+        it is paid like any other.
+
+        A postponed class is NOT a :meth:`_is_skip` row and is deliberately not made into one:
+        skipping drops it from the listing, and a professor reading their month has to see the
+        class that did not happen — the annotation says so in their own words, on the line. It
+        is not a free slot either: a free slot was never anybody's class. It is a class that
+        was scheduled, moved, and is paid on the day it was actually taught.
+        """
+        n = _norm(subject)
+        ann = _norm(_annotation(subject))
+        return any(n == _norm(lbl) or (bool(ann) and ann == _norm(lbl))
+                   for lbl in self.cfg.postponed_labels)
+
     # ── aggregation (the core read) ──────────────────────────────────────────────────
     def aggregate(self, *, include_skip: bool = False, include_free: bool = True,
                   report: Optional[ReadReport] = None) -> list[ClassEntry]:
@@ -439,6 +576,7 @@ class CoordinatorService:
                     professor=self._cell(row, cols.professor_idx),
                     subject=subject, cells=list(row), header=header)
                 entry._free = free  # type: ignore[attr-defined]
+                entry._postponed = self._is_postponed(subject)  # type: ignore[attr-defined]
                 out.append(entry)
         out.sort(key=lambda e: (e.when is None, e.when or date.max))
         return out
@@ -755,6 +893,15 @@ class CoordinatorService:
         unreadable, no row names this professor, or SEVERAL rows do and disagree. That last one
         is the reason this returns rather than picks. Two results and a choice between them is
         an invented bonus wearing a real number, and the professor cannot tell which it was.
+
+        **Which rows are this professor's is :func:`_same_professor`'s question, not a
+        substring's.** It used to be ``want in _norm(cell)``, and a name is not a prefix of a
+        person: «Ana» took «Ana Silva»'s survey result, «Silva» took every Silva's, and the
+        winner was whichever one happened to be the only match — a bonus of R$ 30,00 or
+        R$ 40,00 an hour landing on somebody else's pay, or a real result lost to a
+        disagreement between two rows about two different people. The predicate is the one
+        :meth:`_professor_universe` groups by, for the reason the two questions are one: a row
+        belongs to a person, and this file may not hold two answers to that.
         """
         tab, col = self.cfg.tab_ibope.strip(), self.cfg.column_ibope.strip()
         if not tab or not col:
@@ -777,9 +924,9 @@ class CoordinatorService:
                           if c == self.cfg.column_professor.strip().lower()), None)
             if v_idx is None or p_idx is None:
                 continue
-            want = _norm(identity_label)
+            want = _name_tokens(identity_label)
             for row in rows[1:]:
-                if want and want not in _norm(self._cell(row, p_idx)):
+                if want and not _same_professor(want, _name_tokens(self._cell(row, p_idx))):
                     continue
                 pct = parse_money(self._cell(row, v_idx).rstrip("%"))
                 if pct is not None:
@@ -836,14 +983,40 @@ class CoordinatorService:
         month_start = self._today().replace(day=1)
         return [e for e in entries if e.when is None or e.when >= month_start]
 
-    @staticmethod
-    def _payable(e: ClassEntry) -> bool:
-        """A row that counts as a class given: dated, with a discipline, and not a free slot."""
-        return not (e.is_free_slot or e.when is None or not e.subject.strip())
+    def _payable(self, e: ClassEntry) -> bool:
+        """A row that counts as a CLASS GIVEN: dated, with a discipline, not a free slot, not
+        put off, and not one the professor answered NO to.
+
+        The first three are what a row has to BE. The last two are what the tenant's own sheet
+        SAYS ABOUT IT, in the two places they write it, and both were being read past:
+
+        * **put off** (:attr:`ClassEntry.is_postponed`) — the discipline carries a
+          ``" - Aula adiada"`` annotation, and the make-up row that follows names the date it
+          is making up for. Both were paid. Measured on the owner's tenant, turn 105:
+          R$ 1.440,00 where the truth was R$ 960,00, shown to a human as a figure.
+        * **declined** (:meth:`class_response` = ``RSVP_DECLINED``) — the professor answered the
+          invitation with a NO, ``record_class_response`` wrote the tenant's own word for it
+          into ``COLUMN_STATUS``, the listing has been showing it since, and the pay never
+          looked at the column at all. A class somebody declined is a class nobody taught.
+
+        **Only an explicit decline stops the money.** ``PENDING`` pays, and so does a status
+        cell holding something this system did not write (``None`` — a note a secretary left).
+        The asymmetry is the point: an answer is a fact, and its ABSENCE is not the opposite
+        fact. Refusing to pay an unanswered class would invent a decline out of a silence and
+        dock somebody who simply taught without replying to an e-mail, which is the same class
+        of error as paying a class that never happened, pointed at the person instead of at the
+        institution.
+        """
+        if e.is_free_slot or e.when is None or not e.subject.strip():
+            return False
+        if e.is_postponed:
+            return False
+        return self.class_response(e) != RSVP_DECLINED
 
     def _pay_estimate(self, entries: list[ClassEntry], *, rate: float, hours_per_class: float,
                       period: str, professor: str, ibope_label: str,
-                      report: Optional[ReadReport]) -> PayEstimate:
+                      report: Optional[ReadReport], variants: tuple[str, ...] = (),
+                      maybe_same: tuple[str, ...] = ()) -> PayEstimate:
         """The arithmetic over entries ALREADY scoped to ONE person — the same code whether that
         person is the caller, a professor an oversight role named, or one of everybody.
 
@@ -890,7 +1063,8 @@ class CoordinatorService:
             workload_read=workload_read, workload_missing=tuple(workload_missing),
             tiers=self.cfg.ibope_bonus, ibope_found=pct is not None, ibope_pct=pct,
             ibope_tab=self.cfg.tab_ibope.strip(), period=month_label(period),
-            ibope_min_response_pct=self.cfg.ibope_min_response_pct, professor=professor)
+            ibope_min_response_pct=self.cfg.ibope_min_response_pct, professor=professor,
+            variants=variants, maybe_same=maybe_same)
 
     def _professor_universe(self, entries: list[ClassEntry],
                             report: Optional[ReadReport]) -> dict[str, str]:
@@ -918,10 +1092,149 @@ class CoordinatorService:
             out.setdefault(_norm(name), name)
         return dict(sorted(out.items()))
 
+    def _declared_people(
+            self, report: Optional[ReadReport]) -> list[tuple[str, list[str], tuple[str, ...]]]:
+        """**Layer one of two: the CAST** — the people the tenant's professors tab DECLARES,
+        as ``(fullest spelling, every spelling of them)``, in the tab's own order.
+
+        Two rows are one person when they share an E-MAIL ADDRESS **and** one name is an
+        abbreviation of the other (:func:`_is_abbreviation_of`). Both halves are required, and
+        which half is doing what is the point: **the address is CORROBORATION, not AUTHORITY.**
+        It is a cell a human types into a spreadsheet nobody validates, and the shapes that
+        make it lie are ordinary ones — a departmental mailbox, the secretary's address copied
+        down a column, a paste into the wrong row. Two colleagues sharing a first name and a
+        ``secretaria@`` address would otherwise become one person, and one of them would be
+        paid for the other's classes with nothing on the page to show it.
+
+        A shared address that the names do not corroborate joins NOTHING and is said out loud
+        instead — both rows keep their block and each names the other
+        (:attr:`ProfessorGroup.maybe_same`), and the refusal is logged with the two spellings
+        and never the address. Measured on the tenant this was written for: 16 spellings, 15
+        people, ONE join (same first name, one name contained in the other), ZERO refusals.
+        This branch changes no figure today; it is a condition for the day the tab says
+        something else, which is the only day it could cost anybody anything.
+
+        **What the pairing costs, stated because it is a real loss:** a person whose family
+        name CHANGED and who kept their address — «Maria Silva» and «Maria Souza» on one
+        e-mail — no longer joins. It does not occur in this tenant's data, the direction of
+        the error is the safe one (a sum that is short), and the outcome is visible: two
+        blocks and a note on each. Parked by name: ``mudanca-de-apelido-com-o-mesmo-email``.
+
+        The address never leaves this method — not to a caller, not to a log line, not to a
+        rendered block. It is read, compared, and dropped.
+        """
+        rows = self._faculty_records(report)
+        names = [name for name, _ in rows]
+        mails: dict[str, set[str]] = {}
+        for name, rec in rows:
+            key = next((h for h in rec if "mail" in h), "")
+            raw = rec.get(key, "") if key else ""
+            mails[name] = {m.strip().lower()
+                           for m in raw.replace(",", ";").split(";") if m.strip()}
+        parent: dict[str, str] = {name: name for name in names}
+
+        def root(x: str) -> str:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        unsettled: list[tuple[str, str]] = []
+        for i, a in enumerate(names):
+            for b in names[i + 1:]:
+                if not (mails[a] & mails[b]):
+                    continue
+                ta, tb = _name_tokens(a), _name_tokens(b)
+                if not (_is_abbreviation_of(ta, tb) or _is_abbreviation_of(tb, ta)):
+                    _log.warning("coordinator: %r and %r share an e-mail address, but neither "
+                                 "name is the other written out — NOT joined; check the "
+                                 "professors tab", a, b)
+                    unsettled.append((a, b))
+                    continue
+                ra, rb = root(a), root(b)
+                if ra != rb:
+                    parent[rb] = ra
+        grouped: dict[str, list[str]] = {}
+        for name in names:
+            grouped.setdefault(root(name), []).append(name)
+        cast = [(max(v, key=lambda s: len(_name_tokens(s))), v) for v in grouped.values()]
+        canon = {s: c for c, v in cast for s in v}
+        warn: dict[str, set[str]] = {}
+        for a, b in unsettled:
+            warn.setdefault(canon[a], set()).add(canon[b])
+            warn.setdefault(canon[b], set()).add(canon[a])
+        return [(c, v, tuple(sorted(warn.get(c, ())))) for c, v in cast]
+
+    def _professor_groups(self, entries: list[ClassEntry],
+                          report: Optional[ReadReport]) -> tuple[ProfessorGroup, ...]:
+        """**Layer two: every spelling in the data, anchored to the cast** — one
+        :class:`ProfessorGroup` per person, ordered by the folded canonical so every worker
+        renders the tenant the same way.
+
+        A spelling off the SCHEDULE is resolved against the people
+        :meth:`_declared_people` returned: the same one written out, or an abbreviation of it
+        — same first token, every token of the short one present in the long one — **and only
+        when exactly ONE declared person fits**. Two candidates is not a tie to break, it is a
+        question this cannot answer: the spelling gets its own block and both candidates are
+        named on it, because choosing between two people is how one of them gets paid for the
+        other's classes. A spelling that fits nobody keeps its block too, and names the
+        declared people who share its first name so a reader can settle it in a second.
+
+        **Against the CAST, never between loose spellings, and that is what makes it a rule
+        rather than a coincidence.** Comparing spellings pairwise cannot tell two
+        abbreviations of ONE declared name, each cutting a different half of it, from two
+        colleagues who merely share a first name; anchored, both resolve to the person the
+        tenant declared, and neither is compared to the other at all. Counted over the 32
+        spellings the tenant's two sources carry: requiring first AND last token to agree joins
+        7 pairs and MISSES 7 more, every one of those seven one person, because the commonest
+        abbreviation is the one that drops the family name.
+
+        **Nothing joins without a declaration.** A tenant whose professors tab is empty — the
+        live shape of 2026-09-22, when the declared tab name matched no sheet — gets exactly
+        the blocks it got before, one per spelling, and not one note: with no cast there is
+        no candidate to name, and inventing one out of the schedule alone is the pairwise
+        guessing this design refuses. The honest failure is a sum that is SHORT and says so.
+        """
+        universe = self._professor_universe(entries, report)
+        cast = self._declared_people(report)
+        declared: dict[str, int] = {}                  # folded declared spelling → cast index
+        for i, (_canonical, spellings, _warn) in enumerate(cast):
+            for s in spellings:
+                declared.setdefault(_norm(s), i)
+        members: dict[int, list[str]] = {i: [] for i in range(len(cast))}
+        alone: list[tuple[str, tuple[str, ...]]] = []  # (universe key, the people it may be)
+        for key, spelling in universe.items():
+            at = declared.get(key)
+            if at is None:
+                hits = [i for i, (canonical, _s, _w) in enumerate(cast)
+                        if _is_abbreviation_of(_name_tokens(spelling), _name_tokens(canonical))]
+                if len(hits) != 1:
+                    # NOT a tie to break. Two declared people fit, or none does: either way the
+                    # spelling keeps its own block and names whoever it might be — the
+                    # candidates when there were several, and otherwise the declared people who
+                    # share its first name, which is the shortest list a human can settle.
+                    first = _name_tokens(spelling)[:1]
+                    maybe = tuple(cast[i][0] for i in hits) or tuple(
+                        canonical for canonical, _s, _w in cast
+                        if first and _name_tokens(canonical)[:1] == first)
+                    alone.append((key, maybe))
+                    continue
+                at = hits[0]
+            members[at].append(key)
+        groups = [
+            ProfessorGroup(canonical=cast[i][0], keys=tuple(keys),
+                           variants=tuple(universe[k] for k in keys if universe[k] != cast[i][0]),
+                           maybe_same=cast[i][2])
+            for i, keys in members.items()] + [
+            ProfessorGroup(canonical=universe[key], keys=(key,), variants=(), maybe_same=maybe)
+            for key, maybe in alone]
+        return tuple(sorted(groups, key=lambda g: _norm(g.canonical)))
+
     def _resolve_professor(self, target: str, entries: list[ClassEntry],
-                           report: Optional[ReadReport]) -> str:
-        """The ONE professor an oversight role's ``professor=<name>`` designates — the sheet's
-        spelling — or a refusal that says why there is not exactly one.
+                           report: Optional[ReadReport]) -> ProfessorGroup:
+        """The ONE professor an oversight role's ``professor=<name>`` designates — as a
+        :class:`ProfessorGroup`, every spelling of them included — or a refusal saying why
+        there is not exactly one.
 
         The matching rule is :meth:`_visible`'s, applied to the universe instead of to the
         rows: accent-stripped, case-folded SUBSTRING (``"silva"`` inside ``"ana silva"``), no
@@ -932,17 +1245,25 @@ class CoordinatorService:
         would sum both under one name, which is the bare-sum defect in a new coat — ``"Ana"``
         is inside ``"Mariana"``. A name that matches nobody refuses too, rather than answering
         "no classes" about a person who does not exist.
+
+        **It searches the GROUPS, so a name that matches two SPELLINGS of one person is not an
+        ambiguity** — it used to be, and worse: asking by the SHORT spelling matched only the
+        short rows, because a folded substring is a test on a STRING and a two-word name is not
+        inside the four-word one it abbreviates. The supervisor got a block headed with the name
+        they asked for, holding half the classes, with nothing to say so. Both halves now answer
+        under the declared spelling, and the block says which spellings it summed.
         """
         n = _norm(target)
-        hits = [spelling for key, spelling in
-                self._professor_universe(entries, report).items() if n in key]
+        hits = [g for g in self._professor_groups(entries, report)
+                if any(n in key for key in g.keys)]
         if not hits:
             raise CoordinatorError(
                 f'No professor matching "{target}" in the schedule or the faculty records — '
                 f"nothing to estimate under that name. Check the spelling or list the faculty.")
         if len(hits) > 1:
+            names = ", ".join(g.canonical for g in hits)
             raise CoordinatorError(
-                f'"{target}" matches {len(hits)} professors — {", ".join(hits)}. Name one of '
+                f'"{target}" matches {len(hits)} professors — {names}. Name one of '
                 f"them; an estimate that summed them would be one figure about two people.")
         return hits[0]
 
@@ -1013,14 +1334,20 @@ class CoordinatorService:
             # ONE read of the schedule: the universe (to resolve the name) and the rows (the
             # listing's own role filter, by the same folded substring) come off the same grid.
             everything = self.aggregate(report=report)
-            name = self._resolve_professor(target, everything, report)
-            rows, err = self._visible(everything, professor=name, role=role, identity_label=me)
-            assert err is None                         # an oversight role is never refused here
+            group = self._resolve_professor(target, everything, report)
+            # The rows are the GROUP's, not the canonical spelling's: ``_visible`` matches a
+            # folded substring, and the short spelling of a name is not a substring of the long
+            # one, so filtering by the canonical would answer with the half of the classes that
+            # happen to be written out in full. The access check above is what ``_visible``
+            # would have contributed here, and it has already run.
+            rows = [e for e in everything if _norm(e.professor) in group.keys]
             rows = self._filter_schedule(rows, month=period, turma=turma, include_past=True,
                                          apply_horizon=False, report=report)
             return self._pay_estimate(self._pay_window(rows, period), rate=rate,
                                       hours_per_class=hours_per_class, period=period,
-                                      professor=name, ibope_label=name, report=report)
+                                      professor=group.canonical, ibope_label=group.canonical,
+                                      variants=group.variants, maybe_same=group.maybe_same,
+                                      report=report)
         rate, hours_per_class = self._pay_config()
         # ``apply_horizon=False``, for the reason the calendar export already opts out: the
         # 30-day default exists so a professor READING a list does not have to scroll, and this
@@ -1085,25 +1412,30 @@ class CoordinatorService:
             raise CoordinatorAccessError(_OWN_PAY_ONLY)
         rate, hours_per_class = self._pay_config()
         everything = self.aggregate(report=report)
-        universe = self._professor_universe(everything, report)
+        groups = self._professor_groups(everything, report)
         master, err = self._visible(everything, professor="", role=role,
                                     identity_label=identity_label)
         assert err is None                             # an oversight role is never refused here
         rows = self._pay_window(
             self._filter_schedule(master, month=period, turma=turma, include_past=True,
                                   apply_horizon=False, report=report), period)
-        by_name: dict[str, list[ClassEntry]] = {key: [] for key in universe}
+        # A row belongs to the PERSON its spelling resolves to, not to the spelling. Every
+        # folded key in the universe is in exactly one group — a name that fell out here would
+        # be a professor silently paid nothing — so the lookup below cannot miss.
+        at = {key: i for i, g in enumerate(groups) for key in g.keys}
+        by_person: dict[int, list[ClassEntry]] = {i: [] for i in range(len(groups))}
         unassigned = 0
         for e in rows:
             key = _norm(e.professor)
             if not key:
                 unassigned += self._payable(e)
                 continue
-            by_name[key].append(e)                     # every schedule name is in the universe
+            by_person[at[key]].append(e)
         estimates = tuple(
-            self._pay_estimate(by_name[key], rate=rate, hours_per_class=hours_per_class,
-                               period=period, professor=name, ibope_label=name, report=report)
-            for key, name in universe.items())
+            self._pay_estimate(by_person[i], rate=rate, hours_per_class=hours_per_class,
+                               period=period, professor=g.canonical, ibope_label=g.canonical,
+                               variants=g.variants, maybe_same=g.maybe_same, report=report)
+            for i, g in enumerate(groups))
         return FacultyPayEstimate(rate=rate, hours_per_class=hours_per_class,
                                   estimates=estimates, unassigned_classes=unassigned,
                                   period=month_label(period))

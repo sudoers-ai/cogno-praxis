@@ -228,9 +228,14 @@ def test_ALL_PROFESSORS_answers_the_supervisor_with_one_block_per_professor_and_
     assert [e.professor for e in fac.estimates] == [A, B, C]
     by = {e.professor: e for e in fac.estimates}
     assert (by[A].hours, by[A].base) == (12, 1440.0)      # turn 115's own figures, now named
-    assert (by[B].hours, by[B].base) == (36, 4320.0)      # 4 Python + 5 Spark classes × 4 h
-    assert (by[C].hours, by[C].base) == (24, 2880.0)      # 3 Advanced Spark + 3 Microservices
-    assert (fac.hours, fac.base) == (72, 8640.0)
+    # B and C each have ONE class the sheet annotates «- Aula adiada», and a make-up row that
+    # names its date. This file used to pin 36 h / R$ 4.320,00 and 24 h / R$ 2.880,00 — the
+    # postponed class paid, and so did the make-up, so one class was bought twice. The
+    # docstring above says this fixture IS the tenant's September, which made the pin a test
+    # DEFENDING the defect: see ``test_a_postponed_class_and_its_make_up_are_ONE_class_paid_ONCE``.
+    assert (by[B].hours, by[B].base) == (32, 3840.0)      # 4 Python + 5 Spark, ONE of them adiada
+    assert (by[C].hours, by[C].base) == (20, 2400.0)      # 3 Microservices + 3 Spark, one adiada
+    assert (fac.hours, fac.base) == (64, 7680.0)          # was 72 h / R$ 8.640,00 — R$ 960,00 less
     assert fac.unassigned_classes == 1                    # the holiday row: dated, no professor
 
     block = render_faculty_pay_block(fac)
@@ -240,9 +245,9 @@ def test_ALL_PROFESSORS_answers_the_supervisor_with_one_block_per_professor_and_
     # each professor's section carries THEIR figures, in name order
     a, b, c = (block.index(h) for h in heads)
     assert a < block.index("12 h · R$ 1.440,00") < b
-    assert b < block.index("36 h · R$ 4.320,00") < c
-    assert c < block.index("24 h · R$ 2.880,00")
-    assert "*Total (3 professores)*\nBase: 72 h · R$ 8.640,00" in block
+    assert b < block.index("32 h · R$ 3.840,00") < c
+    assert c < block.index("20 h · R$ 2.400,00")
+    assert "*Total (3 professores)*\nBase: 64 h · R$ 7.680,00" in block
     # the bonus is OPEN for all three (no IBOPE result), so no total with bonus is invented
     assert f"Com bônus: não somado — o bônus de {A}, {B}, {C} está em aberto" in block
     assert "Sem professor na agenda: 1 aula" in block
@@ -256,12 +261,12 @@ def test_the_grand_total_is_NEVER_a_bare_sum():
     counts the people — and the block per professor precedes it."""
     block = render_faculty_pay_block(_svc().estimate_faculty_pay(period="2026-09", **SUPERVISOR))
     lines = block.splitlines()
-    where = [i for i, ln in enumerate(lines) if "R$ 8.640,00" in ln]
+    where = [i for i, ln in enumerate(lines) if "R$ 7.680,00" in ln]
     assert len(where) == 1
     assert lines[where[0]].startswith("Base: ")
     assert lines[where[0] - 1] == "*Total (3 professores)*"
     assert block.count("*Professor: ") == 3
-    assert "*Base*\n72 h" not in block                    # no professor's block holds the sum
+    assert "*Base*\n64 h" not in block                    # no professor's block holds the sum
 
 
 def test_a_professor_with_no_class_in_the_period_appears_with_ZERO_classes_not_in_silence():
@@ -277,7 +282,7 @@ def test_a_professor_with_no_class_in_the_period_appears_with_ZERO_classes_not_i
     block = render_faculty_pay_block(fac)
     assert f"*Professor: Professor D*\n{NO_CLASSES_LINE}" in block
     assert "0 aulas" in NO_CLASSES_LINE
-    assert "*Total (4 professores)*\nBase: 72 h · R$ 8.640,00" in block   # unchanged by a zero
+    assert "*Total (4 professores)*\nBase: 64 h · R$ 7.680,00" in block   # unchanged by a zero
     assert "@" not in block                               # the tab's e-mail never rides out
 
 
@@ -291,8 +296,8 @@ def test_the_total_WITH_bonus_is_stated_only_when_every_professors_bonus_is_dete
     svc.store.put(S33, "Resultados IBOPE", [["Professor", "Resultado"], [A, "85"], [B, "92"], [C, "70"]])
     fac = svc.estimate_faculty_pay(period="2026-09", **SUPERVISOR)
     assert fac.undetermined == ()
-    assert fac.total_with_bonus == pytest.approx(8640 + 12 * 30 + 36 * 40 + 0)
-    assert "Com bônus: R$ 10.440,00" in render_faculty_pay_block(fac)
+    assert fac.total_with_bonus == pytest.approx(7680 + 12 * 30 + 32 * 40 + 0)
+    assert "Com bônus: R$ 9.320,00" in render_faculty_pay_block(fac)
 
     svc.store.put(S33, "Resultados IBOPE", [["Professor", "Resultado"], [A, "85"], [C, "70"]])
     fac = svc.estimate_faculty_pay(period="2026-09", **SUPERVISOR)
@@ -306,7 +311,7 @@ def test_the_total_WITH_bonus_is_stated_only_when_every_professors_bonus_is_dete
 def test_an_oversight_role_naming_a_professor_gets_THAT_professors_estimate_with_the_name_on_it(role):
     est = _svc().estimate_professor_pay(professor=B, period="2026-09", identity_label=A, role=role)
     assert est.professor == B
-    assert (est.hours, est.base) == (36, 4320.0)
+    assert (est.hours, est.base) == (32, 3840.0)     # one of B's Spark classes is «- Aula adiada»
     block = render_pay_block(est)
     assert block.splitlines()[:2] == ["*Remuneração estimada — September 2026*", f"Professor: {B}"]
     assert "*Turma DE_09 — 09/2026*\nPython Programming for Data Engineers · 4 aulas · 16 h · R$ 1.920,00" in block
@@ -324,11 +329,17 @@ def test_the_name_is_resolved_exactly_as_the_listing_resolves_it_folded_substrin
     with pytest.raises(CoordinatorError) as exc:
         svc.estimate_professor_pay(professor="Profesor X", period="2026-09", **SUPERVISOR)
     assert 'No professor matching "Profesor X"' in str(exc.value)
-    # and the classes read are the ones the listing shows for that name
+    # and the classes read are the ones the listing shows for that name — MINUS the rows the
+    # sheet annotates as not given. The listing keeps showing the postponed class, on purpose:
+    # a professor reading their month has to see the day that did not happen, and the words
+    # «- Aula Adiada» are on the line. The estimate counts what was TAUGHT, so of C's six
+    # September rows five are paid and the sixth is paid on its make-up date instead.
     listed = svc.get_professor_schedule(professor=C, month="2026-09", include_past=True,
                                         apply_horizon=False, **SUPERVISOR)
     est = svc.estimate_professor_pay(professor=C, period="2026-09", **SUPERVISOR)
-    assert sum(ln.classes for g in est.groups for ln in g.lines) == len(listed) == 6
+    assert len(listed) == 6
+    assert sum(1 for e in listed if e.is_postponed) == 1
+    assert sum(ln.classes for g in est.groups for ln in g.lines) == len(listed) - 1 == 5
 
 
 def test_a_name_that_matches_TWO_professors_is_refused_never_summed():
