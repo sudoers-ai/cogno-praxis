@@ -42,6 +42,7 @@ Turma T1 = {SID}
 
 TAB_SCHEDULE: "Secretaria"
 RANGE_SCHEDULE: "A1:F110"
+TAB_PROFESSORS: "Info"
 TAB_IBOPE: "Resultados IBOPE"
 COLUMN_IBOPE: "Resultado"
 COLUMN_DATE: "Data"
@@ -70,6 +71,13 @@ def _svc(rows: "list[tuple[str, str]]", *, ibope: "list[list[str]] | None" = Non
             store)
 
 
+def _note_lines(out: str) -> list[str]:
+    """Every line of a tool's OUTPUT that carries the note — asserted on as it leaves for the
+    model, never on the constant alone: a count appended where the footer is RENDERED would
+    leave the constant clean and still tell the reader how many similar people the sheet holds."""
+    return [ln for ln in out.splitlines() if "similar to yours" in ln]
+
+
 def _tool(svc: CoordinatorService, name: str):
     return build_server(svc)._tool_manager._tools[name].fn
 
@@ -86,10 +94,10 @@ def _sheet(store: InMemorySpreadsheetStore) -> list[list[str]]:
 def test_the_schedule_says_similar_rows_were_left_out_and_names_nobody():
     svc, _ = _svc(TITLED)
     out = _tool(svc, "get_professor_schedule")(identity_label="Ana Lopes", month="2026-10", **EMP)
-    assert UNCONFIRMED_SIMILAR_LINE in out
+    assert _note_lines(out) == [UNCONFIRMED_SIMILAR_LINE]          # the note, exactly, once
+    assert not any(ch.isdigit() for ch in UNCONFIRMED_SIMILAR_LINE)  # and it counts nothing
     assert "01/10" in out and "02/10" not in out and "05/10" not in out    # still only hers
     assert "Prof" not in out.replace(UNCONFIRMED_SIMILAR_LINE, "")          # nobody named
-    assert not any(ch.isdigit() for ch in UNCONFIRMED_SIMILAR_LINE)          # and nothing counted
 
 
 def test_the_own_pay_says_it_too_and_still_counts_only_her_class():
@@ -98,7 +106,7 @@ def test_the_own_pay_says_it_too_and_still_counts_only_her_class():
     est = svc.estimate_professor_pay(identity_label="Ana Lopes", period="2026-10", **EMP)
     assert (est.hours, est.base) == (4, pytest.approx(400.0))
     out = _tool(svc, "estimate_professor_pay")(identity_label="Ana Lopes", period="2026-10", **EMP)
-    assert UNCONFIRMED_SIMILAR_LINE in out and "R$ 400,00" in out
+    assert _note_lines(out) == [UNCONFIRMED_SIMILAR_LINE] and "R$ 400,00" in out
 
 
 def test_no_classes_of_her_own_in_the_period_still_carries_the_note():
@@ -106,7 +114,7 @@ def test_no_classes_of_her_own_in_the_period_still_carries_the_note():
     classes» alone would be the half of the truth that reads as the whole of it."""
     svc, _ = _svc([("03/11/2026", "Ana Lopes"), ("02/10/2026", "Prof. Ana Lopes")])
     out = _tool(svc, "estimate_professor_pay")(identity_label="Ana Lopes", period="2026-10", **EMP)
-    assert "No classes found" in out and UNCONFIRMED_SIMILAR_LINE in out
+    assert "No classes found" in out and _note_lines(out) == [UNCONFIRMED_SIMILAR_LINE]
 
 
 @pytest.mark.parametrize("rows,label", [
@@ -122,7 +130,21 @@ def test_no_note_when_nothing_similar_was_left_out(rows, label):
     svc.get_professor_schedule(identity_label=label, month="2026-10", report=report, **EMP)
     assert report.unconfirmed_similar is False
     out = _tool(svc, "get_professor_schedule")(identity_label=label, month="2026-10", **EMP)
-    assert UNCONFIRMED_SIMILAR_LINE not in out
+    assert _note_lines(out) == []
+
+
+def test_the_faculty_record_says_it_too():
+    """The faculty door reads through the same rule: her record, and the note that a record
+    written «Prof. Ana Lopes» was left out — with that record's address nowhere in the output."""
+    svc, store = _svc([("01/10/2026", "Ana Lopes")])
+    store.put(SID, "Info", [["Professor", "E-mail"], ["Ana Lopes", "al@example.com"],
+                            ["Prof. Ana Lopes", "titled@example.com"]])
+    out = _tool(svc, "get_professor_info")(identity_label="Ana Lopes", **EMP)
+    assert "al@example.com" in out and "titled@example.com" not in out
+    assert _note_lines(out) == [UNCONFIRMED_SIMILAR_LINE]
+    # control: the same door with nothing similar left out carries no note
+    store.put(SID, "Info", [["Professor", "E-mail"], ["Ana Lopes", "al@example.com"]])
+    assert _note_lines(_tool(svc, "get_professor_info")(identity_label="Ana Lopes", **EMP)) == []
 
 
 # ── F2 — an ambiguous label refuses a WRITE, and the sheet is intact ────────────────────────
