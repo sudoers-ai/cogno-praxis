@@ -412,6 +412,25 @@ def _near_spellings(label: str, spellings: Iterable[str]) -> bool:
     return False
 
 
+def _note_unconfirmed(report: "Optional[ReadReport]", label: str,
+                      mine: set[tuple[str, ...]], spellings: Iterable[str]) -> None:
+    """The THIRD state of a non-oversight read: the label resolved to SOME rows, and other rows
+    carry a name that looks like it (:func:`_near_spellings`) but could not be confirmed as the
+    caller's. Measured on the first cut of this rule: «Ana Lopes» on a sheet with one «Ana
+    Lopes» row and two «Prof. Ana Lopes» rows answered 4 h / R$ 400,00 with nothing to say two
+    classes were left out — a partial answer read as a whole one.
+
+    It records a BIT on ``report`` (:attr:`ReadReport.unconfirmed_similar`) and nothing else —
+    no name and no count, because a count of similar rows already says how many similar
+    PEOPLE the sheet holds. ``report`` is the read record every read tool already renders as a
+    footer, which is why this rides there rather than on a new return value."""
+    if report is None or not mine:
+        return
+    rest = [s for s in spellings if _name_tokens(s) not in mine]
+    if rest and _near_spellings(label, rest):
+        report.unconfirmed_similar = True
+
+
 def _fuzzy_match_discipline(query: str, candidate: str,
                             threshold: float = _DISCIPLINE_FUZZY_THRESHOLD) -> bool:
     """Fuzzy match a discipline query against a class subject (parent parity). Strategy:
@@ -812,7 +831,8 @@ class CoordinatorService:
 
     # ── RBAC-aware professor filter ──────────────────────────────────────────────────
     def _visible(self, entries: list[ClassEntry], *, professor: str, role: str,
-                 identity_label: str) -> tuple[list[ClassEntry], Optional[str]]:
+                 identity_label: str, report: Optional[ReadReport] = None
+                 ) -> tuple[list[ClassEntry], Optional[str]]:
         """Apply role scoping. Returns (filtered, error). A non-oversight caller is pinned to
         their own name; an oversight role may query any professor or all (professor='').
 
@@ -834,6 +854,7 @@ class CoordinatorService:
             mine = _own_spellings(identity_label, (e.professor for e in entries))
             if not mine and _near_spellings(identity_label, (e.professor for e in entries)):
                 return [], _LABEL_UNRESOLVED      # the IDENTIFICATION failed, not the schedule
+            _note_unconfirmed(report, identity_label, mine, (e.professor for e in entries))
             return [e for e in entries if _name_tokens(e.professor) in mine], None
         if not target:                      # oversight + no professor → the whole master schedule
             return entries, None
@@ -899,7 +920,7 @@ class CoordinatorService:
         to hide what it cannot date. ``report.hidden_past`` counts what the cut removed, so a
         caller can say "from today onward" ONLY when something was actually left out."""
         entries, err = self._visible(self.aggregate(report=report), professor=professor,
-                                     role=role, identity_label=identity_label)
+                                     role=role, identity_label=identity_label, report=report)
         if err:
             raise CoordinatorAccessError(err)
         return self._filter_schedule(entries, month=month, discipline=discipline, turma=turma,
@@ -956,7 +977,7 @@ class CoordinatorService:
         """Disciplines whose LAST class already happened and are within the 14-day grace window
         (grades/attendance still due). Keyed by (sheet, professor, subject)."""
         entries, err = self._visible(self.aggregate(report=report), professor=professor,
-                                     role=role, identity_label=identity_label)
+                                     role=role, identity_label=identity_label, report=report)
         if err:
             raise CoordinatorAccessError(err)
         today = self._today()
@@ -984,7 +1005,7 @@ class CoordinatorService:
         Already ``[today, today+7]`` — the "no past classes" default needs nothing here, and
         that is worth saying out loud so nobody adds a second cut on top of this one."""
         entries, err = self._visible(self.aggregate(report=report), professor=professor,
-                                     role=role, identity_label=identity_label)
+                                     role=role, identity_label=identity_label, report=report)
         if err:
             raise CoordinatorAccessError(err)
         today = self._today()
@@ -1015,7 +1036,7 @@ class CoordinatorService:
         (IBOPE) reminder. The specific threshold/wording (e.g. '30% for the bonus') is the
         persona prompt's job; the vertical only identifies WHICH classes need the nudge."""
         entries, err = self._visible(self.aggregate(report=report), professor=professor,
-                                     role=role, identity_label=identity_label)
+                                     role=role, identity_label=identity_label, report=report)
         if err:
             raise CoordinatorAccessError(err)
         today = self._today()
@@ -1134,8 +1155,8 @@ class CoordinatorService:
                            sheet_key)
         return out
 
-    def _ibope_result(self, *, identity_label: str,
-                      report: Optional[ReadReport]) -> Optional[float]:
+    def _ibope_result(self, *, identity_label: str, report: Optional[ReadReport],
+                      universe: Iterable[str] = ()) -> Optional[float]:
         """The caller's own IBOPE percentage, or ``None`` — and ``None`` means NOT FOUND.
 
         ``None`` covers four different worlds on purpose, because they all license the same
@@ -1152,11 +1173,20 @@ class CoordinatorService:
         disagreement between two rows about two different people. The predicate is the one
         :meth:`_professor_universe` groups by, for the reason the two questions are one: a row
         belongs to a person, and this file may not hold two answers to that.
+
+        **And pairwise was not enough: it is :func:`_own_spellings`, with the THIRD-NAME guard,
+        over the survey tab AND the schedule (``universe``).** Measured on ``6c07c7a``: labelled
+        «Ana Lopes», a survey tab holding only «Ana Maria Lopes» (92 %) and a schedule that also
+        carries «Ana Beatriz Lopes» — the caller was handed Ana Maria's 92 % and the R$ 40,00/h
+        band, because «Ana Lopes» ⊂ «Ana Maria Lopes» agrees on first and last name and the pair
+        cannot see that «Ana Beatriz Lopes» fits the label just as well. The schedule's names
+        are the universe because the survey tab is usually a subset of the people: the person
+        who could claim a result is often only on the schedule.
         """
         tab, col = self.cfg.tab_ibope.strip(), self.cfg.column_ibope.strip()
         if not tab or not col:
             return None
-        found: set[float] = set()
+        read: list[tuple[str, float]] = []
         for key, sid in self.cfg.spreadsheets.items():
             try:
                 rows = self.store.read_range(sid, tab, self.cfg.range_ibope)
@@ -1174,13 +1204,12 @@ class CoordinatorService:
                           if c == self.cfg.column_professor.strip().lower()), None)
             if v_idx is None or p_idx is None:
                 continue
-            want = _name_tokens(identity_label)
             for row in rows[1:]:
-                if want and not _same_professor(want, _name_tokens(self._cell(row, p_idx))):
-                    continue
                 pct = parse_money(self._cell(row, v_idx).rstrip("%"))
                 if pct is not None:
-                    found.add(pct)
+                    read.append((self._cell(row, p_idx), pct))
+        mine = _own_spellings(identity_label, [cell for cell, _ in read] + list(universe))
+        found = {pct for cell, pct in read if _name_tokens(cell) in mine}
         return found.pop() if len(found) == 1 else None
 
     # ── the professor's pay: their OWN for every role; by name or faculty-wide for oversight ──
@@ -1266,7 +1295,8 @@ class CoordinatorService:
     def _pay_estimate(self, entries: list[ClassEntry], *, rate: float, hours_per_class: float,
                       period: str, professor: str, ibope_label: str,
                       report: Optional[ReadReport], variants: tuple[str, ...] = (),
-                      maybe_same: tuple[str, ...] = ()) -> PayEstimate:
+                      maybe_same: tuple[str, ...] = (),
+                      universe: tuple[str, ...] = ()) -> PayEstimate:
         """The arithmetic over entries ALREADY scoped to ONE person — the same code whether that
         person is the caller, a professor an oversight role named, or one of everybody.
 
@@ -1307,7 +1337,7 @@ class CoordinatorService:
                                      hours_per_class=hours_per_class, workload=workload))
             groups.append(PayGroup(turma=turma_key, month=f"{month:02d}/{year}", lines=lines))
 
-        pct = self._ibope_result(identity_label=ibope_label, report=report)
+        pct = self._ibope_result(identity_label=ibope_label, report=report, universe=universe)
         return PayEstimate(
             rate=rate, hours_per_class=hours_per_class, groups=groups,
             workload_read=workload_read, workload_missing=tuple(workload_missing),
@@ -1702,7 +1732,8 @@ class CoordinatorService:
                                       hours_per_class=hours_per_class, period=period,
                                       professor=group.canonical, ibope_label=group.canonical,
                                       variants=group.variants, maybe_same=group.maybe_same,
-                                      report=report)
+                                      report=report,
+                                      universe=tuple(e.professor for e in everything))
         rate, hours_per_class = self._pay_config()
         # ``apply_horizon=False``, for the reason the calendar export already opts out: the
         # 30-day default exists so a professor READING a list does not have to scroll, and this
@@ -1723,9 +1754,18 @@ class CoordinatorService:
         # ``identity_label``), and for an oversight role it narrows instead of widening. The
         # faculty-wide answer an oversight role may now ask for is a DIFFERENT door
         # (:data:`ALL_PROFESSORS`), one block per professor, never this path widened.
-        entries = self.get_professor_schedule(
-            professor=me, role=role, identity_label=me, month=period, turma=turma,
-            include_past=True, apply_horizon=False, report=report)
+        #
+        # Written out rather than delegated to ``get_professor_schedule`` — the same three calls
+        # it makes, in the same order — for ONE reason: the survey lookup needs the schedule's
+        # whole cast (``universe``, see :meth:`_ibope_result`), and the listing does not return
+        # it. One read of the grid, as on the oversight door above.
+        everything = self.aggregate(report=report)
+        entries, err = self._visible(everything, professor=me, role=role, identity_label=me,
+                                     report=report)
+        if err:
+            raise CoordinatorAccessError(err)
+        entries = self._filter_schedule(entries, month=period, turma=turma, include_past=True,
+                                        apply_horizon=False, report=report)
         # ``professor=me`` on the RESULT too — the ownership header (2026-09-23, the owner's
         # confirmation: «um valor sem dono é tão perigoso como um valor sem leitura»). Turns
         # 111/112 handed a SUPERVISOR his own block under a header that did not say whose it
@@ -1734,7 +1774,8 @@ class CoordinatorService:
         # caller's own label here, the sheet's spelling on the two oversight doors.
         return self._pay_estimate(self._pay_window(entries, period), rate=rate,
                                   hours_per_class=hours_per_class, period=period,
-                                  professor=me, ibope_label=me, report=report)
+                                  professor=me, ibope_label=me, report=report,
+                                  universe=tuple(e.professor for e in everything))
 
     def estimate_faculty_pay(self, *, role: str = "", identity_label: str = "",
                              period: str = "", turma: str = "",
@@ -1770,6 +1811,7 @@ class CoordinatorService:
         rate, hours_per_class = self._pay_config()
         everything = self.aggregate(report=report)
         groups = self._professor_groups(everything, report)
+        names = tuple(e.professor for e in everything)
         master, err = self._visible(everything, professor="", role=role,
                                     identity_label=identity_label)
         assert err is None                             # an oversight role is never refused here
@@ -1791,7 +1833,8 @@ class CoordinatorService:
         estimates = tuple(
             self._pay_estimate(by_person[i], rate=rate, hours_per_class=hours_per_class,
                                period=period, professor=g.canonical, ibope_label=g.canonical,
-                               variants=g.variants, maybe_same=g.maybe_same, report=report)
+                               variants=g.variants, maybe_same=g.maybe_same, report=report,
+                               universe=names)
             for i, g in enumerate(groups))
         return FacultyPayEstimate(rate=rate, hours_per_class=hours_per_class,
                                   estimates=estimates, unassigned_classes=unassigned,
@@ -1820,6 +1863,7 @@ class CoordinatorService:
             mine = _own_spellings(identity_label, (name for name, _rec in records))
             if not mine and _near_spellings(identity_label, (name for name, _rec in records)):
                 raise CoordinatorAccessError(_LABEL_UNRESOLVED)
+            _note_unconfirmed(report, identity_label, mine, (name for name, _rec in records))
             return [rec for name, rec in records if _name_tokens(name) in mine]
         want = _norm(target)
         return [rec for name, rec in records if not want or want in _norm(name)]

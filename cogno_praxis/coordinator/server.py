@@ -78,6 +78,15 @@ def _fmt_entry(e: ClassEntry) -> str:
     return " | ".join(parts) if parts else e.date_str
 
 
+#: The footer a professor's OWN read carries when rows with a name like theirs were left out
+#: because they could not be confirmed as theirs. It names nobody and counts nothing — either
+#: would tell the reader how many similar people the sheet holds.
+UNCONFIRMED_SIMILAR_LINE = (
+    "(Some rows on this schedule carry a name similar to yours that could not be confirmed as "
+    "yours, so they are NOT included above. Ask the administrator to check how your name is "
+    "registered. Do not guess whose they are, and do not add them.)")
+
+
 def _fmt_report(report: ReadReport) -> str:
     """The footer lines a read owes the reader: what was HIDDEN, and what could not be READ.
 
@@ -137,6 +146,8 @@ def _fmt_report(report: ReadReport) -> str:
             "asked for. Later classes are one argument away: call again with `month` set to the "
             "month the user names. Offer to look further ahead; do not say how many are out "
             "there.)")
+    if report.unconfirmed_similar:
+        lines.append(UNCONFIRMED_SIMILAR_LINE)
     if report.errors:
         detail = "; ".join(f"{e.sheet_key}: {e.message}" for e in report.errors)
         lines.append(
@@ -735,8 +746,13 @@ def build_server(service: Optional[CoordinatorService] = None, *,
                                                  role=role, report=report)
                 if not est.groups:
                     whose = f" for {est.professor}" if est.professor else ""
-                    return (f"No classes found{whose} for this period, so there is nothing to "
-                            f"estimate. Say that plainly — it is an answer, not a failure.")
+                    empty = (f"No classes found{whose} for this period, so there is nothing to "
+                             f"estimate. Say that plainly — it is an answer, not a failure.")
+                    # The read record still owes its footer: «no classes» beside rows that were
+                    # left out as UNCONFIRMED is only half the truth, and the half that reads
+                    # as a whole one.
+                    note = _fmt_report(report)
+                    return f"{empty}\n\n{note}" if note else empty
                 block = render_pay_block(est)
             footer = _fmt_report(report)
             return f"{block}\n\n{footer}" if footer else block

@@ -114,7 +114,11 @@ def test_MUTATION_matching_by_substring_again_hands_one_persons_survey_to_anothe
 
     original = mod._same_professor
     try:
-        mod._same_professor = lambda a, b: bool(a) and " ".join(a) in " ".join(b)  # type: ignore[assignment]
+        # SYMMETRIC substring: the lookup now runs through ``_own_spellings``, whose guard
+        # compares the predicate in both directions — a one-way substring is vetoed by it on
+        # its own asymmetry and would no longer reproduce the defect this test is about.
+        mod._same_professor = lambda a, b: (bool(a) and bool(b) and (  # type: ignore[assignment]
+            " ".join(a) in " ".join(b) or " ".join(b) in " ".join(a)))
         assert one._ibope_result(identity_label="Ana", report=None) == 85.0   # somebody else's
         assert two._ibope_result(identity_label="Ana", report=None) is None   # or nobody's
     finally:

@@ -100,6 +100,11 @@ class ReadReport:
     beyond_horizon: bool = False
     unmatched_turma: str = ""    # a `turma` filter that matched NO configured class group
     known_turmas: tuple[str, ...] = ()   # the configured group names, so the reply can name them
+    #: A non-oversight read resolved the caller's label to SOME rows and left out others whose
+    #: name LOOKS like it but could not be confirmed as theirs (``service._note_unconfirmed``).
+    #: A BIT, never a count and never a name: how many similar rows there are already says how
+    #: many similar people the sheet holds.
+    unconfirmed_similar: bool = False
 
 
 @dataclass(frozen=True)

@@ -4,6 +4,20 @@
 
 ### Fixed
 
+- **`coordinator` — três seguimentos do #142: a resposta parcial diz que é parcial; a escrita
+  ambígua fica provada intacta; o resultado IBOPE deixa de ir para outra pessoa.** (F1) Com o
+  rótulo «Ana Lopes» numa folha com uma linha «Ana Lopes» e duas «Prof. Ana Lopes», a agenda e a
+  remuneração própria davam 4 h · R$ 400,00 **sem nota nenhuma** (antes do #142 eram 12 h). O
+  filtro tinha razão em recusar as duas linhas; a resposta é que não podia parecer inteira. Agora
+  `ReadReport.unconfirmed_similar` (um BIT) põe no rodapé «há linhas com um nome parecido com o
+  seu que não foi possível confirmar como suas», sem nomear ninguém e sem contagem. Vale para a
+  agenda, as leituras do dia, a ficha e a remuneração, incluindo o ramo «No classes found». (F2)
+  `confirm_swap` e `record_class_response` com um rótulo ambíguo recusam, e a folha é comparada
+  antes e depois, com uma âncora que prova que a mesma escrita, por um rótulo resolvido, a muda.
+  (F3) O `_ibope_result` era par a par: «Ana Lopes», com um separador IBOPE que só tinha «Ana
+  Maria Lopes» (92 %) e uma «Ana Beatriz Lopes» na agenda, recebia os 92 % da Ana Maria e a faixa
+  de R$ 40,00/h. Passa a usar o mesmo `_own_spellings` com a guarda, sobre o separador E a agenda.
+
 - **`coordinator` — um professor (papel não-oversight) vê as linhas com o SEU nome, não as de
   todo nome que o contém.** O ramo não-oversight de `_visible` e de `get_professor_info` fixava a
   leitura ao rótulo da identidade por SUBSTRING dobrada, e «ana» está dentro de «mariana». Medido
