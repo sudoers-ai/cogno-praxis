@@ -76,6 +76,40 @@ ALL_PROFESSORS = "*"
 _OWN_PAY_ONLY = ("You can only see your own pay estimate — another professor's remuneration is "
                  "not something this assistant discloses to anyone.")
 
+#: The refusal EVERY door gives a caller the turn could not name — the same rule the companies
+#: vertical already lands on its own ids: **an empty id is not the author of anything, neither
+#: to read nor to write.**
+#:
+#: ``identity_label`` is WHO IS ASKING, and ``""`` names nobody. That is not the same as "a
+#: caller with no privileges": with no name, "their own" has no referent, and an oversight
+#: ``role`` arriving beside a blank label is a claim with nobody making it. The two facts travel
+#: in separate arguments and only one of them is checked by a role test, which is how a door
+#: could read the role, find SUPERVISOR, and answer the whole faculty to a caller it could not
+#: name (measured 2026-09-23 on :meth:`CoordinatorService.estimate_faculty_pay`: three
+#: professors' remuneration, with ``identity_label=""``; the sister door
+#: :meth:`estimate_professor_pay` refused the same call, and had refused it since it was
+#: written — two doors, one rule, one guarded).
+#:
+#: **What it is NOT about is the coordination's reach.** The owner's decision of 2026-09-23 is
+#: textual — «o supervisor pode ter acesso a todos os professores, pois ele é o coordenador» —
+#: and stands untouched: a SUPERVISOR who HAS a label still reads every professor, by name and
+#: all at once. The guard fires on the blank label alone, so the twin that matters is the
+#: inverse one (a named supervisor still gets the data), and it is pinned beside the refusal in
+#: ``tests/unit/test_toda_porta_recusa_um_chamador_sem_identidade.py``.
+#:
+#: Reachable today only through the HOST, which ASSEMBLES the pair: ``cogno_host``'s RBAC
+#: injects the role and, when the identity has no label, skips the label injection entirely, so
+#: the tool's own ``""`` default stands beside an oversight role. Measured the same day, the
+#: parameter is then also still OFFERED in the published schema (the mirror carried the same
+#: condition), so a model could fill it with somebody else's name — the host's half is
+#: ``cogno-host`` #990. Latent, in the sense that no identity of the served box carries a blank
+#: label; one ``POST /identities`` with ``name=""`` away, in the sense that nothing between the
+#: API and here refuses one — the column is ``NOT NULL DEFAULT ''``, the create schema declares
+#: ``name: str`` with no ``min_length``, and the handler validates neither.
+_NO_IDENTITY = ("This turn carries no identified professor, so there is nobody for this answer "
+                "to be about. This is an access rule working as intended, not a failure — say "
+                "that the caller could not be identified.")
+
 #: How far ahead a schedule read looks when the caller named NO period at all.
 #:
 #: The old default was ``[today, ∞)``, which on the box's own data answered "traga minhas aulas"
@@ -693,7 +727,15 @@ class CoordinatorService:
     def _visible(self, entries: list[ClassEntry], *, professor: str, role: str,
                  identity_label: str) -> tuple[list[ClassEntry], Optional[str]]:
         """Apply role scoping. Returns (filtered, error). A non-oversight caller is pinned to
-        their own name; an oversight role may query any professor or all (professor='')."""
+        their own name; an oversight role may query any professor or all (professor='').
+
+        **A caller the turn could not NAME is refused first, whatever the role says**
+        (:data:`_NO_IDENTITY`): with a blank label the non-oversight branch pins the read to
+        ``""``, which matches every row, and the oversight branch is a claim nobody is making.
+        Both read as "the whole master schedule" — the widest answer this method has — and that
+        is the one an unidentified caller must never get. A named supervisor is untouched."""
+        if not identity_label.strip():
+            return [], _NO_IDENTITY
         oversight = role.upper() in _OVERSIGHT_ROLES
         target = professor.strip()
         if not oversight:
@@ -859,7 +901,14 @@ class CoordinatorService:
     def find_replacement_slot(self, *, professor: str = "", role: str = "",
                               identity_label: str = "",
                               report: Optional[ReadReport] = None) -> list[ClassEntry]:
-        """Free slots (FREE_SLOT_LABELS) within the next 21 days — candidates for a swap."""
+        """Free slots (FREE_SLOT_LABELS) within the next 21 days — candidates for a swap.
+
+        The pool is nobody's, so ``role`` and ``professor`` do not narrow it — but the CALLER
+        still has to be somebody (:data:`_NO_IDENTITY`). A free slot is a row of the tenant's
+        schedule, and this door is the one place the identity arguments would otherwise be
+        declared and never read: a guard nobody can see is the shape the faculty door had."""
+        if not identity_label.strip():
+            raise CoordinatorAccessError(_NO_IDENTITY)
         today = self._today()
         horizon = today + timedelta(days=REPLACEMENT_HORIZON_DAYS)
         # free slots are not professor-owned; oversight sees all, a professor sees the pool too
@@ -1620,6 +1669,8 @@ class CoordinatorService:
         anybody's block, not dropped. Configuration refusals are :meth:`_pay_config`'s, once
         for the call: one set of rules serves every professor.
         """
+        if not identity_label.strip():
+            raise CoordinatorAccessError(_NO_IDENTITY)
         if role.upper() not in _OVERSIGHT_ROLES:
             raise CoordinatorAccessError(_OWN_PAY_ONLY)
         rate, hours_per_class = self._pay_config()
@@ -1660,6 +1711,8 @@ class CoordinatorService:
         RBAC parity with the schedule: a non-oversight caller only sees THEIR OWN row (pinned to
         their identity label); oversight sees everyone. Returns ``[]`` when no professors tab is
         configured. The specific columns are tenant-defined; the vertical stays column-agnostic."""
+        if not identity_label.strip():
+            raise CoordinatorAccessError(_NO_IDENTITY)
         if not self.cfg.tab_professors:
             return []
         oversight = role.upper() in _OVERSIGHT_ROLES
@@ -1818,6 +1871,8 @@ class CoordinatorService:
         resolved by whichever source happened to answer first is how a calendar reaches the
         wrong mailbox.
         """
+        if not identity_label.strip():
+            raise CoordinatorAccessError(_NO_IDENTITY)
         target = (professor or "").strip() or identity_label.strip()
         if not target:
             return ""
