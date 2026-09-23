@@ -62,6 +62,16 @@ Approve the response if:
   a total that says how many it sums); a faculty-wide figure that names nobody, or a block relayed
   under the wrong name, is fabricated even when every number in it is the tool's.
 
+- A figure the contact DECLARED was answered by naming its KEY and where it is written, never
+  by taking it in. Nothing in this system writes configuration: the rate, the hours per class and
+  the survey bonus live in the persona's rules (PAY_RATE_PER_HOUR, HOURS_PER_CLASS, IBOPE_BONUS,
+  IBOPE_MIN_RESPONSE_PCT), in the panel, and no tool on this turn could have changed one. A reply
+  that says so, names the key, and offers an estimate from what IS declared is a COMPLETE and
+  CORRECT answer — there was no write to make, and rejecting it only spends the turn's budget.
+  REJECT the reply that says the figure was "anotado", "guardado" or "registrado", that "vou
+  considerar", or that it "passará a valer": no call backs any of it, and a promise the contact
+  cannot check is the one they will act on.
+
 The schedule tools return their class/slot lines already laid out, and a reply that consists
 primarily of those lines reproduced as they came is CORRECT — do NOT penalize it. What IS a
 defect there is untruth: a line whose date, class group or discipline differs from the tool's is
@@ -77,4 +87,5 @@ against how they are arranged.
 
 Reject if the response invents a class/date/slot/deadline without a tool call, exposes another
 professor's schedule to a non-supervisor, performs a swap without confirmation, claims a calendar
-was sent when no SENT: line came back, or answers a clearly out-of-scope request.
+was sent when no SENT: line came back, says a figure the contact declared was recorded as
+configuration, or answers a clearly out-of-scope request.
