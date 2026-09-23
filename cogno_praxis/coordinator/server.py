@@ -25,8 +25,10 @@ from datetime import date
 
 from cogno_praxis.coordinator.ics import CalendarEvent, CalendarSender
 from cogno_praxis.coordinator.config import CoordinatorConfig
-from cogno_praxis.coordinator.pay import render_pay_block
+from cogno_praxis.coordinator.pay import render_faculty_pay_block, render_pay_block
 from cogno_praxis.coordinator.service import (
+    ALL_PROFESSORS,
+    _OVERSIGHT_ROLES,
     CalendarProposal,
     CoordinatorAccessError,
     CoordinatorConfigError,
@@ -205,7 +207,8 @@ def _entry_status(e: ClassEntry, defaults: tuple[str, ...], column: str) -> str:
     return ""
 
 
-def _fmt_line(e: ClassEntry, *, defaults: tuple[str, ...] = (), status_column: str = "") -> str:
+def _fmt_line(e: ClassEntry, *, defaults: tuple[str, ...] = (), status_column: str = "",
+              professor: bool = False) -> str:
     """One class as the line a professor actually reads: ``08/09 · DE_09 · Bancos NoSQL``.
 
     Three facts, in the order the eye needs them under a header that already fixed the month:
@@ -218,6 +221,16 @@ def _fmt_line(e: ClassEntry, *, defaults: tuple[str, ...] = (), status_column: s
     the year repeating under a header that just said it. The class group loses its ``Turma``
     prefix here because the header of the line beside it never needed one either.
 
+    **The one field that comes BACK, labelled, is the professor — and only on a supervision
+    list** (``professor=True``, decided by :func:`_professor_per_line`). A professor reading
+    their own list is the professor on every line, so the name would be the year repeating
+    under its header. A coordinator reading the master schedule is not: measured on 2026-09-22
+    (turn 112) the master list came back as 128 lines of ``data · turma · disciplina`` with no
+    name anywhere, and the reply said, truthfully, «não consegui associar os professores às
+    turmas». The label stays on this one field because the line's other fields are bare and a
+    fourth bare token reads as a status. A row whose professor cell is empty gets no part —
+    nothing is written that the sheet did not.
+
     ``_fmt_entry`` above keeps the labelled form, and that is not an oversight: it renders the
     DESCRIPTION of a calendar event, where there is no listing around the line to give a bare
     field its meaning."""
@@ -226,7 +239,20 @@ def _fmt_line(e: ClassEntry, *, defaults: tuple[str, ...] = (), status_column: s
     status = _entry_status(e, defaults, status_column)
     if status:
         parts.append(status)
+    if professor and e.professor.strip():
+        parts.append(f"Professor: {e.professor.strip()}")
     return " · ".join(parts) if parts else e.date_str
+
+
+def _professor_per_line(entries: list[ClassEntry], role: str) -> bool:
+    """Does this list need the professor on every line? Only when the CALLER is an oversight
+    role AND the list covers MORE THAN ONE professor — both, because either alone is a list
+    that already answers "whose class is this". A non-oversight caller is pinned to their own
+    name by ``_visible``, so their list is theirs whatever it contains; an oversight list of one
+    professor (``professor=<name>``) is that person's, and renders byte for byte as before."""
+    if role.upper() not in _OVERSIGHT_ROLES:
+        return False
+    return len({_norm(e.professor) for e in entries if e.professor.strip()}) > 1
 
 
 def _status_args(svc: CoordinatorService) -> dict:
@@ -239,8 +265,12 @@ def _status_args(svc: CoordinatorService) -> dict:
 
 def _fmt_list(entries: list[ClassEntry], *, empty: str,
               report: Optional[ReadReport] = None,
-              defaults: tuple[str, ...] = (), status_column: str = "") -> str:
+              defaults: tuple[str, ...] = (), status_column: str = "", role: str = "") -> str:
     """The listing: classes grouped under a bold month header, in date order.
+
+    ``role`` is the CALLER's, and it decides one thing: whether each dated line names its
+    professor (:func:`_professor_per_line` — oversight caller, more than one professor in the
+    list). Absent, or any non-oversight role, renders exactly what it always rendered.
 
     **This function is not adding a shape — it is refusing to destroy one.** Measured on the
     box's own turns for 2026-09-06: handed the flat labelled block, the executor's own draft came
@@ -260,6 +290,7 @@ def _fmt_list(entries: list[ClassEntry], *, empty: str,
     else:
         chunks: list[str] = []
         current: Optional[tuple[int, int]] = None
+        named = _professor_per_line(entries, role)
         for e in entries:
             if e.when is None:
                 chunks.append(f"- {_fmt_entry(e)}")
@@ -268,7 +299,7 @@ def _fmt_list(entries: list[ClassEntry], *, empty: str,
             if key != current:
                 chunks.append(("\n" if chunks else "") + _month_header(e.when))
                 current = key
-            chunks.append(f"- {_fmt_line(e, defaults=defaults, status_column=status_column)}")
+            chunks.append(f"- {_fmt_line(e, defaults=defaults, status_column=status_column, professor=named)}")
         body = "\n".join(chunks)
     footer = _fmt_report(report) if report else ""
     return f"{body}\n\n{footer}" if footer else body
@@ -297,7 +328,8 @@ _DAILY_NOTHING = (
 
 
 def _daily_checks_text(dc: DailyChecks, *, report: Optional[ReadReport] = None,
-                       defaults: tuple[str, ...] = (), status_column: str = "") -> str:
+                       defaults: tuple[str, ...] = (), status_column: str = "",
+                       role: str = "") -> str:
     """The three answers of one day, ASSEMBLED — it renders no line of its own.
 
     **This is deliberately not a formatter.** Every line here comes out of ``_fmt_list``, the
@@ -324,7 +356,7 @@ def _daily_checks_text(dc: DailyChecks, *, report: Optional[ReadReport] = None,
 
     def section(key: str, entries: list[ClassEntry], *, empty: str) -> str:
         return _DAILY_SECTIONS[key] + "\n" + _fmt_list(
-            entries, empty=empty, defaults=defaults, status_column=status_column)
+            entries, empty=empty, defaults=defaults, status_column=status_column, role=role)
 
     blocks: list[str] = [section("classes", dc.classes_today, empty="No classes today.")]
     for key, group in (("due_today", dc.due_today), ("due_ahead", dc.due_ahead)):
@@ -525,7 +557,7 @@ def build_server(service: Optional[CoordinatorService] = None, *,
             svc.get_professor_schedule(professor=professor, month=month, discipline=discipline,
                                        turma=turma, include_past=include_past, report=report,
                                        identity_label=identity_label, role=role),
-            empty="No classes found.", report=report, **_status_args(svc)))
+            empty="No classes found.", report=report, role=role, **_status_args(svc)))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_professor_info(professor: str = "", identity_label: str = "", role: str = "") -> str:
@@ -545,7 +577,8 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         return _guard(lambda: _fmt_list(
             svc.check_deadlines(professor=professor, identity_label=identity_label, role=role,
                                 report=report),
-            empty="No disciplines within the grade/attendance deadline window.", report=report, **_status_args(svc)))
+            empty="No disciplines within the grade/attendance deadline window.", report=report,
+            role=role, **_status_args(svc)))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_weekly_briefing(professor: str = "", identity_label: str = "", role: str = "") -> str:
@@ -555,7 +588,7 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         return _guard(lambda: _fmt_list(
             svc.weekly_briefing(professor=professor, identity_label=identity_label, role=role,
                                 report=report),
-            empty="No classes in the next 7 days.", report=report, **_status_args(svc)))
+            empty="No classes in the next 7 days.", report=report, role=role, **_status_args(svc)))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def check_ibope_status(professor: str = "", identity_label: str = "", role: str = "") -> str:
@@ -565,7 +598,8 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         return _guard(lambda: _fmt_list(
             svc.ibope_status(professor=professor, identity_label=identity_label, role=role,
                              report=report),
-            empty="No last classes today — no survey reminders needed.", report=report, **_status_args(svc)))
+            empty="No last classes today — no survey reminders needed.", report=report,
+            role=role, **_status_args(svc)))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def daily_checks(professor: str = "", identity_label: str = "", role: str = "") -> str:
@@ -582,17 +616,18 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         return _guard(lambda: _daily_checks_text(
             svc.daily_checks(professor=professor, identity_label=identity_label, role=role,
                              report=report),
-            report=report, **_status_args(svc)))
+            report=report, role=role, **_status_args(svc)))
 
-    # READ-ONLY, and self-only inside the service. The scope this opened is "a professor may
-    # ask what THEY earn"; there is no argument here that reaches anybody else's figure, and
-    # ``professor`` exists only so a model that tries gets a stated refusal rather than being
-    # quietly handed its own numbers under someone else's name.
+    # READ-ONLY. Two halves, decided INSIDE the service by the caller's role: the caller's own
+    # for everyone (``professor`` empty), and — for the oversight roles only — a professor by
+    # name or every professor one block each (``professor="*"``). ``professor`` reaches a
+    # non-oversight caller only so that a model which tries gets a stated refusal rather than
+    # being quietly handed its own numbers under someone else's name.
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def estimate_professor_pay(period: str = "", turma: str = "", professor: str = "",
                                identity_label: str = "", role: str = "") -> str:
-        """Estimate what the CALLER'S OWN classes come to: classes in the period × the hours
-        one class is worth (HOURS_PER_CLASS) × the institution's declared hourly rate, plus the
+        """Estimate what a professor's classes come to: classes in the period × the hours one
+        class is worth (HOURS_PER_CLASS) × the institution's declared hourly rate, plus the
         IBOPE bonus when a survey result exists. When the institution also declares a workload
         column, the block ends with a CONTEXT section giving each discipline's total workload
         and what the WHOLE discipline is worth — a different question from the period's pay,
@@ -602,8 +637,15 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         this month count, unlike the listing; leave it EMPTY for the current month in full plus
         everything onward, and call once per month when the user names two. ``turma`` narrows
         to one class group. Nothing is written and nothing is sent.
-        This is ONLY ever about the person asking: leave ``professor`` EMPTY. Another
-        professor's remuneration is not available here to anyone, whatever their role.
+        WHOSE pay — two halves. (1) ``professor`` EMPTY is the CALLER'S OWN pay, for every
+        role: a professor asking "quanto eu recebo", and a coordinator asking about their own.
+        (2) A coordinator/supervisor may ALSO name a professor ("quanto recebe o professor X"
+        → ``professor="X"``, the block then says whose it is) or ask for EVERYONE
+        ("os valores de todos os professores", "por professor" → ``professor="*"``, ONE block
+        PER PROFESSOR plus a total that says how many people it sums — never call it once per
+        class group to build that yourself). A professor who is not the coordination gets
+        NOT PERMITTED for any name but their own and for "*": that is the privacy rule, and it
+        is stated as a rule. A name that matches two professors is refused too — name one.
         Its answer is a READY-MADE BLOCK — relay it as it came, keeping the bold headers and the
         lines; do not re-add up, re-round or re-order it. If it says the IBOPE result was NOT
         FOUND, that sentence and the hypotheses under it must survive into the reply, all of
@@ -616,14 +658,25 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         report = ReadReport()
 
         def _run() -> str:
-            est = svc.estimate_professor_pay(professor=professor, period=period, turma=turma,
-                                             identity_label=identity_label, role=role,
-                                             report=report)
-            if not est.groups:
-                return ("No classes found for this period, so there is nothing to estimate. "
-                        "Say that plainly — it is an answer, not a failure.")
+            if professor.strip() == ALL_PROFESSORS:
+                fac = svc.estimate_faculty_pay(period=period, turma=turma,
+                                               identity_label=identity_label, role=role,
+                                               report=report)
+                if not fac.estimates:
+                    return ("No professor is named in the schedule or the faculty records, "
+                            "so there is nobody to estimate for. Say that plainly — it is an "
+                            "answer, not a failure.")
+                block = render_faculty_pay_block(fac)
+            else:
+                est = svc.estimate_professor_pay(professor=professor, period=period,
+                                                 turma=turma, identity_label=identity_label,
+                                                 role=role, report=report)
+                if not est.groups:
+                    whose = f" for {est.professor}" if est.professor else ""
+                    return (f"No classes found{whose} for this period, so there is nothing to "
+                            f"estimate. Say that plainly — it is an answer, not a failure.")
+                block = render_pay_block(est)
             footer = _fmt_report(report)
-            block = render_pay_block(est)
             return f"{block}\n\n{footer}" if footer else block
 
         return _guard(_run)
@@ -636,7 +689,8 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         return _guard(lambda: _fmt_list(
             svc.find_replacement_slot(professor=professor, identity_label=identity_label,
                                       role=role, report=report),
-            empty="No open slots in the next 21 days.", report=report, **_status_args(svc)))
+            empty="No open slots in the next 21 days.", report=report, role=role,
+            **_status_args(svc)))
 
     # READ-ONLY, and that annotation is the point rather than a detail. ``send_schedule_to_
     # calendar`` is held before it runs — by its own ``destructiveHint`` and, on a host that

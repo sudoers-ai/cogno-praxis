@@ -22,8 +22,10 @@ from cogno_praxis.coordinator.config import (
     pay_refusal,
 )
 from cogno_praxis.coordinator.pay import (
+    NO_CLASSES_LINE,
     WORKLOAD_HEADER,
     BonusTier,
+    FacultyPayEstimate,
     PayEstimate,
     PayGroup,
     PayHypothesis,
@@ -32,6 +34,7 @@ from cogno_praxis.coordinator.pay import (
     fmt_money,
     parse_bonus_tiers,
     parse_money,
+    render_faculty_pay_block,
     render_pay_block,
 )
 from cogno_praxis.coordinator.durability import is_perishable_edge
@@ -50,6 +53,7 @@ from cogno_praxis.coordinator.server import (
     status_args,
 )
 from cogno_praxis.coordinator.service import (
+    ALL_PROFESSORS,
     CalendarProposal,
     CoordinatorAccessError,
     CoordinatorConfigError,
@@ -87,6 +91,9 @@ __all__ = [
     "PayEstimate", "PayGroup", "PayLine", "PayHypothesis", "BonusTier",
     "render_pay_block", "parse_bonus_tiers", "parse_money", "fmt_money", "fmt_hours",
     "WORKLOAD_HEADER",
+    # the oversight roles' reach (2026-09-23): a professor by name, or every professor one
+    # block each behind the sentinel — never one sum, and never for a non-oversight role
+    "ALL_PROFESSORS", "FacultyPayEstimate", "render_faculty_pay_block", "NO_CLASSES_LINE",
     # the pay figures a tenant wrote in PROSE instead of as KEY: value lines — recognised,
     # named beside the key each should be, never read as a number
     "ProseHint", "find_pay_in_prose", "pay_refusal",

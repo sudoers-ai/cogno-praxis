@@ -32,7 +32,9 @@ What the tests are about, in one line each:
 * rules that declare no rate — or no hours per class — produce a refusal, never a figure, and
   never an inferred "4"; rules that DESCRIBE them in prose are refused NAMING the prose and the
   key (``test_pay_declared_in_prose.py`` has the detector; the twin beside "nada" is here);
-* another professor's pay is refused to EVERY role, which is the victim of an opened scope;
+* another professor's pay is refused to every role that is NOT the coordination — the victim
+  of an opened scope; the coordination's own reach (by name, or everyone one block each,
+  2026-09-23) is pinned in ``test_oversight_pay_by_professor.py``;
 * the block a professor reads cannot carry a third party's data, because it is built from
   derived fields and never copies a spreadsheet row.
 """
@@ -579,18 +581,29 @@ def test_the_refusal_is_not_worded_as_a_malfunction():
     assert "PAY_RATE_PER_HOUR" in out and "HOURS_PER_CLASS" in out
 
 
-# ── twin 4 (the negative twin): somebody else's pay, for EVERY role ──────────────────
-@pytest.mark.parametrize("role", ["", "EMPLOYEE", "SUPERVISOR", "ADMIN", "OWNER"])
-def test_another_professors_pay_is_refused_to_every_role_including_oversight(role):
+# ── twin 4 (the negative twin): somebody else's pay, for every NON-oversight role ─────
+@pytest.mark.parametrize("role", ["", "GUEST", "EMPLOYEE"])
+def test_another_professors_pay_is_refused_to_every_role_that_is_not_the_coordination(role):
     """An opened scope always has a possible victim, and this is the one it is not.
 
-    Every other read here widens for an oversight role — a supervisor sees the master schedule.
-    This one does not, and deliberately: the reason the guard opened at all is that the money is
-    the ASKER'S. A branch where it is somebody else's has no such reason behind it."""
+    Until 2026-09-23 this refusal reached the oversight roles too; the owner's decision — «o
+    supervisor pode ter acesso a todos os professores, pois ele é o coordenador» — moved THEM
+    and nobody else: a professor asking about a colleague gets this sentence, unchanged, and
+    ``test_oversight_pay_by_professor.py`` pins it as a literal."""
     with pytest.raises(CoordinatorAccessError) as exc:
         _svc().estimate_professor_pay(professor=OTHER, identity_label=ME, role=role)
     assert "your own" in str(exc.value)
     assert "R$" not in str(exc.value)                 # and it leaks no figure while refusing
+
+
+@pytest.mark.parametrize("role", ["SUPERVISOR", "ADMIN", "OWNER"])
+def test_an_oversight_role_naming_another_professor_gets_THAT_estimate_named(role):
+    """The other half of the same line: the coordination may ask about a professor by name,
+    and the block says whose it is. Beta's one October class, 4 h · R$ 480,00 — not Alfa's 16."""
+    est = _svc().estimate_professor_pay(professor=OTHER, identity_label=ME, role=role)
+    assert est.professor == OTHER
+    assert est.hours == pytest.approx(4) and est.base == pytest.approx(480.0)
+    assert f"Professor: {OTHER}" in render_pay_block(est)
 
 
 def test_a_turn_with_no_identified_professor_is_refused_rather_than_answered_for_nobody():
@@ -800,7 +813,7 @@ def test_the_intake_now_lets_a_professors_OWN_pay_question_in():
 def test_the_intake_still_blocks_the_finance_that_did_NOT_open():
     """«Passou a permitir X» without «e continua a recusar Y» is half a sentence."""
     scope = _prompt("scope")
-    assert "Finance is blocked EXCEPT for that one opening" in scope
+    assert "Finance is blocked EXCEPT for those openings" in scope
     for still_out in ("another person's pay", "the institution's accounts",
                       "invoices to process", "budgets", "tuition"):
         assert still_out in scope, still_out
