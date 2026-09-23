@@ -4,6 +4,24 @@
 
 ### Fixed
 
+- **`coordinator` — a listagem dá a grafia CANÓNICA do professor, para que quem lê a seguir o
+  encontre.** O dono pediu para avisar «o professor» sem nomear ninguém; `get_weekly_briefing`
+  devolveu a grafia da PLANILHA, o modelo passou-a a `notify_user`, que procura no directório de
+  identidades — onde o professor está escrito de outra maneira — e o sistema **pediu ao dono o
+  nome completo de um nome que ele acabara de dizer**. Corrido contra o directório real: a grafia
+  completa da agenda não acha nada, nem sugestão; o primeiro nome sozinho acha. Agora toda a
+  listagem (`get_weekly_briefing`, `get_professor_schedule`, `check_deadlines`,
+  `check_ibope_status`, `find_replacement_slot`, `daily_checks`) renderiza a grafia que a ficha
+  DECLARA, e nenhum consumidor a jusante precisa de aprender a resolver. Uma grafia que a ficha
+  não alcança fica exactamente como a planilha a escreve. A resolução de uma grafia ÓRFÃ é a
+  INTERSECÇÃO de dois sinais declarados — quem a ficha diz leccionar aquela DISCIPLINA, cruzado
+  com quem partilha um TOKEN do nome — e só quando sobra **exactamente um**: dois é uma pergunta,
+  não um empate, e o sistema não escolhe. **A intersecção decide o RÓTULO e nunca a soma**
+  (`ProfessorGroup.shown_as`): ligada à junção, engole na remuneração de um professor declarado
+  uma pessoa que o inquilino nunca declarou — medido contra o controlo do `#138`, que falhou na
+  âncora. As aulas ficam onde estavam e o bloco continua a dizer que as duas grafias **não** foram
+  somadas.
+
 - **`coordinator` — a remuneração declarada em PROSA é NOMEADA na recusa, e as horas passam a
   ser as de CADA AULA (`HOURS_PER_CLASS`), nunca a carga da disciplina vezes as aulas.** Medido
   22/09/2026 em turnos reais (`turns.id` 1963–1968): `estimate_professor_pay` foi escolhida e

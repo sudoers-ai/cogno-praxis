@@ -16,7 +16,7 @@ Run the demo standalone (stdio):  ``python -m cogno_praxis.coordinator.server``
 from __future__ import annotations
 
 import os
-from typing import Callable, Optional
+from typing import Callable, Mapping, Optional
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -208,7 +208,8 @@ def _entry_status(e: ClassEntry, defaults: tuple[str, ...], column: str) -> str:
 
 
 def _fmt_line(e: ClassEntry, *, defaults: tuple[str, ...] = (), status_column: str = "",
-              professor: bool = False) -> str:
+              professor: bool = False,
+              names: "Optional[Mapping[str, str]]" = None) -> str:
     """One class as the line a professor actually reads: ``08/09 · DE_09 · Bancos NoSQL``.
 
     Three facts, in the order the eye needs them under a header that already fixed the month:
@@ -231,6 +232,15 @@ def _fmt_line(e: ClassEntry, *, defaults: tuple[str, ...] = (), status_column: s
     fourth bare token reads as a status. A row whose professor cell is empty gets no part —
     nothing is written that the sheet did not.
 
+    **The name it prints is the PERSON's, not the row's** (``names``, from
+    :meth:`~cogno_praxis.coordinator.service.CoordinatorService.canonical_professor_names`).
+    A schedule cell is where a name is TYPED and the identity directory is where it is
+    DECLARED, and on the live turn this comes from they disagreed: the briefing printed the
+    schedule's spelling, the model passed that spelling to the tool that notifies a person, the
+    directory does not carry it, and the owner was asked for the full name of the professor he
+    had just asked us to warn. A spelling the map does not resolve renders exactly as the sheet
+    writes it, so a tenant with no faculty records reads what it always read.
+
     ``_fmt_entry`` above keeps the labelled form, and that is not an oversight: it renders the
     DESCRIPTION of a calendar event, where there is no listing around the line to give a bare
     field its meaning."""
@@ -240,7 +250,8 @@ def _fmt_line(e: ClassEntry, *, defaults: tuple[str, ...] = (), status_column: s
     if status:
         parts.append(status)
     if professor and e.professor.strip():
-        parts.append(f"Professor: {e.professor.strip()}")
+        shown = (names or {}).get(_norm(e.professor), "").strip() or e.professor.strip()
+        parts.append(f"Professor: {shown}")
     return " · ".join(parts) if parts else e.date_str
 
 
@@ -263,14 +274,49 @@ def _status_args(svc: CoordinatorService) -> dict:
     return {"defaults": svc.cfg.status_default_labels, "status_column": svc.cfg.column_status}
 
 
+def _canonical_names(svc: CoordinatorService, entries: list[ClassEntry],
+                     role: str) -> "Optional[Mapping[str, str]]":
+    """The spelling each professor in ``entries`` should be SHOWN under — ``None`` when this
+    listing names nobody.
+
+    The gate is :func:`_professor_per_line`, the very predicate that decides whether a name is
+    printed at all: a professor's own list is theirs and carries no name, so it resolves
+    nothing and renders byte for byte as it always did. Only a supervision list over more than
+    one professor asks, and it asks the service
+    (:meth:`~cogno_praxis.coordinator.service.CoordinatorService.canonical_professor_names`),
+    which is where the rule lives.
+    """
+    if not _professor_per_line(entries, role):
+        return None
+    return svc.canonical_professor_names(entries)
+
+
+def _listing(svc: CoordinatorService, entries: list[ClassEntry], *, empty: str,
+             report: Optional[ReadReport] = None, role: str = "") -> str:
+    """One read tool's answer: :func:`_fmt_list` over the tenant's status vocabulary and the
+    CANONICAL spelling of every professor it names.
+
+    The six read tools render through this one door for the same reason they already share
+    :func:`_status_args` — a seventh arriving later must not have to remember either of them,
+    and a listing that forgot the names would hand the next reader a spelling the identity
+    directory does not carry, which is the measured defect this exists for.
+    """
+    return _fmt_list(entries, empty=empty, report=report, role=role,
+                     names=_canonical_names(svc, entries, role), **_status_args(svc))
+
+
 def _fmt_list(entries: list[ClassEntry], *, empty: str,
               report: Optional[ReadReport] = None,
-              defaults: tuple[str, ...] = (), status_column: str = "", role: str = "") -> str:
+              defaults: tuple[str, ...] = (), status_column: str = "", role: str = "",
+              names: "Optional[Mapping[str, str]]" = None) -> str:
     """The listing: classes grouped under a bold month header, in date order.
 
     ``role`` is the CALLER's, and it decides one thing: whether each dated line names its
     professor (:func:`_professor_per_line` — oversight caller, more than one professor in the
     list). Absent, or any non-oversight role, renders exactly what it always rendered.
+
+    ``names`` is the SPELLING each professor is shown under (:func:`_canonical_names`); it is
+    read only where a line names one at all.
 
     **This function is not adding a shape — it is refusing to destroy one.** Measured on the
     box's own turns for 2026-09-06: handed the flat labelled block, the executor's own draft came
@@ -299,7 +345,7 @@ def _fmt_list(entries: list[ClassEntry], *, empty: str,
             if key != current:
                 chunks.append(("\n" if chunks else "") + _month_header(e.when))
                 current = key
-            chunks.append(f"- {_fmt_line(e, defaults=defaults, status_column=status_column, professor=named)}")
+            chunks.append(f"- {_fmt_line(e, defaults=defaults, status_column=status_column, professor=named, names=names)}")
         body = "\n".join(chunks)
     footer = _fmt_report(report) if report else ""
     return f"{body}\n\n{footer}" if footer else body
@@ -329,7 +375,8 @@ _DAILY_NOTHING = (
 
 def _daily_checks_text(dc: DailyChecks, *, report: Optional[ReadReport] = None,
                        defaults: tuple[str, ...] = (), status_column: str = "",
-                       role: str = "") -> str:
+                       role: str = "",
+                       names: "Optional[Mapping[str, str]]" = None) -> str:
     """The three answers of one day, ASSEMBLED — it renders no line of its own.
 
     **This is deliberately not a formatter.** Every line here comes out of ``_fmt_list``, the
@@ -344,6 +391,11 @@ def _daily_checks_text(dc: DailyChecks, *, report: Optional[ReadReport] = None,
     in from memory. And a day that is empty in ALL of them is said ONCE: four sentences saying
     nothing four ways is how "you have nothing today" stops reading as an answer.
 
+    ``names`` is the spelling each professor is shown under, for the sections that name one
+    (:func:`_canonical_names`). It is a keyword with a default because this function is a
+    PROMISED public name the host's out-of-process sweep calls — a professor's own digest names
+    nobody, passes nothing, and renders exactly as it does today.
+
     The deadline sections are two because the DATA is two — a window closing today cannot wait
     and a window with days left can. The per-deadline day COUNT is on
     :attr:`~cogno_praxis.coordinator.types.DeadlineDue.days_left` and is deliberately not
@@ -356,7 +408,8 @@ def _daily_checks_text(dc: DailyChecks, *, report: Optional[ReadReport] = None,
 
     def section(key: str, entries: list[ClassEntry], *, empty: str) -> str:
         return _DAILY_SECTIONS[key] + "\n" + _fmt_list(
-            entries, empty=empty, defaults=defaults, status_column=status_column, role=role)
+            entries, empty=empty, defaults=defaults, status_column=status_column, role=role,
+            names=names)
 
     blocks: list[str] = [section("classes", dc.classes_today, empty="No classes today.")]
     for key, group in (("due_today", dc.due_today), ("due_ahead", dc.due_ahead)):
@@ -553,11 +606,12 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         their own classes; a supervisor may name any professor or omit it for the whole master
         schedule."""
         report = ReadReport()
-        return _guard(lambda: _fmt_list(
+        return _guard(lambda: _listing(
+            svc,
             svc.get_professor_schedule(professor=professor, month=month, discipline=discipline,
                                        turma=turma, include_past=include_past, report=report,
                                        identity_label=identity_label, role=role),
-            empty="No classes found.", report=report, role=role, **_status_args(svc)))
+            empty="No classes found.", report=report, role=role))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_professor_info(professor: str = "", identity_label: str = "", role: str = "") -> str:
@@ -574,32 +628,35 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         """Disciplines whose LAST class already happened and are still within the 14-day grade/
         attendance grace window (submission still due)."""
         report = ReadReport()
-        return _guard(lambda: _fmt_list(
+        return _guard(lambda: _listing(
+            svc,
             svc.check_deadlines(professor=professor, identity_label=identity_label, role=role,
                                 report=report),
             empty="No disciplines within the grade/attendance deadline window.", report=report,
-            role=role, **_status_args(svc)))
+            role=role))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_weekly_briefing(professor: str = "", identity_label: str = "", role: str = "") -> str:
         """Classes in the next 7 days (a coordinator's weekly heads-up) — today onward, never
         the past."""
         report = ReadReport()
-        return _guard(lambda: _fmt_list(
+        return _guard(lambda: _listing(
+            svc,
             svc.weekly_briefing(professor=professor, identity_label=identity_label, role=role,
                                 report=report),
-            empty="No classes in the next 7 days.", report=report, role=role, **_status_args(svc)))
+            empty="No classes in the next 7 days.", report=report, role=role))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def check_ibope_status(professor: str = "", identity_label: str = "", role: str = "") -> str:
         """Last classes of a discipline happening TODAY — these need the end-of-course survey
         (IBOPE) reminder to the professor."""
         report = ReadReport()
-        return _guard(lambda: _fmt_list(
+        return _guard(lambda: _listing(
+            svc,
             svc.ibope_status(professor=professor, identity_label=identity_label, role=role,
                              report=report),
             empty="No last classes today — no survey reminders needed.", report=report,
-            role=role, **_status_args(svc)))
+            role=role))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def daily_checks(professor: str = "", identity_label: str = "", role: str = "") -> str:
@@ -613,10 +670,15 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         plainly and never fill the gap from memory or from an earlier turn. A professor sees only
         their own day; a supervisor may name any professor."""
         report = ReadReport()
-        return _guard(lambda: _daily_checks_text(
-            svc.daily_checks(professor=professor, identity_label=identity_label, role=role,
-                             report=report),
-            report=report, role=role, **_status_args(svc)))
+        def _run() -> str:
+            dc = svc.daily_checks(professor=professor, identity_label=identity_label,
+                                  role=role, report=report)
+            rows = dc.classes_today + [d.entry for d in dc.deadlines] + dc.ibope_today
+            return _daily_checks_text(dc, report=report, role=role,
+                                      names=_canonical_names(svc, rows, role),
+                                      **_status_args(svc))
+
+        return _guard(_run)
 
     # READ-ONLY. Two halves, decided INSIDE the service by the caller's role: the caller's own
     # for everyone (``professor`` empty), and — for the oversight roles only — a professor by
@@ -686,11 +748,11 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         """Open slots (free-slot labels) in the next 21 days — candidates for rescheduling a
         class into via confirm_swap."""
         report = ReadReport()
-        return _guard(lambda: _fmt_list(
+        return _guard(lambda: _listing(
+            svc,
             svc.find_replacement_slot(professor=professor, identity_label=identity_label,
                                       role=role, report=report),
-            empty="No open slots in the next 21 days.", report=report, role=role,
-            **_status_args(svc)))
+            empty="No open slots in the next 21 days.", report=report, role=role))
 
     # READ-ONLY, and that annotation is the point rather than a detail. ``send_schedule_to_
     # calendar`` is held before it runs — by its own ``destructiveHint`` and, on a host that

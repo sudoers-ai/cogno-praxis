@@ -139,6 +139,38 @@ def _annotation(subject: str) -> str:
     return parts[-1].strip() if len(parts) > 1 else ""
 
 
+def _discipline(subject: str) -> str:
+    """What a subject cell names BEFORE its last spaced dash — the DISCIPLINE on its own, with
+    the exception a secretary appended to it taken off.
+
+    ``"Machine Learning - Aula adiada"`` → ``"Machine Learning"``; a cell with no separator is
+    its own discipline. The mirror of :func:`_annotation`, reading the SAME separator so the
+    two halves of a cell can never disagree about where it splits, and the LAST one for the
+    same reason: the annotation is appended to whatever was already there.
+
+    It exists because a discipline is a JOIN KEY — the professors tab declares who teaches
+    what, and a schedule row saying "Redes - Reposição" is a row of Redes. Comparing the whole
+    cell would make a class that was put off a discipline nobody declares.
+    """
+    last = None
+    for m in _ANNOTATION_SEP.finditer(subject or ""):
+        last = m
+    return (subject[:last.start()] if last else (subject or "")).strip()
+
+
+def _declared_column(rec: dict[str, str], word: str) -> str:
+    """The value of the professors-tab column whose (lowercased) header CONTAINS ``word`` —
+    ``""`` when the tab has no such column.
+
+    The headers are the TENANT's own, typed into a spreadsheet nobody validates, so every
+    reader of that tab names its column by a fragment that survives the punctuation a human
+    puts in one ("e-mail", "E-Mail do professor") and reads the same in Portuguese and English
+    ("disciplin" → «Disciplina», "discipline"). One reader instead of one per caller.
+    """
+    key = next((h for h in rec if word in h), "")
+    return rec.get(key, "") if key else ""
+
+
 def _name_tokens(name: str) -> tuple[str, ...]:
     """A person's name, folded and split — the unit every comparison below is made of."""
     return tuple(t for t in _norm(name).split() if t)
@@ -169,6 +201,71 @@ def _is_abbreviation_of(short: tuple[str, ...], long: tuple[str, ...]) -> bool:
     """
     return (bool(short) and len(short) < len(long) and short[0] == long[0]
             and set(short) <= set(long))
+
+
+def _by_discipline_and_token(spelling: str, disciplines: set[str],
+                             cast: list[tuple[str, list[str], tuple[str, ...]]],
+                             teaches: dict[str, set[int]]) -> list[int]:
+    """**The second jump: the declared people an ORPHAN spelling could be** — those the tab says
+    teach one of the ``disciplines`` this spelling teaches on the schedule, INTERSECTED with
+    those who share at least one TOKEN of its name. Cast indices, in the tab's own order.
+
+    It is reached only by a spelling :func:`_is_abbreviation_of` matched NOBODY — a name the
+    schedule MISSPELT, which is the one shape containment cannot reach: «Romerito Moraes»
+    against a declared «Romerito da Silva Morais» has a word the declared name does not carry,
+    so it is not an abbreviation of it and never will be. The measured turn is the whole reason
+    this exists: the owner asked to warn "the professor" and named nobody, the listing handed
+    the model the SCHEDULE's spelling, the model passed that spelling to the tool that searches
+    the identity directory, the directory does not carry it, and the owner was asked for the
+    full name of a person he had just named. Against the same directory the schedule's FULL
+    spelling finds nobody and the bare first name finds him: the complete wrong spelling is
+    worse than half a right one.
+
+    **What it decides is the LABEL, and it is not allowed to decide the money**
+    (:attr:`ProfessorGroup.shown_as`). That boundary was MEASURED, not chosen: wired into the
+    join itself, this rule swallows «Helena Marques» — a person the tenant never declared, who
+    shares a first name with a declared professor and teaches the same discipline — into that
+    professor's pay, which is the exact swallow ``#138``'s own control was written to forbid,
+    and it did forbid it (``test_MUTATION_joining_by_FIRST_NAME_ALONE_pays_one_person_for_
+    anothers_class`` failed on its ANCHOR). Nothing structural separates that spelling from
+    «Romerito Moraes»; what separates the two OUTCOMES is the cost of being wrong. A wrong
+    label puts a name on a line a human reads and can correct; a wrong merge moves money
+    between two people with nothing on the page to show it. So the label is decided here and
+    the merge stays exactly where ``#138`` left it, and the spelling still names the person on
+    :attr:`ProfessorGroup.maybe_same`, so the pay block says out loud that the two were not
+    summed.
+
+    **The known false positive, named rather than guarded** (parked
+    ``token-que-e-titulo-ou-particula``): a TOKEN is a whole word and some whole words identify
+    nobody — the Portuguese particles «de/da/dos», and a professors column that carries titles
+    («Prof. X», «Prof. Y»). Where a discipline has exactly one declared teacher, such a token
+    is enough to decide the label. It is left in because the rule shipping here is the rule
+    that was MEASURED, and narrowing a measured rule without a new measurement trades a known
+    number for an unknown one; the display-only scope is what makes that affordable.
+
+    **Neither signal decides alone, and that is measured rather than argued.** Over the 16
+    schedule spellings of the tenant this was written for that no faculty row carries:
+    discipline alone leaves 6 AMBIGUOUS (a discipline is taught by more than one person), token
+    alone answers with people who merely share an ordinary first name. The intersection gives
+    16 unique, 0 ambiguous, 0 without a candidate.
+
+    **It is data DECLARED by the tenant on both sides.** No edit distance, no ratio, no table
+    of nicknames: the discipline is a cell the tab writes and a cell the schedule writes, and a
+    token is a whole word of a name. A rule built on resemblance would have to be ARGUED safe;
+    this one is COUNTED, and the caller's "exactly one" is what turns a candidate into an
+    answer — :meth:`CoordinatorService._professor_groups` refuses on two and says both names.
+
+    The declared side is compared through the CANONICAL spelling alone, and that loses nothing:
+    a cast entry only ever holds spellings that are abbreviations of its canonical, so the
+    canonical's tokens are the union of all of them.
+    """
+    if not disciplines:
+        return []
+    candidates: set[int] = set()
+    for d in disciplines:
+        candidates |= teaches.get(d, set())
+    tokens = set(_name_tokens(spelling))
+    return sorted(i for i in candidates if tokens & set(_name_tokens(cast[i][0])))
 
 
 def _same_professor(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
@@ -402,11 +499,22 @@ class ProfessorGroup:
     that fits two declared professors or none, and two tab rows sharing an address their names
     do not corroborate. It is carried on BOTH blocks of such a pair, because whichever one a
     reader opens is where the warning has to be.
+
+    ``shown_as`` is the DECLARED spelling a reader should be shown for these rows when the
+    tenant's data resolves the name WITHOUT warranting a merge — and it is a separate field
+    from ``canonical`` because those are two different decisions with two different costs. A
+    wrong LABEL sends a message to the wrong desk and a human sees the name; a wrong MERGE
+    moves money between two people's blocks and nothing on the page says so. So the label may
+    be decided on evidence the merge refuses (:func:`_by_discipline_and_token`), never the
+    other way round, and where it is set ``maybe_same`` carries the same person: the pay block
+    then says out loud that the two were NOT summed, which is what keeps a reader from
+    discovering the divergence by arithmetic.
     """
     canonical: str                     # the fullest spelling — what the block is headed with
     keys: tuple[str, ...]              # every folded key that belongs to this person
     variants: tuple[str, ...]          # the OTHER spellings, as the sheet writes them
     maybe_same: tuple[str, ...] = ()   # canonical spellings this might be, and would not merge
+    shown_as: str = ""                 # the declared spelling to DISPLAY (never to sum under)
 
 
 @dataclass(frozen=True)
@@ -1127,8 +1235,7 @@ class CoordinatorService:
         names = [name for name, _ in rows]
         mails: dict[str, set[str]] = {}
         for name, rec in rows:
-            key = next((h for h in rec if "mail" in h), "")
-            raw = rec.get(key, "") if key else ""
+            raw = _declared_column(rec, "mail")
             mails[name] = {m.strip().lower()
                            for m in raw.replace(",", ";").split(";") if m.strip()}
         parent: dict[str, str] = {name: name for name in names}
@@ -1177,8 +1284,26 @@ class CoordinatorService:
         when exactly ONE declared person fits**. Two candidates is not a tie to break, it is a
         question this cannot answer: the spelling gets its own block and both candidates are
         named on it, because choosing between two people is how one of them gets paid for the
-        other's classes. A spelling that fits nobody keeps its block too, and names the
-        declared people who share its first name so a reader can settle it in a second.
+        other's classes.
+
+        A spelling that fits nobody keeps its block too, and names the declared people who
+        share its first name so a reader can settle it in a second.
+
+        **A spelling that fits NOBODY gets one more question asked of it, and the answer is a
+        LABEL and never a sum** (:func:`_by_discipline_and_token` →
+        :attr:`ProfessorGroup.shown_as`): the declared people who teach a DISCIPLINE this
+        spelling teaches on the schedule, intersected with those sharing a TOKEN of its name,
+        and only when exactly one is left. That is the MISSPELT name — the shape containment
+        cannot reach, because a wrong word is not a missing one — and it is the shape that sent
+        the measured turn wrong. **The classes do not move**: the spelling keeps its own block,
+        its own figures and its own key, and the person it resolved to is named on
+        ``maybe_same`` so the pay block still says the two were not summed. Two candidates, or
+        none, and not even the label is decided.
+
+        **The second jump is asked only where the first found NOBODY**, never to break a tie
+        the first one raised: a spelling fitting two declared people is a question about two
+        people, and a discipline they both teach is not an answer to it — it is a coincidence
+        of the timetable. That refusal is unchanged, byte for byte.
 
         **Against the CAST, never between loose spellings, and that is what makes it a rule
         rather than a coincidence.** Comparing spellings pairwise cannot tell two
@@ -1201,23 +1326,47 @@ class CoordinatorService:
         for i, (_canonical, spellings, _warn) in enumerate(cast):
             for s in spellings:
                 declared.setdefault(_norm(s), i)
+        # The two halves of the second jump, each read off DECLARED data: who the tab says
+        # teaches what, and what each schedule spelling is written beside. The schedule side is
+        # the rows this call was HANDED — a listing resolves the names it is about to show —
+        # so a narrower read is narrower evidence, and narrower evidence refuses more often.
+        teaches = self._declared_disciplines(declared, report)
+        taught: dict[str, set[str]] = {}               # folded schedule spelling → disciplines
+        for e in entries:
+            k, d = _norm(e.professor), _norm(_discipline(e.subject))
+            if k and d:
+                taught.setdefault(k, set()).add(d)
         members: dict[int, list[str]] = {i: [] for i in range(len(cast))}
-        alone: list[tuple[str, tuple[str, ...]]] = []  # (universe key, the people it may be)
+        # (universe key, the people it may be, the declared spelling to SHOW it under)
+        alone: list[tuple[str, tuple[str, ...], str]] = []
         for key, spelling in universe.items():
             at = declared.get(key)
             if at is None:
                 hits = [i for i, (canonical, _s, _w) in enumerate(cast)
                         if _is_abbreviation_of(_name_tokens(spelling), _name_tokens(canonical))]
-                if len(hits) != 1:
-                    # NOT a tie to break. Two declared people fit, or none does: either way the
-                    # spelling keeps its own block and names whoever it might be — the
-                    # candidates when there were several, and otherwise the declared people who
-                    # share its first name, which is the shortest list a human can settle.
-                    first = _name_tokens(spelling)[:1]
-                    maybe = tuple(cast[i][0] for i in hits) or tuple(
-                        canonical for canonical, _s, _w in cast
-                        if first and _name_tokens(canonical)[:1] == first)
-                    alone.append((key, maybe))
+                if len(hits) > 1:
+                    # NOT a tie to break: two declared people fit and this cannot say which, so
+                    # the spelling keeps its own block and names both. The second jump is NOT
+                    # asked here — a discipline two candidates share is a fact about the
+                    # timetable, not an answer about which of them this is.
+                    alone.append((key, tuple(cast[i][0] for i in hits), ""))
+                    continue
+                if not hits:
+                    # NOBODY the containment reaches — the MISSPELT spelling, the one shape a
+                    # rule about MISSING words cannot describe. One more question is asked of
+                    # it, and the answer decides the NAME SHOWN and never the money
+                    # (:func:`_by_discipline_and_token`, :attr:`ProfessorGroup.shown_as`).
+                    guess = _by_discipline_and_token(spelling, taught.get(key, set()),
+                                                     cast, teaches)
+                    maybe = tuple(cast[i][0] for i in guess)
+                    if not maybe:
+                        # Nobody at all: name the declared people who share its first name,
+                        # which is the shortest list a human can settle.
+                        first = _name_tokens(spelling)[:1]
+                        maybe = tuple(c for c, _s, _w in cast
+                                      if first and _name_tokens(c)[:1] == first)
+                    shown = universe.get(_norm(maybe[0]), maybe[0]) if len(guess) == 1 else ""
+                    alone.append((key, maybe, shown))
                     continue
                 at = hits[0]
             members[at].append(key)
@@ -1233,9 +1382,46 @@ class CoordinatorService:
                            variants=tuple(universe[k] for k in keys if universe[k] != head[i]),
                            maybe_same=cast[i][2])
             for i, keys in members.items()] + [
-            ProfessorGroup(canonical=universe[key], keys=(key,), variants=(), maybe_same=maybe)
-            for key, maybe in alone]
+            ProfessorGroup(canonical=universe[key], keys=(key,), variants=(),
+                           maybe_same=maybe, shown_as=shown)
+            for key, maybe, shown in alone]
         return tuple(sorted(groups, key=lambda g: _norm(g.canonical)))
+
+    def canonical_professor_names(self, entries: list[ClassEntry]) -> dict[str, str]:
+        """``{folded spelling as the schedule writes it: the spelling to SHOW}`` for these rows.
+
+        **The listing's answer to a question nobody downstream can answer for itself.** The
+        schedule is where a name is TYPED and the identity directory is where it is DECLARED,
+        and they disagree: measured on the live turn this comes from, the schedule's full
+        spelling of a professor finds nobody in the directory — not even a suggestion — while
+        his declared spelling finds him and his bare FIRST NAME finds him too. So the complete
+        wrong spelling is worse than half a right one, and the listing was handing the model
+        exactly that: the model read the name off the briefing, passed it to the tool that
+        notifies a person, the tool found nobody, and the owner was asked for the full name of
+        the professor he had just asked us to warn.
+
+        Rendering the canonical here is what keeps every consumer out of it. A resolution done
+        at each consumer is a rule each of them gets wrong alone; done at the SOURCE, the name
+        that leaves this vertical is the name the tenant declared, and the next reader — a
+        model, a notifier, a payroll line — needs to learn nothing.
+
+        Two spellings answer, in this order: :attr:`ProfessorGroup.shown_as` — the declared
+        name a MISSPELT spelling resolved to, which is a label and never a sum — and otherwise
+        the group's ``canonical``, which is the declared name its rows are already summed
+        under. A spelling that resolves to nobody maps to ITSELF, so a tenant with no
+        professors tab (the live shape of 2026-09-22, when the declared tab name matched no
+        sheet) renders the schedule's own spelling exactly as it always did. **Nothing here can
+        leave a name out**: every folded key of these rows is in exactly one
+        :class:`ProfessorGroup`.
+
+        No ``report``: this is a DISPLAY refinement over a tab the listing does not otherwise
+        read, and a tab it cannot read means "no cast", which is already the documented
+        degradation. Announcing it in a schedule listing's error footer would report a failure
+        of something the reader did not ask for — the failure is logged, and
+        ``get_professor_info`` is the door that surfaces it.
+        """
+        return {key: (g.shown_as or g.canonical)
+                for g in self._professor_groups(entries, None) for key in g.keys}
 
     def _resolve_professor(self, target: str, entries: list[ClassEntry],
                            report: Optional[ReadReport]) -> ProfessorGroup:
@@ -1475,11 +1661,44 @@ class CoordinatorService:
 
         The read :meth:`get_professor_info` has always made, minus its role filter, so the
         faculty-wide pay estimate can take the names as a COMPLEMENT to the schedule's own
-        professor column without a second copy of the tab-reading loop."""
+        professor column without a second copy of the tab-reading loop.
+
+        **What the dedup DESTROYS, said here because a reader of this method cannot see it.**
+        The tab's row is a DISCIPLINE, not a person: somebody who teaches four of them is on
+        four rows. The first row wins and carries ITS discipline with it, so the other three
+        disciplines — every one but one, per person — leave with the rows they were written on.
+        For a name-keyed caller (the cast, the universe complement, the contact lookup) that
+        loss is exactly right: the name is the same on all four rows. For the question "who
+        does the tenant say teaches this?" it is fatal, and that question is half of
+        :func:`_by_discipline_and_token` — a spelling teaching the fourth discipline would find
+        nobody declared to teach it and stay unresolved. So that caller reads
+        :meth:`_faculty_rows`: ONE tab-reading loop, two readings of it, never a second reader
+        that can drift from this one."""
+        out: list[tuple[str, dict[str, str]]] = []
+        seen: set[str] = set()
+        for name, rec in self._faculty_rows(report):
+            dedup = _norm(name)
+            if dedup in seen:
+                continue
+            seen.add(dedup)
+            out.append((name, rec))
+        return out
+
+    def _faculty_rows(self, report: Optional[ReadReport]) -> list[tuple[str, dict[str, str]]]:
+        """EVERY row of the professors tab across the spreadsheets, as ``(name, record)`` — the
+        tab as it is written, sheet order, nothing folded away; ``[]`` when no tab is configured.
+
+        The tab's unit is the row, and its row is a DISCIPLINE: the same professor appears once
+        per discipline they teach, with that discipline's workload beside them. That is exactly
+        the fact :meth:`_declared_disciplines` needs and exactly the fact
+        :meth:`_faculty_records` folds away — the first row of a person wins and takes its
+        discipline with it — so the two readings are split and the tab-reading loop still exists
+        once. :meth:`_faculty_records` is expressed OVER this one, rather than beside it, so
+        there is no second reader to disagree with the first about what a row is.
+        """
         out: list[tuple[str, dict[str, str]]] = []
         if not self.cfg.tab_professors:
             return out
-        seen: set[str] = set()
         for key, sid in self.cfg.spreadsheets.items():
             try:
                 rows = self.store.read_range(sid, self.cfg.tab_professors,
@@ -1501,11 +1720,28 @@ class CoordinatorService:
                 name = rec.get(prof_key, "")
                 if not name:
                     continue
-                dedup = _norm(name)
-                if dedup in seen:
-                    continue
-                seen.add(dedup)
                 out.append((name, rec))
+        return out
+
+    def _declared_disciplines(self, declared: dict[str, int],
+                              report: Optional[ReadReport]) -> dict[str, set[int]]:
+        """``{folded discipline: the cast the tab says teaches it}`` — cast indices, from
+        ``declared`` (``{folded declared spelling: index}``).
+
+        The tenant's OWN declaration of who teaches what, read off the column the tab already
+        carries and used for nothing else: it is half of :func:`_by_discipline_and_token`, and
+        it is the half that stops a shared first name from deciding anything. A row whose name
+        is not in the cast (nothing in today's data — the cast is built from these same rows)
+        contributes nothing rather than inventing a person.
+        """
+        out: dict[str, set[int]] = {}
+        for name, rec in self._faculty_rows(report):
+            at = declared.get(_norm(name))
+            if at is None:
+                continue
+            key = _norm(_discipline(_declared_column(rec, "disciplin")))
+            if key:
+                out.setdefault(key, set()).add(at)
         return out
 
     # ── the calendar export (a write: it leaves the house) ───────────────────────────
