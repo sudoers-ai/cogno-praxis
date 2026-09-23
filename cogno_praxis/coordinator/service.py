@@ -7,7 +7,9 @@ host injects a Google-download adapter; tests inject the in-memory fake) and is 
 
 Role handling (host-authorised, parent parity): a non-oversight caller only ever sees THEIR OWN
 classes (``professor`` is pinned to their identity label); an oversight role (SUPERVISOR/ADMIN)
-may query any professor or the whole master schedule.
+may query any professor or the whole master schedule. The pay estimate follows the same line
+since 2026-09-23: everybody's own with ``professor=""``; a professor by name, or every professor
+one block each (:data:`ALL_PROFESSORS`), for the oversight roles only.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ from cogno_praxis.coordinator.ics import (
 )
 from cogno_praxis.coordinator.config import CoordinatorConfig, pay_refusal
 from cogno_praxis.coordinator.pay import (
+    FacultyPayEstimate,
     PayEstimate,
     PayGroup,
     PayLine,
@@ -56,6 +59,21 @@ _log = logging.getLogger(__name__)
 
 _OVERSIGHT_ROLES = frozenset({"SUPERVISOR", "ADMIN", "OWNER"})
 GRADE_GRACE_DAYS = 14           # parent parity: grades/attendance due within 14d of the last class
+
+#: The ``professor`` argument that means EVERY professor, for the pay estimate — a sentinel, and
+#: deliberately not the empty string. ``""`` is the caller, for every role: it was measured
+#: (2026-09-09) that an empty argument reaching the schedule filter meant "the master schedule"
+#: for an oversight role, and the estimate then summed the whole faculty under the caller's name.
+#: "All" therefore has to be ASKED FOR with a character nobody's name contains, and answered as
+#: one block per professor (:meth:`CoordinatorService.estimate_faculty_pay`), never as one sum.
+ALL_PROFESSORS = "*"
+
+#: The refusal a non-oversight caller gets for asking about anybody but themselves — by name or
+#: with :data:`ALL_PROFESSORS`. ONE sentence, unchanged since the capability opened: it is the
+#: privacy rule for everyone who is not the coordination, and widening the coordination's reach
+#: (2026-09-23) did not move a byte of it.
+_OWN_PAY_ONLY = ("You can only see your own pay estimate — another professor's remuneration is "
+                 "not something this assistant discloses to anyone.")
 
 #: How far ahead a schedule read looks when the caller named NO period at all.
 #:
@@ -503,6 +521,22 @@ class CoordinatorService:
                                      role=role, identity_label=identity_label)
         if err:
             raise CoordinatorAccessError(err)
+        return self._filter_schedule(entries, month=month, discipline=discipline, turma=turma,
+                                     include_past=include_past, apply_horizon=apply_horizon,
+                                     report=report)
+
+    def _filter_schedule(self, entries: list[ClassEntry], *, month: str = "",
+                         discipline: str = "", turma: str = "", include_past: bool = False,
+                         apply_horizon: bool = True,
+                         report: Optional[ReadReport] = None) -> list[ClassEntry]:
+        """The ``turma``/``month``/``discipline``/window narrowing of
+        :meth:`get_professor_schedule`, over entries ALREADY scoped by role.
+
+        Split out, unchanged, so the faculty-wide pay estimate can apply the listing's exact
+        filters to ONE read it has already made: it needs the whole grid first (to know who the
+        professors are) and the same rows narrowed afterwards, and reading the spreadsheets
+        twice for that would report every read error twice. Every rule here is the listing's,
+        byte for byte — the docstring above is the specification."""
         if turma.strip():
             keys = self.resolve_turmas(turma)
             if not keys:
@@ -752,58 +786,24 @@ class CoordinatorService:
                     found.add(pct)
         return found.pop() if len(found) == 1 else None
 
-    def estimate_professor_pay(self, *, professor: str = "", role: str = "",
-                               identity_label: str = "", period: str = "", turma: str = "",
-                               report: Optional[ReadReport] = None) -> PayEstimate:
-        """What the caller's OWN classes in ``period`` come to, grouped by class group and month.
+    # ── the professor's pay: their OWN for every role; by name or faculty-wide for oversight ──
+    def _pay_config(self) -> tuple[float, float]:
+        """``(rate, hours_per_class)`` — or the refusal every estimate shares, whoever it is for.
 
-        **Self-only, for every role, and that is the whole shape of this capability.** Every
-        other read here scopes by role — a supervisor sees the master schedule — and this one
-        does not: an oversight role gets exactly the same refusal a professor gets for asking
-        about somebody else. The scope this tool opened is "a professor may ask what THEY earn",
-        and a capability whose stated reason is *the money is yours* has no branch where the
-        money is somebody else's. Passing ``professor`` with anyone but the caller's own name
-        raises :class:`CoordinatorAccessError`; an unauthenticated caller (no
-        ``identity_label``) raises too, because with nobody named "their own" has no referent.
-
-        Refuses with :class:`CoordinatorConfigError` when the tenant's rules do not declare the
-        rate or the hours per class, NAMING the keys — see
-        :attr:`CoordinatorConfig.pay_undeclared` — and, when the rules DESCRIBE a figure in
-        prose instead ("R$ 120,00 por hora", "4 horas por aula"), naming what it found and the
-        key each should have been (:attr:`CoordinatorConfig.pay_in_prose`). There is no
-        branch that estimates without them, and none that reads a sentence as a number.
-
-        The arithmetic is ``classes × HOURS_PER_CLASS × rate``, plus an IBOPE bonus per hour
-        when — and only when — a survey result was actually read. The discipline's total
-        workload (``COLUMN_HOURS``, optional) is CONTEXT rendered beside it and is never a
-        factor. The month is read WHOLE — classes already given included — for a named
-        ``period`` and, when none is named, for the current month plus everything onward; the
-        listing's "from today onward" default is a reading convenience this method does not
-        inherit. It is READ-ONLY: nothing here writes to a spreadsheet, sends anything, or
-        records a figure.
+        A REQUIRED key missing, or a figure the rules describe in PROSE that no ``KEY: value``
+        line declares — either refuses, and the sentence names what was found where. The
+        second is the 2026-09-22 defect: rules that plainly said "R$ 120,00 por hora" were
+        answered "PAY_RATE_PER_HOUR is missing", which was true and told nobody what to do.
+        A band the parser could not read REFUSES THE WHOLE ESTIMATE, and it names the entry:
+        dropping it would be the worse of the two available wrongs — the professor is paid
+        less and the reply is word-for-word the one a tenant with no bonus scheme gets, so
+        nobody has anything to notice. ONE configuration serves every professor of the tenant,
+        so this is checked once per call and never per person.
         """
-        me = identity_label.strip()
-        if not me:
-            raise CoordinatorAccessError(
-                "This estimate is only ever about the person asking, and this turn carries no "
-                "identified professor.")
-        target = professor.strip()
-        if target and _norm(target) != _norm(me):
-            raise CoordinatorAccessError(
-                "You can only see your own pay estimate — another professor's remuneration is "
-                "not something this assistant discloses to anyone.")
-        # A REQUIRED key missing, or a figure the rules describe in PROSE that no ``KEY: value``
-        # line declares — either refuses, and the sentence names what was found where. The
-        # second is the 2026-09-22 defect: rules that plainly said "R$ 120,00 por hora" were
-        # answered "PAY_RATE_PER_HOUR is missing", which was true and told nobody what to do.
         missing = self.cfg.pay_undeclared
         prose = self.cfg.pay_in_prose
         if missing or prose:
             raise CoordinatorConfigError(pay_refusal(missing, prose))
-        # A band the parser could not read REFUSES THE WHOLE ESTIMATE, and it names the entry.
-        # Dropping it would be the worse of the two available wrongs: the professor is paid less
-        # and the reply is word-for-word the one a tenant with no bonus scheme gets, so nobody —
-        # not the professor, not whoever wrote the typo — has anything to notice.
         bad = self.cfg.ibope_bonus_unreadable
         if bad:
             named = "; ".join(repr(b) for b in bad)
@@ -816,61 +816,52 @@ class CoordinatorService:
         hours_per_class = self.cfg.hours_per_class
         assert rate is not None                        # pay_undeclared already refused a None
         assert hours_per_class is not None             # likewise — never inferred, never divided
-        # DECLARED is not the same as READ: a name in the rules that no sheet carries yields
-        # no context and no complaint (see ``_workload_by_subject``).
-        workload_declared = bool(self.cfg.column_hours.strip())
+        return rate, hours_per_class
 
-        # ``apply_horizon=False``, for the reason the calendar export already opts out: the
-        # 30-day default exists so a professor READING a list does not have to scroll, and this
-        # is not a list. An estimate silently cut at 30 days answers "quanto eu recebo" with
-        # part of the months and no sign that it did — which is the export's "3 of 6" defect
-        # said about money, where the reader has no way at all to notice the shortfall. A named
-        # ``period`` still filters exactly as it does everywhere else.
-        # ``professor=me``, NOT ``professor=""``, and the empty string is the whole defect this
-        # line was carrying. ``_visible`` reads an EMPTY ``professor`` as "no filter", which for
-        # a non-oversight caller means "pin them to their own name" and for an oversight one
-        # means THE MASTER SCHEDULE — every professor's classes, in one list. The guard eleven
-        # lines above refuses ``professor='<somebody else>'`` to every role, oversight included,
-        # on the stated ground that "another professor's remuneration is not something this
-        # assistant discloses to anyone"; delegating with an empty argument handed an oversight
-        # role in BULK exactly what that guard refuses by NAME, and labelled the sum as the
-        # caller's OWN pay. Measured on a seeded sheet before the fix: EMPLOYEE 12 h/R$ 1.440,00
-        # (hers), SUPERVISOR 16 h/R$ 1.920,00 — the extra 4 h being another professor's class.
-        # So the caller's own name is passed EXPLICITLY and the same filter does the rest: for a
-        # non-oversight role this is byte-for-byte the path that already ran (``_visible`` sets
-        # ``target = identity_label``, and ``me`` IS ``identity_label``), and for an oversight
-        # role it now narrows instead of widening. It stays a filter argument rather than a
-        # ``role=""`` override because lying to the callee about the caller's role would be a
-        # second, quieter contract for the next reader to get wrong.
-        #
-        # ``include_past=True``, ALWAYS — the estimate reads the WHOLE month, classes already
-        # given included. The listing hides past classes unless asked (a professor reading a
-        # list wants what is coming), and the estimate inherited that: measured on a live turn
-        # (2026-09-22, turn 104), "quanto recebo pelas aulas de setembro" asked mid-month came
-        # back as «1 aula» — the two classes already taught that month were cut as "past", and
-        # a person was shown a third of their month as the month. Pay is not a reading
-        # convenience: the month is the month, given and to give. A NAMED period is therefore
-        # read in full; an EMPTY one is the current month in full plus everything onward —
-        # cut here at the first day of the month, because ``include_past`` with no month would
-        # otherwise hand back every class of the academic year. The LIST read keeps its own
-        # behaviour untouched: this is a fact about the estimate, not about the listing.
-        entries = self.get_professor_schedule(
-            professor=me, role=role, identity_label=me, month=period, turma=turma,
-            include_past=True, apply_horizon=False, report=report)
-        if not _resolve_month(period):
-            month_start = self._today().replace(day=1)
-            entries = [e for e in entries if e.when is None or e.when >= month_start]
+    def _pay_window(self, entries: list[ClassEntry], period: str) -> list[ClassEntry]:
+        """The estimate's own period rule, applied AFTER the listing's filters.
+
+        The estimate reads the WHOLE month, classes already given included (the caller passes
+        ``include_past=True``, always). The listing hides past classes unless asked — a
+        professor reading a list wants what is coming — and the estimate inherited that:
+        measured on a live turn (2026-09-22, turn 104), "quanto recebo pelas aulas de setembro"
+        asked mid-month came back as «1 aula», the two classes already taught cut as "past".
+        Pay is not a reading convenience: the month is the month, given and to give. A NAMED
+        period is therefore read in full; an EMPTY one is the current month in full plus
+        everything onward — cut here at the first day of the month, because ``include_past``
+        with no month would otherwise hand back every class of the academic year.
+        """
+        if _resolve_month(period):
+            return entries
+        month_start = self._today().replace(day=1)
+        return [e for e in entries if e.when is None or e.when >= month_start]
+
+    @staticmethod
+    def _payable(e: ClassEntry) -> bool:
+        """A row that counts as a class given: dated, with a discipline, and not a free slot."""
+        return not (e.is_free_slot or e.when is None or not e.subject.strip())
+
+    def _pay_estimate(self, entries: list[ClassEntry], *, rate: float, hours_per_class: float,
+                      period: str, professor: str, ibope_label: str,
+                      report: Optional[ReadReport]) -> PayEstimate:
+        """The arithmetic over entries ALREADY scoped to ONE person — the same code whether that
+        person is the caller, a professor an oversight role named, or one of everybody.
+
+        ``classes × HOURS_PER_CLASS × rate``, bucketed by (class group, sortable year-month) so
+        the two grouping axes the answer promises are the two axes it is actually ordered by;
+        the workload column read only when the tenant NAMED one (with no column there is no
+        header to look for, and looking anyway is the sniffing this class refuses); the IBOPE
+        result looked up under ``ibope_label`` — the caller's identity label for their own
+        estimate, the sheet's spelling of the professor otherwise. ``professor`` is stamped on
+        the result and rendered as its second line when non-empty.
+        """
+        workload_declared = bool(self.cfg.column_hours.strip())
         workload_by_sheet: dict[str, Optional[dict[str, float]]] = {}
-        # keyed by (class group, sortable year-month) so the two grouping axes the answer
-        # promises are the two axes it is actually ordered by. Chronological order across the
-        # whole read interleaves the groups, which reads as one list that keeps changing subject.
         buckets: dict[tuple[str, tuple[int, int]], dict[str, int]] = {}
         workload_missing: list[str] = []
         for e in entries:
-            if e.is_free_slot or e.when is None or not e.subject.strip():
+            if not self._payable(e) or e.when is None:
                 continue
-            # The workload column is read only when the tenant NAMED one: with no column there
-            # is no header to look for, and looking anyway is the sniffing this class refuses.
             if workload_declared and e.sheet_key not in workload_by_sheet:
                 workload_by_sheet[e.sheet_key] = self._workload_by_subject(
                     e.sheet_id, e.sheet_key, report)
@@ -893,13 +884,229 @@ class CoordinatorService:
                                      hours_per_class=hours_per_class, workload=workload))
             groups.append(PayGroup(turma=turma_key, month=f"{month:02d}/{year}", lines=lines))
 
-        pct = self._ibope_result(identity_label=me, report=report)
+        pct = self._ibope_result(identity_label=ibope_label, report=report)
         return PayEstimate(
             rate=rate, hours_per_class=hours_per_class, groups=groups,
             workload_read=workload_read, workload_missing=tuple(workload_missing),
             tiers=self.cfg.ibope_bonus, ibope_found=pct is not None, ibope_pct=pct,
             ibope_tab=self.cfg.tab_ibope.strip(), period=month_label(period),
-            ibope_min_response_pct=self.cfg.ibope_min_response_pct)
+            ibope_min_response_pct=self.cfg.ibope_min_response_pct, professor=professor)
+
+    def _professor_universe(self, entries: list[ClassEntry],
+                            report: Optional[ReadReport]) -> dict[str, str]:
+        """Every professor the tenant's data names — ``{folded name: the spelling to show}``,
+        sorted by the folded name so every worker renders the same order.
+
+        **Keyed on the schedule's ``COLUMN_PROFESSOR``, with the professors tab as a
+        COMPLEMENT** — and that order is measured, not chosen. On the live turns this exists
+        for (2026-09-22, turns 111/112/115) the professors tab answered "No faculty records
+        found." on all three: the declared tab name did not match the sheet's. A universe read
+        off the tab alone would have grouped nobody; the schedule's own column is the one source
+        that cannot be empty while there are classes to pay for. The tab still contributes a
+        professor who has no class in the period, which is exactly the name a schedule-only
+        read would lose — and losing a name from a faculty-wide total reads as "not paid".
+
+        The schedule's spelling wins when both name the same person (``setdefault``): it is the
+        spelling the listing shows, so the estimate and the list say the same name.
+        """
+        out: dict[str, str] = {}
+        for e in entries:
+            name = e.professor.strip()
+            if name:
+                out.setdefault(_norm(name), name)
+        for name, _rec in self._faculty_records(report):
+            out.setdefault(_norm(name), name)
+        return dict(sorted(out.items()))
+
+    def _resolve_professor(self, target: str, entries: list[ClassEntry],
+                           report: Optional[ReadReport]) -> str:
+        """The ONE professor an oversight role's ``professor=<name>`` designates — the sheet's
+        spelling — or a refusal that says why there is not exactly one.
+
+        The matching rule is :meth:`_visible`'s, applied to the universe instead of to the
+        rows: accent-stripped, case-folded SUBSTRING (``"silva"`` inside ``"ana silva"``), no
+        ``difflib`` and no typo tolerance — nothing the listing does not do, and nothing it
+        does that this does not. What this adds, and the listing has no need for, is the
+        refusal when the name matches MORE THAN ONE professor: the listing shows each of
+        their lines with the professor on it, so a supervisor sees two people; the estimate
+        would sum both under one name, which is the bare-sum defect in a new coat — ``"Ana"``
+        is inside ``"Mariana"``. A name that matches nobody refuses too, rather than answering
+        "no classes" about a person who does not exist.
+        """
+        n = _norm(target)
+        hits = [spelling for key, spelling in
+                self._professor_universe(entries, report).items() if n in key]
+        if not hits:
+            raise CoordinatorError(
+                f'No professor matching "{target}" in the schedule or the faculty records — '
+                f"nothing to estimate under that name. Check the spelling or list the faculty.")
+        if len(hits) > 1:
+            raise CoordinatorError(
+                f'"{target}" matches {len(hits)} professors — {", ".join(hits)}. Name one of '
+                f"them; an estimate that summed them would be one figure about two people.")
+        return hits[0]
+
+    def estimate_professor_pay(self, *, professor: str = "", role: str = "",
+                               identity_label: str = "", period: str = "", turma: str = "",
+                               report: Optional[ReadReport] = None) -> PayEstimate:
+        """What ONE professor's classes in ``period`` come to, grouped by class group and month
+        — the caller's own for every role; a professor named by an oversight role.
+
+        **Three doors, decided by the argument and the role — and ``""`` is the caller, for
+        everyone.** An EMPTY ``professor`` is the person asking, whatever their role: a
+        supervisor asking "quanto eu recebo" gets THEIR pay, never the faculty's (the old
+        ``professor=""`` = master-schedule defect is described at :meth:`estimate_faculty_pay`).
+        A ``professor`` naming somebody ELSE is answered for an oversight role
+        (``_OVERSIGHT_ROLES`` — the coordinator is the person a professor's pay is a working
+        fact for; the owner's own words, 2026-09-23: "o supervisor pode ter acesso a todos os
+        professores, pois ele é o coordenador") and REFUSED to every other role with the same
+        sentence it always was — that refusal is the privacy rule for everyone who is not the
+        coordination, and it does not move. The name is resolved exactly as the listing
+        resolves it (:meth:`_resolve_professor`), the estimate is stamped with the sheet's
+        spelling of it (:attr:`PayEstimate.professor`), and the classes read are the ones the
+        listing would show for that name. :data:`ALL_PROFESSORS` (``"*"``) is the third door
+        and lives in :meth:`estimate_faculty_pay`; here it is refused to a non-oversight role
+        like any other name and, for an oversight role, redirected — this method returns ONE
+        person's estimate and a sum of several is a different type on purpose. Naming
+        YOURSELF is the first door (same person, same block). An unauthenticated caller (no
+        ``identity_label``) raises, because with nobody named "their own" has no referent.
+
+        **Every estimate says WHOSE it is** (:attr:`PayEstimate.professor` → the block's
+        second line, ``Professor: <name>``): the caller's own label on the first door, the
+        sheet's spelling of the professor on the second. The figure was never wrong on turns
+        111/112 — the reader's belief about whom it belonged to was, and a header is the
+        cheapest thing that can correct a belief.
+
+        Refuses with :class:`CoordinatorConfigError` when the tenant's rules do not declare the
+        rate or the hours per class, NAMING the keys — see
+        :attr:`CoordinatorConfig.pay_undeclared` — and, when the rules DESCRIBE a figure in
+        prose instead ("R$ 120,00 por hora", "4 horas por aula"), naming what it found and the
+        key each should have been (:attr:`CoordinatorConfig.pay_in_prose`). There is no
+        branch that estimates without them, and none that reads a sentence as a number.
+
+        The arithmetic is ``classes × HOURS_PER_CLASS × rate``, plus an IBOPE bonus per hour
+        when — and only when — a survey result was actually read. The discipline's total
+        workload (``COLUMN_HOURS``, optional) is CONTEXT rendered beside it and is never a
+        factor. The month is read WHOLE — classes already given included — for a named
+        ``period`` and, when none is named, for the current month plus everything onward; the
+        listing's "from today onward" default is a reading convenience this method does not
+        inherit (:meth:`_pay_window`). It is READ-ONLY: nothing here writes to a spreadsheet,
+        sends anything, or records a figure.
+        """
+        me = identity_label.strip()
+        if not me:
+            raise CoordinatorAccessError(
+                "This estimate is only ever about the person asking, and this turn carries no "
+                "identified professor.")
+        target = professor.strip()
+        oversight = role.upper() in _OVERSIGHT_ROLES
+        if target == ALL_PROFESSORS:
+            if not oversight:
+                raise CoordinatorAccessError(_OWN_PAY_ONLY)
+            raise CoordinatorError(
+                f"professor={ALL_PROFESSORS!r} is every professor at once — that is "
+                f"estimate_faculty_pay, one block per professor; this estimate is one person's.")
+        if target and _norm(target) != _norm(me):
+            if not oversight:
+                raise CoordinatorAccessError(_OWN_PAY_ONLY)
+            rate, hours_per_class = self._pay_config()
+            # ONE read of the schedule: the universe (to resolve the name) and the rows (the
+            # listing's own role filter, by the same folded substring) come off the same grid.
+            everything = self.aggregate(report=report)
+            name = self._resolve_professor(target, everything, report)
+            rows, err = self._visible(everything, professor=name, role=role, identity_label=me)
+            assert err is None                         # an oversight role is never refused here
+            rows = self._filter_schedule(rows, month=period, turma=turma, include_past=True,
+                                         apply_horizon=False, report=report)
+            return self._pay_estimate(self._pay_window(rows, period), rate=rate,
+                                      hours_per_class=hours_per_class, period=period,
+                                      professor=name, ibope_label=name, report=report)
+        rate, hours_per_class = self._pay_config()
+        # ``apply_horizon=False``, for the reason the calendar export already opts out: the
+        # 30-day default exists so a professor READING a list does not have to scroll, and this
+        # is not a list. An estimate silently cut at 30 days answers "quanto eu recebo" with
+        # part of the months and no sign that it did — which is the export's "3 of 6" defect
+        # said about money, where the reader has no way at all to notice the shortfall. A named
+        # ``period`` still filters exactly as it does everywhere else.
+        # ``professor=me``, NOT ``professor=""``, and the empty string is the whole defect this
+        # line was carrying. ``_visible`` reads an EMPTY ``professor`` as "no filter", which for
+        # a non-oversight caller means "pin them to their own name" and for an oversight one
+        # means THE MASTER SCHEDULE — every professor's classes, in one list. Delegating with an
+        # empty argument handed an oversight role in BULK what the guard above refused by NAME,
+        # and labelled the sum as the caller's OWN pay. Measured on a seeded sheet before the
+        # fix: EMPLOYEE 12 h/R$ 1.440,00 (hers), SUPERVISOR 16 h/R$ 1.920,00 — the extra 4 h
+        # being another professor's class. So the caller's own name is passed EXPLICITLY and the
+        # same filter does the rest: for a non-oversight role this is byte-for-byte the path
+        # that already ran (``_visible`` sets ``target = identity_label``, and ``me`` IS
+        # ``identity_label``), and for an oversight role it narrows instead of widening. The
+        # faculty-wide answer an oversight role may now ask for is a DIFFERENT door
+        # (:data:`ALL_PROFESSORS`), one block per professor, never this path widened.
+        entries = self.get_professor_schedule(
+            professor=me, role=role, identity_label=me, month=period, turma=turma,
+            include_past=True, apply_horizon=False, report=report)
+        # ``professor=me`` on the RESULT too — the ownership header (2026-09-23, the owner's
+        # confirmation: «um valor sem dono é tão perigoso como um valor sem leitura»). Turns
+        # 111/112 handed a SUPERVISOR his own block under a header that did not say whose it
+        # was, and the reply called it the faculty's totals; the number was right and the
+        # reader was wrong about whom it belonged to. So every block says whose it is: the
+        # caller's own label here, the sheet's spelling on the two oversight doors.
+        return self._pay_estimate(self._pay_window(entries, period), rate=rate,
+                                  hours_per_class=hours_per_class, period=period,
+                                  professor=me, ibope_label=me, report=report)
+
+    def estimate_faculty_pay(self, *, role: str = "", identity_label: str = "",
+                             period: str = "", turma: str = "",
+                             report: Optional[ReadReport] = None) -> FacultyPayEstimate:
+        """EVERY professor's estimate for ``period``, one :class:`PayEstimate` each — the
+        oversight role's "os valores de todos os professores", and the door behind
+        :data:`ALL_PROFESSORS`.
+
+        **Oversight only.** A non-oversight role gets the refusal it gets for naming anybody
+        else — byte for byte — because "everyone" contains everyone else. The oversight role
+        reads the MASTER schedule (the listing's own ``professor=""`` filter) and the rows are
+        partitioned by the schedule's ``COLUMN_PROFESSOR``, folded — EXACT folded equality,
+        not the substring the by-name door uses, because here nobody typed a name: a row
+        belongs to the professor written on it. The set of professors is
+        :meth:`_professor_universe` (the schedule's column, plus the professors tab as a
+        complement), so a professor the tenant's data names but who has no class in the period
+        appears with NO groups and renders as "0 aulas" rather than vanishing from a total.
+
+        The result is a LIST of estimates and a total that says how many people it sums —
+        never one figure. That is the shape the 2026-09-22 turns 111/112/115 asked for and
+        could not get: with ``professor=""`` a supervisor received their OWN estimate under
+        a header that did not say so, and the reply called it «Totais de setembro por turma».
+        A figure with no owner in a coordinator's hands is the bulk-sum defect one step later.
+        Rows whose professor cell is EMPTY are counted on
+        :attr:`FacultyPayEstimate.unassigned_classes` and rendered as such — not folded into
+        anybody's block, not dropped. Configuration refusals are :meth:`_pay_config`'s, once
+        for the call: one set of rules serves every professor.
+        """
+        if role.upper() not in _OVERSIGHT_ROLES:
+            raise CoordinatorAccessError(_OWN_PAY_ONLY)
+        rate, hours_per_class = self._pay_config()
+        everything = self.aggregate(report=report)
+        universe = self._professor_universe(everything, report)
+        master, err = self._visible(everything, professor="", role=role,
+                                    identity_label=identity_label)
+        assert err is None                             # an oversight role is never refused here
+        rows = self._pay_window(
+            self._filter_schedule(master, month=period, turma=turma, include_past=True,
+                                  apply_horizon=False, report=report), period)
+        by_name: dict[str, list[ClassEntry]] = {key: [] for key in universe}
+        unassigned = 0
+        for e in rows:
+            key = _norm(e.professor)
+            if not key:
+                unassigned += self._payable(e)
+                continue
+            by_name[key].append(e)                     # every schedule name is in the universe
+        estimates = tuple(
+            self._pay_estimate(by_name[key], rate=rate, hours_per_class=hours_per_class,
+                               period=period, professor=name, ibope_label=name, report=report)
+            for key, name in universe.items())
+        return FacultyPayEstimate(rate=rate, hours_per_class=hours_per_class,
+                                  estimates=estimates, unassigned_classes=unassigned,
+                                  period=month_label(period))
 
     def get_professor_info(self, *, professor: str = "", role: str = "",
                            identity_label: str = "",
@@ -918,7 +1125,21 @@ class CoordinatorService:
                 raise CoordinatorAccessError("You can only view your own faculty details.")
             target = identity_label
         want = _norm(target)
-        out: list[dict[str, str]] = []
+        return [rec for name, rec in self._faculty_records(report)
+                if not want or want in _norm(name)]
+
+    def _faculty_records(self, report: Optional[ReadReport]) -> list[tuple[str, dict[str, str]]]:
+        """Every row of the professors tab across the spreadsheets, as ``(name, record)`` — one
+        per distinct folded name, first spelling wins, sheet order; ``[]`` when no tab is
+        configured or none carries a row (the live case of 2026-09-22: "No faculty records
+        found." on every turn, because the declared tab name did not match the sheet's).
+
+        The read :meth:`get_professor_info` has always made, minus its role filter, so the
+        faculty-wide pay estimate can take the names as a COMPLEMENT to the schedule's own
+        professor column without a second copy of the tab-reading loop."""
+        out: list[tuple[str, dict[str, str]]] = []
+        if not self.cfg.tab_professors:
+            return out
         seen: set[str] = set()
         for key, sid in self.cfg.spreadsheets.items():
             try:
@@ -941,13 +1162,11 @@ class CoordinatorService:
                 name = rec.get(prof_key, "")
                 if not name:
                     continue
-                if want and want not in _norm(name):
-                    continue
                 dedup = _norm(name)
                 if dedup in seen:
                     continue
                 seen.add(dedup)
-                out.append(rec)
+                out.append((name, rec))
         return out
 
     # ── the calendar export (a write: it leaves the house) ───────────────────────────

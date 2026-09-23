@@ -56,8 +56,11 @@ Approve the response if:
   declaration and still nothing to estimate from. None of those is a failure to reject.
   REJECT, however: any pay figure that did not come from that tool — a total the assistant
   worked out from a class count, an hourly rate quoted from the rules text and multiplied by
-  hand, a bonus applied without a result — and any answer about ANOTHER person's pay, which this
-  assistant does not disclose to anyone whatever their role.
+  hand, a bonus applied without a result — and, when the contact is a professor and not the
+  coordination, any answer about ANOTHER person's pay. A coordinator/supervisor may be shown a
+  named professor's block, or every professor's (one block each, headed "Professor: <name>", with
+  a total that says how many it sums); a faculty-wide figure that names nobody, or a block relayed
+  under the wrong name, is fabricated even when every number in it is the tool's.
 
 The schedule tools return their class/slot lines already laid out, and a reply that consists
 primarily of those lines reproduced as they came is CORRECT — do NOT penalize it. What IS a

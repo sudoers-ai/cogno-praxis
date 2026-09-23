@@ -239,6 +239,13 @@ class PayEstimate:
     #: response rate itself (no tenant declares one), so it is never silently treated as met.
     ibope_min_response_pct: Optional[float] = None
     period: str = ""                        # what the read filtered by, "" when it filtered none
+    #: WHOSE classes this estimate is about — the caller's own identity label, or the sheet's
+    #: spelling of the professor an oversight role named — rendered as the second line of the
+    #: block, ``Professor: <name>``. The OWNERSHIP header (2026-09-23): a supervisor was handed
+    #: his own block under a title that did not say whose it was, and the reply presented it
+    #: as the faculty's totals. Every block now says whose it is; the empty string is only ever
+    #: an estimate built by hand, and renders no line.
+    professor: str = ""
 
     @property
     def hours(self) -> float:
@@ -315,24 +322,83 @@ class PayEstimate:
         return ()
 
 
-# ── the rendered block ───────────────────────────────────────────────────────────────
-def render_pay_block(est: PayEstimate) -> str:
-    """The estimate as the block a professor reads: bold headers, no repeated labels.
+@dataclass(frozen=True)
+class FacultyPayEstimate:
+    """Every professor's estimate for one period, one :class:`PayEstimate` each — the answer to
+    an oversight role's "quanto recebe cada professor?", and NEVER one sum wearing no name.
 
-    **What this block may contain is a closed list, and that is a PII decision.** Every line is
-    built from a class-group key, a month, a discipline name, a count, an hour total and a
-    figure derived from those. It never copies a spreadsheet ROW, so no column the tenant
-    happens to keep beside the schedule can ride out with it — and it never names a person, not
-    even the reader, because the one identified human this block is about is the one holding
-    the phone. The estimate is self-only by construction (see
-    :meth:`CoordinatorService.estimate_professor_pay`), so there is no second person's figure
-    for it to carry either.
+    The shape is the whole point, and it was measured before it was designed. The old
+    ``professor=""`` path handed an oversight role every professor's classes in ONE list and
+    labelled the sum as the caller's own pay (16 h / R$ 1.920,00 with four hours of somebody
+    else's class in it — see the comment in ``CoordinatorService.estimate_professor_pay``). A
+    faculty-wide figure is only safe when it is a LIST of figures, each carrying the name it
+    belongs to, and the total is rendered under a header that says how many people it sums.
+
+    ``estimates`` holds one entry per professor the tenant's data names — the schedule's
+    ``COLUMN_PROFESSOR`` and, as a complement, the professors tab — INCLUDING a professor with no
+    class in the period, whose entry simply has no groups: a name that disappears from a
+    faculty-wide total is a person silently paid nothing. ``unassigned_classes`` counts payable
+    rows whose professor cell is EMPTY; they belong to nobody's block and are said aloud rather
+    than folded into somebody's total or dropped.
     """
-    period = f" — {est.period}" if est.period else ""
-    out: list[str] = [_H.format(f"Remuneração estimada{period}"),
-                      f"Valor/hora declarado nas regras: {fmt_money(est.rate)}",
-                      f"Horas por aula declaradas nas regras: {fmt_hours(est.hours_per_class)}",
-                      ""]
+    rate: float
+    hours_per_class: float
+    estimates: tuple[PayEstimate, ...] = ()
+    unassigned_classes: int = 0
+    period: str = ""
+
+    @property
+    def hours(self) -> float:
+        return sum(e.hours for e in self.estimates)
+
+    @property
+    def base(self) -> float:
+        return sum(e.base for e in self.estimates)
+
+    @property
+    def undetermined(self) -> tuple[str, ...]:
+        """The professors whose bonus is still OPEN — an IBOPE result not found, or one that
+        falls between two declared bands. A grand total WITH bonus cannot be stated while any
+        of these is non-empty, because it would pick an outcome for them that nobody verified;
+        the per-professor blocks carry their hypotheses instead."""
+        return tuple(e.professor for e in self.estimates if e.hypotheses)
+
+    @property
+    def total_with_bonus(self) -> Optional[float]:
+        """Base plus every professor's APPLIED bonus — ``None`` while any bonus is undetermined.
+
+        A professor whose result fell BELOW every band contributes zero bonus (an apurado
+        fact, see :attr:`PayEstimate.bonus_state`); a tenant that declares no band at all has
+        a total equal to the base. ``None`` is not zero: it says the figure does not exist
+        yet, and the renderer says so in words."""
+        if self.undetermined:
+            return None
+        total = self.base
+        for e in self.estimates:
+            tier = e.matched_tier
+            if tier is not None:
+                total += e.hours * tier.per_hour
+        return total
+
+
+# ── the rendered block ───────────────────────────────────────────────────────────────
+def _header_lines(est: PayEstimate, *, title: str) -> list[str]:
+    """The opening of a block: the bold title, whose it is when that is known, the two declared
+    factors — then the blank line the body starts after."""
+    out = [_H.format(title)]
+    if est.professor.strip():
+        out.append(f"Professor: {est.professor.strip()}")
+    out += [f"Valor/hora declarado nas regras: {fmt_money(est.rate)}",
+            f"Horas por aula declaradas nas regras: {fmt_hours(est.hours_per_class)}",
+            ""]
+    return out
+
+
+def _body_lines(est: PayEstimate) -> list[str]:
+    """Everything under the header: the (class group, month) buckets, the base, the bonus world
+    this estimate is in, and the workload context — ONE renderer, so a professor's block inside
+    a faculty-wide answer is line for line the block that professor reads about themselves."""
+    out: list[str] = []
     for g in est.groups:
         out.append(_H.format(f"{g.turma} — {g.month}"))
         for ln in g.lines:
@@ -345,6 +411,75 @@ def render_pay_block(est: PayEstimate) -> str:
     out.append("")
     out += _bonus_lines(est)
     out += _workload_lines(est)
+    return out
+
+
+def render_pay_block(est: PayEstimate) -> str:
+    """The estimate as the block a professor reads: bold headers, no repeated labels.
+
+    **What this block may contain is a closed list, and that is a PII decision.** Every line is
+    built from a class-group key, a month, a discipline name, a count, an hour total and a
+    figure derived from those. It never copies a spreadsheet ROW, so no column the tenant
+    happens to keep beside the schedule can ride out with it. The one person it names is the
+    one the estimate is ABOUT (:attr:`PayEstimate.professor`, the second line): the reader's
+    own label on their own block, the sheet's spelling of the professor an oversight role
+    named. It used to name nobody — "the one identified human this block is about is the one
+    holding the phone" — and that was true of a professor and false of a coordinator holding
+    it: a figure without an owner in a coordinator's hands is the old bulk-sum defect one step
+    later, and it shipped as «Totais de setembro por turma» over one person's classes.
+    """
+    period = f" — {est.period}" if est.period else ""
+    out = _header_lines(est, title=f"Remuneração estimada{period}")
+    out += _body_lines(est)
+    return "\n".join(out).strip()
+
+
+#: The line a professor with no class in the period gets inside the faculty-wide block. Said,
+#: never skipped: a name that vanishes from a list of totals reads as "not paid" or as "not
+#: on staff", and neither is what happened.
+NO_CLASSES_LINE = "0 aulas no período — nada a estimar."
+
+
+def render_faculty_pay_block(fac: FacultyPayEstimate) -> str:
+    """The faculty-wide answer: one block PER PROFESSOR, then a total that says whom it sums.
+
+    Each professor's section is :func:`_body_lines` under a ``*Professor: <name>*`` header —
+    the same lines that professor would read about themselves — and a professor with no class
+    in the period gets :data:`NO_CLASSES_LINE` under their header rather than no header. The
+    two declared factors are stated once at the top, not once per section.
+
+    The closing ``*Total (N professores)*`` states the BASE, and states the total WITH bonus
+    only when every professor's bonus is determined; otherwise it names the professors whose
+    bonus is still open and points at their sections, because a faculty-wide figure that
+    quietly chose a hypothesis for three people is a bare sum wearing a header.
+    """
+    period = f" — {fac.period}" if fac.period else ""
+    out: list[str] = [_H.format(f"Remuneração estimada — todos os professores{period}"),
+                      f"Valor/hora declarado nas regras: {fmt_money(fac.rate)}",
+                      f"Horas por aula declaradas nas regras: {fmt_hours(fac.hours_per_class)}",
+                      ""]
+    for est in fac.estimates:
+        out.append(_H.format(f"Professor: {est.professor}"))
+        if est.groups:
+            out += _body_lines(est)
+        else:
+            out.append(NO_CLASSES_LINE)
+        out.append("")
+    if fac.unassigned_classes:
+        aulas = f"{fac.unassigned_classes} aula" + ("s" if fac.unassigned_classes != 1 else "")
+        out.append(f"Sem professor na agenda: {aulas} no período com a coluna de professor "
+                   f"vazia — fora de todos os blocos acima e fora do total.")
+        out.append("")
+    n = len(fac.estimates)
+    out.append(_H.format(f"Total ({n} professor{'es' if n != 1 else ''})"))
+    out.append(f"Base: {fmt_hours(fac.hours)} · {fmt_money(fac.base)}")
+    total = fac.total_with_bonus
+    if total is not None:
+        out.append(f"Com bônus: {fmt_money(total)}")
+    else:
+        names = ", ".join(fac.undetermined)
+        out.append(f"Com bônus: não somado — o bônus de {names} está em aberto (ver o bloco de "
+                   f"cada um); somar escolheria uma hipótese que ninguém verificou.")
     return "\n".join(out).strip()
 
 

@@ -14,11 +14,15 @@ question, not an outside one.
 Also allow greetings, thanks, and short clarifications from a professor or coordinator — the
 intake is permissive.
 
+Also allow the coordination asking about the faculty's remuneration — a professor by name, or
+everyone ("os valores de todos os professores", "por professor"): the coordinator is who a
+professor's pay is a working fact for, and the tool decides by role what may be shown.
+
 Block ONLY messages that are abusive, unsafe, or clearly unrelated to academic scheduling
 (e.g. medical advice, general trivia) — those are redirected elsewhere. Finance is blocked
-EXCEPT for that one opening: another person's pay, the institution's accounts, invoices to
-process, budgets, tuition, or anything financial that is not the asker's own teaching
-remuneration is still out of scope and is redirected.
+EXCEPT for those openings: another person's pay asked by someone who is not the coordination,
+the institution's accounts, invoices to process, budgets, tuition, or anything financial that is
+not teaching remuneration is still out of scope and is redirected.
 
 The "unrelated" half speaks for THIS capability alone: a request another capability offered on
 this turn serves is in scope even when it is named above — the institution's own published
