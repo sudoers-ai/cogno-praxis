@@ -1221,9 +1221,16 @@ class CoordinatorService:
                     continue
                 at = hits[0]
             members[at].append(key)
+        # The canonical is the DECLARED person, spelt as the universe spells that same folded
+        # name — which is the schedule's spelling when both sources carry it, the rule
+        # :meth:`_professor_universe` already follows so that the estimate and the listing say
+        # the same name. Without this, a tab that shouts a name the schedule writes normally
+        # would render a "these spellings are one person" line over a difference of CASE, which
+        # is a notice about nothing standing where a real join is supposed to be visible.
+        head = [universe.get(_norm(c), c) for c, _s, _w in cast]
         groups = [
-            ProfessorGroup(canonical=cast[i][0], keys=tuple(keys),
-                           variants=tuple(universe[k] for k in keys if universe[k] != cast[i][0]),
+            ProfessorGroup(canonical=head[i], keys=tuple(keys),
+                           variants=tuple(universe[k] for k in keys if universe[k] != head[i]),
                            maybe_same=cast[i][2])
             for i, keys in members.items()] + [
             ProfessorGroup(canonical=universe[key], keys=(key,), variants=(), maybe_same=maybe)

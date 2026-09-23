@@ -316,3 +316,21 @@ def test_MUTATION_a_join_that_does_NOT_SAY_SO_is_the_defect_wearing_a_correct_fi
     at = lines.index(f"*Professor: {HELENA}*")
     assert lines[at + 1].startswith("Inclui linhas grafadas")
     assert block.index("Inclui linhas grafadas") < block.index("R$ 960,00")
+
+
+def test_a_difference_of_CASE_between_the_two_sources_is_not_a_join_worth_announcing():
+    """The tab shouts a name the schedule writes normally. That is ONE spelling folded two ways,
+    not two spellings of one person, and a «these were summed as the same person» line over it
+    would be a notice about nothing standing exactly where a real join has to be visible.
+
+    The block is headed with the spelling the LISTING shows, which is the rule the universe
+    already followed so that the estimate and the list say the same name."""
+    faculty = [_TAB_HEADER, ["Estatística", "40", HELENA.upper(), "helena.q@example.edu"]]
+    rows = [_class("02", HELENA), _class("09", HELENA)]
+    fac, by = _blocks(_svc(rows, faculty))
+    assert [e.professor for e in fac.estimates] == [HELENA]
+    assert by[HELENA].variants == ()
+    assert "Inclui linhas grafadas" not in render_faculty_pay_block(fac)
+    # and a REAL variant beside it still announces itself
+    fac2, by2 = _blocks(_svc(rows + [_class("16", "Helena Quintar")], faculty))
+    assert by2[HELENA].variants == ("Helena Quintar",)
