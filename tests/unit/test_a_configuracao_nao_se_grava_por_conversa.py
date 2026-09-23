@@ -49,9 +49,14 @@ import pytest
 PROMPTS = Path(__import__("cogno_praxis").__file__).resolve().parent / "coordinator" / "prompts"
 SYSTEM = (PROMPTS / "system.txt").read_text(encoding="utf-8")
 LIMITS = (PROMPTS / "limits.txt").read_text(encoding="utf-8")
+VOICE = (PROMPTS / "voice.txt").read_text(encoding="utf-8")
 
 #: O cabeçalho da regra, tal como está escrito. É por ele que se fatia — ver o docstring.
 CABECALHO = "### The Figures Are Configuration — a Conversation Cannot Set Them"
+
+#: O ``voice.txt`` não tem cabeçalhos: é uma lista de bullets. A unidade de secção ali é o
+#: BULLET, e é por esta abertura que se fatia o do locutor.
+ABERTURA_VOZ = "- If the contact DECLARES a figure"
 
 #: As quatro chaves que o ``CoordinatorConfig`` lê. Escritas à letra, porque é à letra que
 #: alguém as vai copiar para o painel.
@@ -90,22 +95,30 @@ def _seccao(texto: str, cabecalho: str) -> str:
     return resto[:fim]
 
 
-def _paragrafo(texto: str, indice: int) -> str:
-    """O bloco entre linhas em branco que contém `indice` — a unidade em que uma proibição e a
-    palavra proibida têm de viajar juntas."""
-    inicio = texto.rfind("\n\n", 0, indice)
-    fim = texto.find("\n\n", indice)
-    return texto[(0 if inicio < 0 else inicio): (len(texto) if fim < 0 else fim)]
+def _bloco(texto: str, indice: int) -> str:
+    """A unidade em que uma proibição e a palavra proibida têm de viajar juntas.
+
+    Um parágrafo — ou UM BULLET, quando é isso que o ficheiro tem. O ``voice.txt`` é uma lista
+    de bullets com UMA linha em branco no ficheiro inteiro (contado): tomá-lo por parágrafos
+    dava um bloco só, com os "NEVER" dos outros bullets lá dentro, e o varrimento passava a ser
+    verde sobre qualquer coisa. A fronteira é a linha em branco **ou** a abertura de um bullet.
+    """
+    inicio = max(texto.rfind("\n\n", 0, indice) + 1, texto.rfind("\n- ", 0, indice) + 1, 0)
+    adiante = [i for i in (texto.find("\n\n", indice), texto.find("\n- ", indice)) if i >= 0]
+    return texto[inicio:(min(adiante) if adiante else len(texto))]
 
 
 def _desdobrado(texto: str) -> str:
-    """As mudanças de linha DENTRO de um parágrafo viram espaço; as linhas em branco ficam.
+    """As continuações de linha viram espaço; as linhas em branco e as aberturas de bullet ficam.
 
     Sem isto o varrimento mente por causa da largura da coluna: o ``limits.txt`` embrulha
     ``that "vou\n  considerar"`` ao fim da linha, e uma procura por substring exacta declara
     que a proibição não existe — foi o que este ficheiro mediu à primeira corrida.
+
+    O que NÃO se desdobra é a quebra que abre um bullet novo: colar dois bullets num só
+    devolvia ao ``voice.txt`` exactamente o bloco único que ``_bloco`` existe para evitar.
     """
-    return re.sub(r"[ \t]*(?<!\n)\n(?!\n)[ \t]*", " ", texto)
+    return re.sub(r"[ \t]*\n[ \t]*(?=[^\n\-])", " ", texto)
 
 
 def _ocorrencias(texto: str, palavra: str) -> "list[int]":
@@ -114,6 +127,42 @@ def _ocorrencias(texto: str, palavra: str) -> "list[int]":
         saida.append(i)
         i = texto.find(palavra, i + 1)
     return saida
+
+
+def _bullet(texto: str, abertura: str) -> str:
+    """O bullet que ABRE com `abertura`, até ao bullet seguinte. "" se não existe.
+
+    Fatia-se o bullet pela mesma razão por que se fatia a secção do ``system.txt``: exigir uma
+    chave "algures no ficheiro" é uma asserção que o ``voice.txt`` já satisfazia antes desta
+    mudança — ver ``test_uma_assercao_sobre_o_voice_inteiro_teria_passado_antes``.
+    """
+    i = texto.find(abertura)
+    if i < 0:
+        return ""
+    fim = texto.find("\n- ", i + len(abertura))
+    return texto[i:(len(texto) if fim < 0 else fim)]
+
+
+def _o_que_falta_na_voz(texto: str) -> "list[str]":
+    """As faltas da regra no ``voice.txt`` dado. Lista vazia = está lá, e está no bullet."""
+    bullet = _desdobrado(_bullet(texto, ABERTURA_VOZ))
+    if not bullet.strip():
+        return [f"o bullet que abre com {ABERTURA_VOZ!r} não existe"]
+    faltas = [f"o bullet não nomeia {chave}" for chave in CHAVES if chave not in bullet]
+    if "in the panel" not in bullet:
+        faltas.append("o bullet não diz ONDE se escreve — falta o painel")
+    if "persona's rules" not in bullet.lower():
+        faltas.append("o bullet não diz que a figura vive nas REGRAS da persona")
+    faltas += [f"o bullet não proíbe {p!r}" for p in MUZZLE if p not in bullet]
+    return faltas
+
+
+def _sem_a_proibicao_na_voz() -> str:
+    """O ``voice.txt`` com o bullet do locutor apagado — A MUTAÇÃO NOVA, num ficheiro só."""
+    bullet = _bullet(VOICE, ABERTURA_VOZ)
+    assert bullet.strip(), "a abertura mudou: a mutação deixaria de mutar coisa nenhuma"
+    assert VOICE.count(bullet) == 1, "a âncora não é única"
+    return VOICE.replace(bullet, "")
 
 
 def _sem_a_regra() -> str:
@@ -153,7 +202,7 @@ def _exige_proibicao(nome: str, texto: str) -> None:
         indices = _ocorrencias(plano, palavra)
         assert indices, f"{nome} não proíbe {palavra!r} em lado nenhum"
         for i in indices:
-            par = _paragrafo(plano, i)
+            par = _bloco(plano, i)
             assert "NEVER" in par or "REJECT" in par, (
                 f"{nome} escreve {palavra!r} num parágrafo que não a proíbe — uma instrução "
                 f"em sentido contrário à regra, no mesmo ficheiro:\n{par.strip()}"
@@ -232,8 +281,11 @@ def test_controlo_t99_um_pedido_de_valor_continua_a_mandar_estimar():
 
 
 # ── o muzzle ───────────────────────────────────────────────────────────────────────────
-@pytest.mark.parametrize("nome,texto", [("system.txt", SYSTEM), ("limits.txt", LIMITS)],
-                         ids=("system.txt", "limits.txt"))
+@pytest.mark.parametrize(
+    "nome,texto",
+    [("system.txt", SYSTEM), ("limits.txt", LIMITS), ("voice.txt", VOICE)],
+    ids=("system.txt", "limits.txt", "voice.txt"),
+)
 def test_muzzle_twin_cada_palavra_proibida_viaja_com_a_sua_proibicao(nome: str, texto: str):
     _exige_proibicao(nome, texto)
 
@@ -250,12 +302,86 @@ def test_o_varrimento_do_muzzle_sabe_produzir_a_ausencia():
         _exige_proibicao("system.txt (mutado)", calado)
 
 
+# ── o locutor ──────────────────────────────────────────────────────────────────────────
+def test_gemeo_t102_o_locutor_nao_escreve_ao_contacto_que_gravou():
+    """Quem escreve ao contacto é o LOCUTOR, e a proibição tem de viver onde a frase nasce.
+
+    Um juiz que proíbe e um locutor que não sabe é meia rede: a rejeição chega DEPOIS da frase
+    existir, e o que a segunda tentativa faz — a família que este repo já mediu — é gastar o
+    orçamento e acabar num handoff. O texto ENTREGUE a quem escreve tem de trazer a proibição.
+    """
+    assert _o_que_falta_na_voz(VOICE) == [], _o_que_falta_na_voz(VOICE)
+
+    bullet = _desdobrado(_bullet(VOICE, ABERTURA_VOZ))
+    for chave in T102_CHAVES:
+        assert chave in bullet, (
+            f"{T102!r} declara o que {chave} guarda, e o locutor não tem essa chave para apontar"
+        )
+    assert "NAME THE KEY" in bullet
+
+
+def test_o_varrimento_da_voz_nao_e_um_bloco_so():
+    """O CONTROLO que torna o varrimento do ``voice.txt`` uma asserção e não um adorno.
+
+    O ficheiro tem UMA linha em branco no total (contado abaixo), por isso a unidade
+    "parágrafo" devolveria a lista inteira — e a lista inteira contém "NEVER" em bullets que
+    nada têm a ver com configuração. O varrimento passaria com a proibição em qualquer lado, ou
+    sem ela. A fronteira tem de ser o bullet, e é isto que o prova.
+    """
+    assert VOICE.count("\n\n") <= 1, "o voice.txt ganhou parágrafos — rever a unidade"
+
+    plano = _desdobrado(VOICE)
+    i = plano.find("anotado")
+    assert i > 0
+    bloco = _bloco(plano, i)
+    assert "If the contact DECLARES a figure" in bloco
+    assert "Keep it concise" not in bloco, "o bloco comeu os bullets seguintes"
+    assert "A pay estimate arrives as a finished block" not in bloco, "e os anteriores"
+    assert len(bloco) < len(plano) / 4, (len(bloco), len(plano))
+
+
+def test_uma_assercao_sobre_o_voice_inteiro_teria_passado_antes():
+    """A mesma distinção contada que o ``system.txt`` obrigou a fazer, no terceiro ficheiro.
+
+    ``PAY_RATE_PER_HOUR`` **já estava** no ``voice.txt`` antes desta mudança, no bullet que
+    manda relatar "found … but PAY_RATE_PER_HOUR is not declared". Uma asserção sobre o
+    ficheiro inteiro passava sobre a main, e a mutação que apaga o bullet novo não a matava.
+    """
+    sem = _sem_a_proibicao_na_voz()
+    assert "PAY_RATE_PER_HOUR" in sem, (
+        "a chave já não vive fora do bullet novo — este controlo deixou de ter assunto"
+    )
+    assert _bullet(sem, ABERTURA_VOZ) == ""
+    assert VOICE.count("PAY_RATE_PER_HOUR") > sem.count("PAY_RATE_PER_HOUR")
+
+
 # ── a mutação ──────────────────────────────────────────────────────────────────────────
 def test_mutacao_remover_a_regra_mata_o_gemeo():
     sem_a_regra = _sem_a_regra()
     assert CABECALHO not in sem_a_regra
     assert "## Scope" in sem_a_regra, "a mutação levou mais do que a secção"
     assert _o_que_falta(sem_a_regra) == [f"a secção {CABECALHO!r} não existe"]
+
+
+def test_mutacao_tirar_a_proibicao_so_da_voz_mata_so_o_gemeo_do_locutor():
+    """A cobertura é por FICHEIRO, não por acaso.
+
+    Apagar o bullet do ``voice.txt`` mata o gémeo do locutor e deixa os outros dois de pé — que
+    é a prova de que cada ficheiro é exigido pelo seu próprio teste. Sem isto, três gémeos que
+    lessem todos o mesmo ficheiro passariam por três coberturas e seriam uma.
+    """
+    sem_voz = _sem_a_proibicao_na_voz()
+    assert _o_que_falta_na_voz(sem_voz) == [
+        f"o bullet que abre com {ABERTURA_VOZ!r} não existe"
+    ]
+    for palavra in MUZZLE:
+        assert palavra not in sem_voz, f"{palavra!r} sobreviveu à mutação do voice.txt"
+
+    # e os outros dois ficheiros, intocados, continuam a cumprir
+    assert _o_que_falta(SYSTEM) == []
+    assert "A figure the contact DECLARED was answered by naming its KEY" in _desdobrado(LIMITS)
+    _exige_proibicao("system.txt", SYSTEM)
+    _exige_proibicao("limits.txt", LIMITS)
 
 
 def test_uma_assercao_sobre_o_ficheiro_inteiro_teria_passado_antes():
