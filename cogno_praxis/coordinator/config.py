@@ -202,6 +202,26 @@ class CoordinatorConfig:
             ("Recesso", "Feriado", "Emenda", "Férias", "Reservado",
              "Feriado Nacional", "Recesso Escolar"))
 
+        # An exception written as a SUFFIX on the discipline, not as the whole cell — the
+        # secretary annotates the row instead of replacing it, so the class keeps its name and
+        # gains " - Aula adiada" or " - reposição do dia 14/09". The two annotations are
+        # OPPOSITE facts about the same class and only one of them is a label this list holds:
+        # a POSTPONED class was not given and must not be paid; the make-up that follows it WAS
+        # the class and must be, which is why "Reposição" stays where it is above (a whole cell
+        # that says only that is an OPEN slot) and is deliberately not repeated here.
+        #
+        # DECLARED like every list above, for the same reason: these are the tenant's words.
+        # The comparison is ``_norm``-folded, so "Aula Adiada" and "aula adiada" are one entry
+        # and an accent costs nothing; what a tenant adds is a WORDING, never a rule.
+        #
+        # The default holds the ONE family that was measured, and deliberately not the words
+        # that merely resemble it ("Cancelada", "Suspensa"). Every entry here stops a class
+        # from being paid, so guessing a tenant's vocabulary takes money off somebody on a
+        # hunch; a tenant whose sheet says something else declares it, and the day they do the
+        # figure moves for a reason a human wrote down.
+        self.postponed_labels: tuple[str, ...] = _find_list(
+            rules, "POSTPONED_LABELS", ("Aula adiada", "Adiada"))
+
         # ── the professor-pay estimate ───────────────────────────────────────────────
         # Read here, and DELIBERATELY WITHOUT DEFAULTS, unlike every field above. The others
         # default because a wrong guess costs a mis-labelled column; these are a person's pay.

@@ -53,6 +53,18 @@ class ClassEntry:
     def is_free_slot(self) -> bool:
         return getattr(self, "_free", False)
 
+    @property
+    def is_postponed(self) -> bool:
+        """Did the schedule ANNOTATE this class as put off — ``"<discipline> - Aula adiada"``?
+
+        Carried like :attr:`is_free_slot`, and it is a different fact from both of that one's
+        neighbours. A free slot was never anybody's class; a skipped row is not a class at all
+        and never reaches a reader. A postponed class is somebody's real class, it stays on the
+        listing so the professor sees the day that did not happen, and it is not PAID — the
+        make-up row that names its date is where that class was taught and where it is paid.
+        """
+        return getattr(self, "_postponed", False)
+
 
 @dataclass
 class SheetReadError:

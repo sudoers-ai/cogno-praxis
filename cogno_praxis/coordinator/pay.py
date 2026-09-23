@@ -246,6 +246,17 @@ class PayEstimate:
     #: as the faculty's totals. Every block now says whose it is; the empty string is only ever
     #: an estimate built by hand, and renders no line.
     professor: str = ""
+    #: The OTHER spellings of :attr:`professor` whose classes this estimate summed — the
+    #: schedule writes a person's name more than one way, and the block says which ways it
+    #: read as one. It is rendered, always, and that is the condition the join is allowed
+    #: under: a merge a reader cannot see is a merge they cannot undo, and this figure is
+    #: what somebody gets paid. Empty for a name the data spells one way.
+    variants: tuple[str, ...] = ()
+    #: People this estimate did NOT join and a human might: a spelling that fits two declared
+    #: professors, or none; two tab rows sharing an address whose names do not corroborate it.
+    #: The block names them and sums nothing — the honest outcome of a name this cannot settle
+    #: is a total that is SHORT and says why, never one that is LONG and says nothing.
+    maybe_same: tuple[str, ...] = ()
 
     @property
     def hours(self) -> float:
@@ -382,12 +393,38 @@ class FacultyPayEstimate:
 
 
 # ── the rendered block ───────────────────────────────────────────────────────────────
+def _identity_lines(est: PayEstimate) -> list[str]:
+    """What this block JOINED, and what it would not — nothing at all when neither happened.
+
+    The schedule spells one person's name more than one way, and the estimate reads the
+    variants as one person. That join is the difference between a professor's whole month and
+    half of it, so it is stated on the block rather than performed quietly: a reader with the
+    spreadsheet open can check every spelling this summed, and undo the sum if it is wrong.
+
+    The second line is the other half of the same honesty. A spelling this could not settle —
+    it fits two declared people, or none, or two tab rows share an address their names do not
+    corroborate — is NOT folded in. The names it might belong to are said instead, and the
+    figure stays short by exactly those classes, which is the direction a wrong answer about
+    somebody's pay is allowed to be wrong in.
+    """
+    out: list[str] = []
+    if est.variants:
+        spellings = ", ".join(f"“{v}”" for v in est.variants)
+        out.append(f"Inclui linhas grafadas {spellings} — somadas como a mesma pessoa.")
+    if est.maybe_same:
+        names = ", ".join(f"“{v}”" for v in est.maybe_same)
+        out.append(f"Atenção: {names} pode ser a mesma pessoa — não foi somado aqui. "
+                   f"Confirme com a secretaria.")
+    return out
+
+
 def _header_lines(est: PayEstimate, *, title: str) -> list[str]:
     """The opening of a block: the bold title, whose it is when that is known, the two declared
     factors — then the blank line the body starts after."""
     out = [_H.format(title)]
     if est.professor.strip():
         out.append(f"Professor: {est.professor.strip()}")
+    out += _identity_lines(est)
     out += [f"Valor/hora declarado nas regras: {fmt_money(est.rate)}",
             f"Horas por aula declaradas nas regras: {fmt_hours(est.hours_per_class)}",
             ""]
@@ -460,6 +497,7 @@ def render_faculty_pay_block(fac: FacultyPayEstimate) -> str:
                       ""]
     for est in fac.estimates:
         out.append(_H.format(f"Professor: {est.professor}"))
+        out += _identity_lines(est)
         if est.groups:
             out += _body_lines(est)
         else:
