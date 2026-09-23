@@ -8,8 +8,9 @@ file exists, and they showed THREE independent holes:
 1. ``estimate_professor_pay(professor="")`` answered the SUPERVISOR with **his own** pay — the
    same figures turn 114 gave him for "minhas aulas" — and the reply called it «Totais de
    setembro de 2026 por turma». Nothing in the block said whose it was. The most dangerous of
-   the three, because it LOOKS right. (The ownership header that closes this is a separate
-   commit, so the reader can see the two changes apart.)
+   the three, because it LOOKS right. Closed by the OWNERSHIP HEADER — every estimate block
+   says ``Professor: <whose>``, the caller's own included — in a commit of its own, so the
+   reader can see the two changes apart.
 2. ``get_professor_info`` answered "No faculty records found." on all three turns — the
    declared tab name did not match the sheet's. Configuration, fixed since; but the code must
    keep working over an EMPTY faculty tab, so the grouping is keyed on the SCHEDULE's own
@@ -128,6 +129,19 @@ NOT_PERMITTED_TODAY = (f"NOT PERMITTED: {REFUSAL_TODAY} This is an access rule w
                        f"allowed.")
 NOTHING_TO_ESTIMATE = ("No classes found for this period, so there is nothing to estimate. Say "
                        "that plainly — it is an answer, not a failure.")
+
+
+def _owned(block: str, name: str) -> str:
+    """``block`` as recorded, plus the ONE line the ownership header adds under its title."""
+    title, rest = block.split("\n", 1)
+    return f"{title}\nProfessor: {name}\n{rest}"
+
+
+def _nothing_for(name: str) -> str:
+    """The empty answer, owned: the same 117-char sentence with WHOSE period was empty."""
+    return NOTHING_TO_ESTIMATE.replace("found for this period", f"found for {name} for this period")
+
+
 #: Turn 115's ``estimate_professor_pay(period="2026-09", professor="")`` — 847 chars, the
 #: SUPERVISOR's own two class groups and nobody else's, under a header that does not say so.
 TURN_115_BLOCK = """*Remuneração estimada — September 2026*
@@ -174,19 +188,22 @@ TURN_115_LISTING = """*Setembro de 2026*
 - 30/09 · Turma DE_10 · Workshop de Abertura"""
 
 
-def test_the_fixture_IS_the_tenants_september_turn_115s_block_byte_for_byte():
+def test_the_fixture_IS_the_tenants_september_turn_115s_block_plus_ONE_line_saying_whose():
     """The pin that makes every other pin here mean something: the SUPERVISOR's ``professor=""``
     estimate for 2026-09 renders the 847 characters turn 115 recorded — his OWN two groups,
-    12 h · R$ 1.440,00 — over a schedule that holds two other professors' classes. That is hole
-    (a) reproduced: the number is one person's, and the header does not say so. (The header
-    that will say so is the next commit's, and this literal moves with it.)"""
+    12 h · R$ 1.440,00 — over a schedule that holds two other professors' classes, plus
+    exactly ONE line: ``Professor: Professor A``, the ownership header. That is hole (a),
+    reproduced and closed in the same assertion: the number is still one person's (turn 114's,
+    the same call as EMPLOYEE, byte for byte), and the block now says so."""
     out = _tool(_svc())(period="2026-09", professor="", **SUPERVISOR)
-    assert out == TURN_115_BLOCK
-    assert len(out) == 847
-    # turn 111, once per class group: 769 and 753 chars, and the 117-char nothing-to-estimate
-    assert len(_tool(_svc())(period="2026-09", turma="DE_09", **SUPERVISOR)) == 769
-    assert len(_tool(_svc())(period="2026-09", turma="DE_10", **SUPERVISOR)) == 753
-    assert _tool(_svc())(period="2026-09", turma="DSA_33", **SUPERVISOR) == NOTHING_TO_ESTIMATE
+    assert out == _owned(TURN_115_BLOCK, A)
+    assert len(TURN_115_BLOCK) == 847                     # the recorded block, as it was
+    assert out.splitlines()[1] == f"Professor: {A}"       # and the one line it gained
+    owner = len(f"Professor: {A}\n")
+    # turn 111, once per class group: 769 and 753 chars recorded, and the 117-char nothing
+    assert len(_tool(_svc())(period="2026-09", turma="DE_09", **SUPERVISOR)) == 769 + owner
+    assert len(_tool(_svc())(period="2026-09", turma="DE_10", **SUPERVISOR)) == 753 + owner
+    assert _tool(_svc())(period="2026-09", turma="DSA_33", **SUPERVISOR) == _nothing_for(A)
     assert len(NOTHING_TO_ESTIMATE) == 117
     # …and turn 114's "minhas aulas" figures ARE those: the same call as EMPLOYEE, byte for byte
     assert _tool(_svc())(period="2026-09", professor="", **EMPLOYEE) == out
@@ -330,8 +347,33 @@ def test_a_named_professor_with_no_class_in_the_period_is_answered_by_name():
     out = _tool(_svc())(professor=B, period="2026-12", **SUPERVISOR)
     assert out == (f"No classes found for {B} for this period, so there is nothing to estimate. "
                    f"Say that plainly — it is an answer, not a failure.")
-    # the caller's own empty period keeps today's 117-char sentence, byte for byte
-    assert _tool(_svc())(professor="", period="2026-12", **SUPERVISOR) == NOTHING_TO_ESTIMATE
+    # the caller's own empty period is owned too — turns 111/112 relayed this sentence, asked
+    # once per class group with ``professor=""``, as «DSA_33: nenhuma aula encontrada» in a
+    # table about the faculty; it was the caller's empty group, and now it says so
+    assert _tool(_svc())(professor="", period="2026-12", **SUPERVISOR) == _nothing_for(A)
+
+
+# ── the OWNERSHIP header: every estimate says whose it is ────────────────────────────────
+def test_every_estimate_block_carries_the_ownership_header_own_by_name_and_all():
+    """The owner's confirmation, textual: «um valor sem dono é tão perigoso como um valor sem
+    leitura». Own → the caller's label; by name → the sheet's spelling; ``"*"`` → one header
+    per professor and a total that counts them. A block with no second line naming a person
+    no longer exists on any door."""
+    svc = _svc()
+    own = render_pay_block(svc.estimate_professor_pay(professor="", period="2026-09", **EMPLOYEE))
+    assert own.splitlines()[1] == f"Professor: {A}"
+    named = render_pay_block(svc.estimate_professor_pay(professor="professor b", period="2026-09",
+                                                        **SUPERVISOR))
+    assert named.splitlines()[1] == f"Professor: {B}"    # the sheet's spelling, not the query's
+    everyone = render_faculty_pay_block(svc.estimate_faculty_pay(period="2026-09", **SUPERVISOR))
+    assert everyone.count("*Professor: ") == 3 and "*Total (3 professores)*" in everyone
+    # the label is the CALLER's, as the host stamps it — not looked up on the sheet
+    other_label = render_pay_block(svc.estimate_professor_pay(
+        professor="", period="2026-09", identity_label="Professor A", role="OWNER"))
+    assert other_label.splitlines()[1] == "Professor: Professor A"
+    # and an estimate assembled with no owner (a hand-built value) renders no ownership line
+    from cogno_praxis.coordinator import PayEstimate
+    assert "Professor:" not in render_pay_block(PayEstimate(rate=120.0, hours_per_class=4.0))
 
 
 # ── the half that did NOT move: GUEST/EMPLOYEE are self-only, byte for byte ─────────────
@@ -358,8 +400,8 @@ def test_an_EMPTY_professor_is_STILL_the_caller_for_every_role_and_never_everyon
     again» dies here."""
     est = _svc().estimate_professor_pay(professor="", period="2026-09", identity_label=A, role=role)
     assert (est.hours, est.base) == (12, 1440.0)
-    assert est.professor == ""                            # own: no name stamped
-    assert render_pay_block(est) == TURN_115_BLOCK
+    assert est.professor == A                             # own: the caller's own label
+    assert render_pay_block(est) == _owned(TURN_115_BLOCK, A)
 
 
 def test_ALL_PROFESSORS_is_a_sentinel_the_single_estimate_redirects_not_a_name_it_looks_up():

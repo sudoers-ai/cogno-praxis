@@ -971,6 +971,12 @@ class CoordinatorService:
         YOURSELF is the first door (same person, same block). An unauthenticated caller (no
         ``identity_label``) raises, because with nobody named "their own" has no referent.
 
+        **Every estimate says WHOSE it is** (:attr:`PayEstimate.professor` → the block's
+        second line, ``Professor: <name>``): the caller's own label on the first door, the
+        sheet's spelling of the professor on the second. The figure was never wrong on turns
+        111/112 — the reader's belief about whom it belonged to was, and a header is the
+        cheapest thing that can correct a belief.
+
         Refuses with :class:`CoordinatorConfigError` when the tenant's rules do not declare the
         rate or the hours per class, NAMING the keys — see
         :attr:`CoordinatorConfig.pay_undeclared` — and, when the rules DESCRIBE a figure in
@@ -1038,9 +1044,15 @@ class CoordinatorService:
         entries = self.get_professor_schedule(
             professor=me, role=role, identity_label=me, month=period, turma=turma,
             include_past=True, apply_horizon=False, report=report)
+        # ``professor=me`` on the RESULT too — the ownership header (2026-09-23, the owner's
+        # confirmation: «um valor sem dono é tão perigoso como um valor sem leitura»). Turns
+        # 111/112 handed a SUPERVISOR his own block under a header that did not say whose it
+        # was, and the reply called it the faculty's totals; the number was right and the
+        # reader was wrong about whom it belonged to. So every block says whose it is: the
+        # caller's own label here, the sheet's spelling on the two oversight doors.
         return self._pay_estimate(self._pay_window(entries, period), rate=rate,
                                   hours_per_class=hours_per_class, period=period,
-                                  professor="", ibope_label=me, report=report)
+                                  professor=me, ibope_label=me, report=report)
 
     def estimate_faculty_pay(self, *, role: str = "", identity_label: str = "",
                              period: str = "", turma: str = "",

@@ -691,13 +691,16 @@ def test_the_block_carries_no_row_verbatim_and_no_third_party_field():
 
     The fixture's hours tab carries an e-mail column next to the hours precisely so a
     row-copying implementation would fail here. Nothing else is needed to keep a third party out:
-    the estimate is self-only, so there is no second person's data in scope to begin with."""
+    the caller's own estimate is scoped to the caller, so there is no second person's data in
+    scope to begin with — and the one name on it is the reader's own, on the ownership line."""
     est = _svc().estimate_professor_pay(identity_label=ME)
     block = render_pay_block(est)
     assert "@" not in block                           # no address travelled with the hours
     assert "exemplo.invalid" not in block
     assert OTHER not in block                         # no other professor
-    assert ME not in block                            # not even the reader's own name
+    # the reader's own name appears EXACTLY once, on the ownership header (2026-09-23) — a
+    # figure without an owner in a coordinator's hands shipped as the faculty's totals
+    assert block.count(ME) == 1 and f"Professor: {ME}" in block.splitlines()[1]
     assert "Sala" not in block                        # no room, no unrelated sheet column
     assert AA not in block and BB not in block        # no spreadsheet id
 

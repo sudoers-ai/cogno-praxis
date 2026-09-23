@@ -239,10 +239,12 @@ class PayEstimate:
     #: response rate itself (no tenant declares one), so it is never silently treated as met.
     ibope_min_response_pct: Optional[float] = None
     period: str = ""                        # what the read filtered by, "" when it filtered none
-    #: WHOSE classes this estimate is about, when the caller is an oversight role that named
-    #: somebody (the sheet's own spelling of that professor) — rendered as the second line of
-    #: the block, ``Professor: <name>``, so a coordinator holding three of these can tell them
-    #: apart. Empty for the caller's own estimate, which renders exactly as it always has.
+    #: WHOSE classes this estimate is about — the caller's own identity label, or the sheet's
+    #: spelling of the professor an oversight role named — rendered as the second line of the
+    #: block, ``Professor: <name>``. The OWNERSHIP header (2026-09-23): a supervisor was handed
+    #: his own block under a title that did not say whose it was, and the reply presented it
+    #: as the faculty's totals. Every block now says whose it is; the empty string is only ever
+    #: an estimate built by hand, and renders no line.
     professor: str = ""
 
     @property
@@ -418,11 +420,13 @@ def render_pay_block(est: PayEstimate) -> str:
     **What this block may contain is a closed list, and that is a PII decision.** Every line is
     built from a class-group key, a month, a discipline name, a count, an hour total and a
     figure derived from those. It never copies a spreadsheet ROW, so no column the tenant
-    happens to keep beside the schedule can ride out with it. The one person it may name is the
-    one the estimate is ABOUT (:attr:`PayEstimate.professor`, the second line): for the
-    caller's own estimate that field is empty and the block names nobody, not even the reader;
-    for an oversight role that asked about a professor by name it carries that name, because a
-    figure without an owner in a coordinator's hands is the old bulk-sum defect one step later.
+    happens to keep beside the schedule can ride out with it. The one person it names is the
+    one the estimate is ABOUT (:attr:`PayEstimate.professor`, the second line): the reader's
+    own label on their own block, the sheet's spelling of the professor an oversight role
+    named. It used to name nobody — "the one identified human this block is about is the one
+    holding the phone" — and that was true of a professor and false of a coordinator holding
+    it: a figure without an owner in a coordinator's hands is the old bulk-sum defect one step
+    later, and it shipped as «Totais de setembro por turma» over one person's classes.
     """
     period = f" — {est.period}" if est.period else ""
     out = _header_lines(est, title=f"Remuneração estimada{period}")
