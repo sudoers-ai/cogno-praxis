@@ -255,7 +255,8 @@ def _parse_calendar_date(e: str, today: date) -> Optional[date]:
 
 def _norm_host(s: str) -> str:
     """Fold to a comparable key for fuzzy host matching: accent-free, no honorific, alnum only —
-    so 'dr_jose_luiz_manzoli', 'Dr. José Luiz Manzoli' and 'joseluizmanzoli' all collapse equal."""
+    so 'dr_otavio_renan_bertholdi', 'Dr. Otávio Renan Bertholdi' and 'otaviorenanbertholdi'
+    all collapse equal."""
     folded = _fold(s)
     for hon in ("dra", "dr", "sr", "sra"):
         folded = folded.replace(hon, "")
