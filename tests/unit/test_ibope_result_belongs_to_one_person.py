@@ -17,7 +17,10 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from cogno_praxis.coordinator import (
+    CoordinatorAccessError,
     CoordinatorConfig,
     CoordinatorService,
     InMemorySpreadsheetStore,
@@ -122,11 +125,17 @@ def test_MUTATION_matching_by_substring_again_hands_one_persons_survey_to_anothe
 
 def test_the_bonus_that_rides_on_it_moves_with_the_result_not_with_a_prefix():
     """The figure a human is shown, end to end: the professor whose row says 85 gets the
-    80–89 band applied; a caller named by a prefix of that name gets the hypotheses instead,
-    which is the block that states it verified nothing."""
+    80–89 band applied; a caller named by a prefix of that name gets neither her result nor
+    her classes — the door refuses, saying the name could not be told apart."""
     svc = _svc(TAB)
     mine = svc.estimate_professor_pay(period="2026-09", identity_label="Ana Silva", role="EMPLOYEE")
     assert mine.ibope_found and mine.ibope_pct == 85.0
     assert mine.matched_tier is not None and mine.matched_tier.per_hour == 30.0
-    theirs = svc.estimate_professor_pay(period="2026-09", identity_label="Ana", role="EMPLOYEE")
-    assert not theirs.ibope_found and theirs.hypotheses
+    # «Ana» resembles «Ana Silva» without provably being her, so the own-pay door no longer
+    # answers at all — not with her classes (the old substring), and not with an empty estimate
+    # that reads as "you taught nothing": it says the IDENTIFICATION failed (``_LABEL_UNRESOLVED``,
+    # tests/unit/test_a_professor_sees_only_their_own_name.py). The survey result is not hers
+    # either way, which is what this file pins.
+    assert svc._ibope_result(identity_label="Ana", report=None) is None
+    with pytest.raises(CoordinatorAccessError, match="does not match any professor"):
+        svc.estimate_professor_pay(period="2026-09", identity_label="Ana", role="EMPLOYEE")

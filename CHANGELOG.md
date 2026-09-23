@@ -4,6 +4,28 @@
 
 ### Fixed
 
+- **`coordinator` — um professor (papel não-oversight) vê as linhas com o SEU nome, não as de
+  todo nome que o contém.** O ramo não-oversight de `_visible` e de `get_professor_info` fixava a
+  leitura ao rótulo da identidade por SUBSTRING dobrada, e «ana» está dentro de «mariana». Medido
+  na base com um EMPLOYEE «Ana» (1 aula sua, 3 de «Mariana Lopes»): o horário devolvia 4 linhas;
+  a remuneração PRÓPRIA dava 16 h · R$ 1.600,00 em vez de 4 h · R$ 400,00; `professor_email`
+  devolvia o endereço da outra professora (para onde iria o calendário); e as duas ESCRITAS atrás
+  do mesmo filtro — `record_class_response` e `confirm_swap` — recusaram e moveram a aula DELA.
+  Agora é `_own_spellings`: igualdade por tokens dobrados com a regra que o IBOPE próprio já usava
+  (`_same_professor` — igual, ou a forma mais completa com o primeiro E o último nome iguais), e
+  uma grafia que OUTRO nome da folha também reclama é largada. Fecha as 9 formas de fuga medidas
+  (incluindo o apelido partilhado, «Ana Lopes» vs «Mariana Lopes»); aceita a forma curta («Ana
+  Lopes» → «Ana Maria Lopes», que a substring RECUSAVA), acentos, caixa, espaços e a partícula.
+  **Recusa, contadas, 4 formas que podem ser do próprio**: rótulo sem o apelido, rótulo só com o
+  primeiro nome, título na folha e inicial (as três primeiras a substring ACEITAVA). As duas
+  primeiras são, token a token, a forma de uma pessoa DIFERENTE, e num filtro de privacidade o
+  erro desqualificante é a fuga. A supervisão por nome não mexe. **E a recusa diz o PORQUÊ**:
+  quando o rótulo não resolve nenhuma linha mas se PARECE com um nome da folha (`_near_spellings`),
+  a porta deixa de responder «No classes found.» — falso nesse mundo, as aulas podem existir — e
+  devolve `_LABEL_UNRESOLVED`: a identificação falhou, peça ao administrador o nome completo, sem
+  nomear ninguém. Um rótulo resolvido sem aulas no período, ou que não se parece com nada, continua
+  a receber «sem aulas», que aí é verdade.
+
 - **`coordinator` — a listagem dá a grafia CANÓNICA do professor, para que quem lê a seguir o
   encontre.** O dono pediu para avisar «o professor» sem nomear ninguém; `get_weekly_briefing`
   devolveu a grafia da PLANILHA, o modelo passou-a a `notify_user`, que procura no directório de

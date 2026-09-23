@@ -21,7 +21,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from difflib import SequenceMatcher
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 
 from cogno_praxis.coordinator.ics import (
     CalendarEvent,
@@ -106,6 +106,18 @@ _OWN_PAY_ONLY = ("You can only see your own pay estimate — another professor's
 #: label; one ``POST /identities`` with ``name=""`` away, in the sense that nothing between the
 #: API and here refuses one — the column is ``NOT NULL DEFAULT ''``, the create schema declares
 #: ``name: str`` with no ``min_length``, and the handler validates neither.
+#: The refusal a non-oversight caller gets when their label resolves to NO row but resembles a
+#: name on the sheet (:func:`_near_spellings`) — the identification failed, not the schedule.
+#: It names NOBODY: saying who the label resembles would be the leak the filter exists to stop,
+#: delivered by the error message instead of the rows.
+_LABEL_UNRESOLVED = (
+    "Your registered name does not match any professor on this schedule exactly, but it "
+    "resembles a name that is there — a shorter or longer form of it, or one another person "
+    "could also have — so it cannot be safely told apart from someone else's. Nothing was shown "
+    "because it could be another person's data; your classes may well exist. Ask the "
+    "administrator to register your full name exactly as the schedule writes it. Do not guess, "
+    "and do not name who it could be.")
+
 _NO_IDENTITY = ("This turn carries no identified professor, so there is nobody for this answer "
                 "to be about. This is an access rule working as intended, not a failure — say "
                 "that the caller could not be identified.")
@@ -323,6 +335,81 @@ def _same_professor(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
 def _fuller(short: tuple[str, ...], long: tuple[str, ...]) -> bool:
     """:func:`_is_abbreviation_of` with the FAMILY NAME required to agree as well."""
     return _is_abbreviation_of(short, long) and short[-1] == long[-1]
+
+
+def _own_spellings(label: str, spellings: Iterable[str]) -> set[tuple[str, ...]]:
+    """Which of ``spellings`` are the CALLER's own name — the rows a non-oversight role may see.
+
+    **A privacy filter, so it may only ever NARROW.** It replaced a folded SUBSTRING
+    (``_norm(label) in _norm(cell)``), and a name is not a substring of a person: an EMPLOYEE
+    labelled «Ana» read every row of «Mariana Lopes» — her schedule, her faculty record (the
+    calendar then went to HER address) and, through the own-pay door, her classes summed into
+    «Ana»'s remuneration: 1 class of her own became 4. The same filter guards the two WRITES a
+    professor can make (``confirm_swap``, ``record_class_response``), so the substring also let
+    «Ana» move and decline «Mariana Lopes»'s class.
+
+    Two conditions, both over whole TOKENS folded by :func:`_norm`:
+
+    1. **the spelling is the label's, pairwise** — :func:`_same_professor`, the strict rule
+       the caller's own IBOPE result was already read by: equal, or one is the other written
+       out with BOTH the first and the last token agreeing. «Ana Lopes» ⊂ «Ana Maria Lopes» is
+       hers; «Ana Lopes» against «Mariana Lopes» (a shared family name) is not.
+    2. **nothing else on the sheet could claim it** — for every spelling on the sheet, it is
+       the same person as the candidate exactly when it is the same person as the label. The
+       pairwise rule cannot see a THIRD name: labelled «Ana Lopes», a sheet carrying «Ana Maria
+       Lopes» AND «Ana Beatriz Lopes» holds two people who both fit, and labelled «Ana Maria
+       Lopes», a row written «Ana Lopes» beside an «Ana Beatriz Lopes» may be either. Such a
+       spelling is dropped. The label's EXACT spelling always survives this — it disagrees
+       with nothing, by construction.
+
+    **What it refuses that is somebody's own, counted rather than hidden:** a label that drops
+    the FAMILY name («Ana Maria» against «Ana Maria Lopes»), a label that is a bare first name
+    («Ana» against «Ana Lopes»), a title on the sheet («Prof. Ana Lopes»), and an initial
+    («Ana M. Lopes»). The first two are, token for token, the shape of a DIFFERENT person
+    («Ana Maria» against «Ana Maria Costa», «Ana» against «Ana Silva»): no pairwise rule tells
+    them apart, and in a privacy filter the disqualifying error is the leak, so they go to the
+    refusal. What reopens them is the identity's label carrying the full name the sheet uses.
+    No ``difflib``, no suggestion, no resemblance — a fuzzy rule here would widen a leak.
+    """
+    mine = _name_tokens(label)
+    if not mine:
+        return set()
+    sheet = {_name_tokens(s) for s in spellings} - {()}
+    # Condition 1 is IMPLIED by condition 2 (take ``other = cand``: ``True`` must equal
+    # ``_same_professor(cand, mine)``), so loosening the first alone changes nothing — measured
+    # as an equivalent mutant. It is written out because it is the question; 2 is the refinement.
+    return {cand for cand in sheet
+            if _same_professor(mine, cand)
+            and all(_same_professor(other, cand) == _same_professor(other, mine)
+                    for other in sheet)}
+
+
+def _near_spellings(label: str, spellings: Iterable[str]) -> bool:
+    """Does some spelling on the sheet LOOK like the caller's name without being provably it?
+
+    The second state of a non-oversight read that comes back EMPTY, and the one that must not be
+    reported as the first. :func:`_own_spellings` returning nothing means one of two things:
+    the sheet holds no name like this one (then "no classes" is the truth), or it holds a name
+    this rule REFUSED to call the caller's — «Ana» beside «Ana Lopes», «Ana Maria» beside «Ana
+    Maria Lopes», «Ana Lopes» beside «Prof. Ana Lopes», or a fuller spelling another name on the
+    sheet also fits. In that second world the classes may well exist and what failed is the
+    IDENTIFICATION; answering "No classes found." there is a false sentence a professor acts on.
+
+    Near means: every token of one is in the other (either direction), or the first AND the last
+    token agree. It is only ever used to choose which REFUSAL to give — it never admits a row —
+    so it can afford to be broad; what it may not do is name anybody (:data:`_LABEL_UNRESOLVED`).
+    """
+    mine = _name_tokens(label)
+    if not mine:
+        return False
+    for s in spellings:
+        cand = _name_tokens(s)
+        if not cand or cand == mine:
+            continue
+        if (set(mine) <= set(cand) or set(cand) <= set(mine)
+                or (mine[0] == cand[0] and mine[-1] == cand[-1])):
+            return True
+    return False
 
 
 def _fuzzy_match_discipline(query: str, candidate: str,
@@ -741,7 +828,13 @@ class CoordinatorService:
         if not oversight:
             if target and _norm(target) != _norm(identity_label):
                 return [], "You can only view your own schedule."
-            target = identity_label
+            # Whole-token equality, never the substring below: «ana» is inside «mariana» (see
+            # :func:`_own_spellings`). The universe is ``entries`` itself — every caller hands
+            # this method the unfiltered aggregate.
+            mine = _own_spellings(identity_label, (e.professor for e in entries))
+            if not mine and _near_spellings(identity_label, (e.professor for e in entries)):
+                return [], _LABEL_UNRESOLVED      # the IDENTIFICATION failed, not the schedule
+            return [e for e in entries if _name_tokens(e.professor) in mine], None
         if not target:                      # oversight + no professor → the whole master schedule
             return entries, None
         n = _norm(target)
@@ -1497,8 +1590,9 @@ class CoordinatorService:
         :class:`ProfessorGroup`, every spelling of them included — or a refusal saying why
         there is not exactly one.
 
-        The matching rule is :meth:`_visible`'s, applied to the universe instead of to the
-        rows: accent-stripped, case-folded SUBSTRING (``"silva"`` inside ``"ana silva"``), no
+        The matching rule is the OVERSIGHT branch of :meth:`_visible` (the non-oversight one
+        is :func:`_own_spellings`), applied to the universe instead of to the rows:
+        accent-stripped, case-folded SUBSTRING (``"silva"`` inside ``"ana silva"``), no
         ``difflib`` and no typo tolerance — nothing the listing does not do, and nothing it
         does that this does not. What this adds, and the listing has no need for, is the
         refusal when the name matches MORE THAN ONE professor: the listing shows each of
@@ -1717,13 +1811,18 @@ class CoordinatorService:
             return []
         oversight = role.upper() in _OVERSIGHT_ROLES
         target = professor.strip()
+        if not oversight and target and _norm(target) != _norm(identity_label):
+            raise CoordinatorAccessError("You can only view your own faculty details.")
+        records = self._faculty_records(report)
         if not oversight:
-            if target and _norm(target) != _norm(identity_label):
-                raise CoordinatorAccessError("You can only view your own faculty details.")
-            target = identity_label
+            # The schedule's rule (:func:`_own_spellings`), not a substring: the record holds
+            # the e-mail a calendar is sent to, and «Ana» used to get «Mariana Lopes»'s.
+            mine = _own_spellings(identity_label, (name for name, _rec in records))
+            if not mine and _near_spellings(identity_label, (name for name, _rec in records)):
+                raise CoordinatorAccessError(_LABEL_UNRESOLVED)
+            return [rec for name, rec in records if _name_tokens(name) in mine]
         want = _norm(target)
-        return [rec for name, rec in self._faculty_records(report)
-                if not want or want in _norm(name)]
+        return [rec for name, rec in records if not want or want in _norm(name)]
 
     def _faculty_records(self, report: Optional[ReadReport]) -> list[tuple[str, dict[str, str]]]:
         """Every row of the professors tab across the spreadsheets, as ``(name, record)`` — one
