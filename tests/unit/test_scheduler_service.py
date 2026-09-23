@@ -99,15 +99,15 @@ def test_next_available_day_unknown_host_raises():
 
 
 def test_book_resolves_a_name_slug_host_id():
-    # a small model invents 'dr_jose_luiz_manzoli' instead of the catalog id (a numeric user_id);
+    # a small model invents 'dr_otavio_renan_bertholdi' instead of the catalog id (a numeric user_id);
     # fuzzy resolution matches it by normalized name so the booking still lands on the real host
     store = InMemoryAppointmentStore()
-    store.hosts["8443"] = Host("8443", "Dr. José Luiz Manzoli", "Endócrino")
+    store.hosts["8443"] = Host("8443", "Dr. Otávio Renan Bertholdi", "Endócrino")
     svc = SchedulerService(store, today=lambda: _TODAY)
-    appt = svc.book("dr_jose_luiz_manzoli", "2026-07-01", "09:00", "Ana")
+    appt = svc.book("dr_otavio_renan_bertholdi", "2026-07-01", "09:00", "Ana")
     assert appt.host_id == "8443"            # resolved to the real catalog id
     # and availability accepts the slug too
-    assert "09:00" not in svc.check_availability("dr_jose_luiz_manzoli", "2026-07-01")
+    assert "09:00" not in svc.check_availability("dr_otavio_renan_bertholdi", "2026-07-01")
     # a genuinely unknown host still errors
     with pytest.raises(SchedulerError, match="unknown host"):
         svc.book("ghost_doctor", "2026-07-01", "10:00", "Ana")
@@ -117,7 +117,7 @@ def test_book_resolves_a_single_specialty():
     # "marca com o cardiologista" is valid when exactly one host has that specialty (role).
     store = InMemoryAppointmentStore()
     store.hosts["dr_silva"] = Host("dr_silva", "Dr. Heitor Lacerda", "Cardiologista")
-    store.hosts["dr_m"] = Host("dr_m", "Dr. Manzoli", "Endócrino")
+    store.hosts["dr_m"] = Host("dr_m", "Dr. Bertholdi", "Endócrino")
     svc = SchedulerService(store, today=lambda: _TODAY)
     appt = svc.book("cardiologista", "2026-07-01", "09:00", "Ana")
     assert appt.host_id == "dr_silva"        # the one cardiologist

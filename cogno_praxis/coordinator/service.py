@@ -211,8 +211,8 @@ def _by_discipline_and_token(spelling: str, disciplines: set[str],
     those who share at least one TOKEN of its name. Cast indices, in the tab's own order.
 
     It is reached only by a spelling :func:`_is_abbreviation_of` matched NOBODY — a name the
-    schedule MISSPELT, which is the one shape containment cannot reach: «Romerito Moraes»
-    against a declared «Romerito da Silva Morais» has a word the declared name does not carry,
+    schedule MISSPELT, which is the one shape containment cannot reach: «Damião Queiroz»
+    against a declared «Damião da Silva Queirós» has a word the declared name does not carry,
     so it is not an abbreviation of it and never will be. The measured turn is the whole reason
     this exists: the owner asked to warn "the professor" and named nobody, the listing handed
     the model the SCHEDULE's spelling, the model passed that spelling to the tool that searches
@@ -228,7 +228,7 @@ def _by_discipline_and_token(spelling: str, disciplines: set[str],
     professor's pay, which is the exact swallow ``#138``'s own control was written to forbid,
     and it did forbid it (``test_MUTATION_joining_by_FIRST_NAME_ALONE_pays_one_person_for_
     anothers_class`` failed on its ANCHOR). Nothing structural separates that spelling from
-    «Romerito Moraes»; what separates the two OUTCOMES is the cost of being wrong. A wrong
+    «Damião Queiroz»; what separates the two OUTCOMES is the cost of being wrong. A wrong
     label puts a name on a line a human reads and can correct; a wrong merge moves money
     between two people with nothing on the page to show it. So the label is decided here and
     the merge stays exactly where ``#138`` left it, and the spelling still names the person on
