@@ -106,6 +106,18 @@ _OWN_PAY_ONLY = ("You can only see your own pay estimate — another professor's
 #: label; one ``POST /identities`` with ``name=""`` away, in the sense that nothing between the
 #: API and here refuses one — the column is ``NOT NULL DEFAULT ''``, the create schema declares
 #: ``name: str`` with no ``min_length``, and the handler validates neither.
+#: The refusal a non-oversight caller gets when their label resolves to NO row but resembles a
+#: name on the sheet (:func:`_near_spellings`) — the identification failed, not the schedule.
+#: It names NOBODY: saying who the label resembles would be the leak the filter exists to stop,
+#: delivered by the error message instead of the rows.
+_LABEL_UNRESOLVED = (
+    "Your registered name does not match any professor on this schedule exactly, but it "
+    "resembles a name that is there — a shorter or longer form of it, or one another person "
+    "could also have — so it cannot be safely told apart from someone else's. Nothing was shown "
+    "because it could be another person's data; your classes may well exist. Ask the "
+    "administrator to register your full name exactly as the schedule writes it. Do not guess, "
+    "and do not name who it could be.")
+
 _NO_IDENTITY = ("This turn carries no identified professor, so there is nobody for this answer "
                 "to be about. This is an access rule working as intended, not a failure — say "
                 "that the caller could not be identified.")
@@ -370,6 +382,34 @@ def _own_spellings(label: str, spellings: Iterable[str]) -> set[tuple[str, ...]]
             if _same_professor(mine, cand)
             and all(_same_professor(other, cand) == _same_professor(other, mine)
                     for other in sheet)}
+
+
+def _near_spellings(label: str, spellings: Iterable[str]) -> bool:
+    """Does some spelling on the sheet LOOK like the caller's name without being provably it?
+
+    The second state of a non-oversight read that comes back EMPTY, and the one that must not be
+    reported as the first. :func:`_own_spellings` returning nothing means one of two things:
+    the sheet holds no name like this one (then "no classes" is the truth), or it holds a name
+    this rule REFUSED to call the caller's — «Ana» beside «Ana Lopes», «Ana Maria» beside «Ana
+    Maria Lopes», «Ana Lopes» beside «Prof. Ana Lopes», or a fuller spelling another name on the
+    sheet also fits. In that second world the classes may well exist and what failed is the
+    IDENTIFICATION; answering "No classes found." there is a false sentence a professor acts on.
+
+    Near means: every token of one is in the other (either direction), or the first AND the last
+    token agree. It is only ever used to choose which REFUSAL to give — it never admits a row —
+    so it can afford to be broad; what it may not do is name anybody (:data:`_LABEL_UNRESOLVED`).
+    """
+    mine = _name_tokens(label)
+    if not mine:
+        return False
+    for s in spellings:
+        cand = _name_tokens(s)
+        if not cand or cand == mine:
+            continue
+        if (set(mine) <= set(cand) or set(cand) <= set(mine)
+                or (mine[0] == cand[0] and mine[-1] == cand[-1])):
+            return True
+    return False
 
 
 def _fuzzy_match_discipline(query: str, candidate: str,
@@ -792,6 +832,8 @@ class CoordinatorService:
             # :func:`_own_spellings`). The universe is ``entries`` itself — every caller hands
             # this method the unfiltered aggregate.
             mine = _own_spellings(identity_label, (e.professor for e in entries))
+            if not mine and _near_spellings(identity_label, (e.professor for e in entries)):
+                return [], _LABEL_UNRESOLVED      # the IDENTIFICATION failed, not the schedule
             return [e for e in entries if _name_tokens(e.professor) in mine], None
         if not target:                      # oversight + no professor → the whole master schedule
             return entries, None
@@ -1776,6 +1818,8 @@ class CoordinatorService:
             # The schedule's rule (:func:`_own_spellings`), not a substring: the record holds
             # the e-mail a calendar is sent to, and «Ana» used to get «Mariana Lopes»'s.
             mine = _own_spellings(identity_label, (name for name, _rec in records))
+            if not mine and _near_spellings(identity_label, (name for name, _rec in records)):
+                raise CoordinatorAccessError(_LABEL_UNRESOLVED)
             return [rec for name, rec in records if _name_tokens(name) in mine]
         want = _norm(target)
         return [rec for name, rec in records if not want or want in _norm(name)]

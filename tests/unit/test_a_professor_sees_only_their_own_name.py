@@ -24,12 +24,19 @@ from datetime import date
 import pytest
 
 from cogno_praxis.coordinator import (
+    CoordinatorAccessError,
     CoordinatorConfig,
     CoordinatorError,
     CoordinatorService,
     InMemorySpreadsheetStore,
 )
-from cogno_praxis.coordinator.service import _name_tokens, _own_spellings
+from cogno_praxis.coordinator.server import build_server
+from cogno_praxis.coordinator.service import (
+    _LABEL_UNRESOLVED,
+    _name_tokens,
+    _near_spellings,
+    _own_spellings,
+)
 
 SID = "A" * 24
 _RULES = f"""SPREADSHEETS:
@@ -151,7 +158,8 @@ def test_a_name_somebody_else_could_claim_is_dropped_but_the_exact_one_is_kept()
 
 def test_a_long_label_does_not_take_a_short_row_another_person_fits():
     svc, _ = _svc(["Ana Lopes", "Ana Beatriz Lopes"])
-    assert _seen(svc, "Ana Maria Lopes") == []
+    with pytest.raises(CoordinatorAccessError, match="does not match any professor"):
+        _seen(svc, "Ana Maria Lopes")                  # no row shown, and the REASON given
     svc, _ = _svc(["Ana Lopes", "Mariana Lopes"])
     assert _seen(svc, "Ana Maria Lopes") == ["Ana Lopes"]
 
@@ -214,3 +222,57 @@ def test_the_refusals_that_cost_a_professor_are_counted(label, spelling):
 def test_the_counts():
     assert (sum(1 for *_, own in _TABLE if not own), sum(1 for *_, own in _TABLE if own),
             len(_REFUSED_OWN)) == (11, 7, 4)
+
+
+# ── a refusal says WHY: "the label could not be told apart" is not "there are no classes" ──
+# Both used to come back as ``No classes found.`` — true in the second world, false in the
+# first, where the classes exist and what failed is the identification.
+
+def _listing(svc: CoordinatorService, label: str, **kw: str) -> str:
+    fn = build_server(svc)._tool_manager._tools["get_professor_schedule"].fn
+    return fn(role="EMPLOYEE", identity_label=label, **kw)
+
+
+def test_a_label_that_resembles_the_sheet_is_told_why_and_nobody_is_named():
+    """P9: «Ana» on a sheet with «Ana Lopes» and «Ana Maria Lopes». Before this, the tool said
+    ``No classes found.`` — a false sentence: the classes may be hers."""
+    svc, _ = _svc(["Ana Lopes", "Ana Maria Lopes"])
+    out = _listing(svc, "Ana", month="2026-10")
+    assert _LABEL_UNRESOLVED in out
+    assert "No classes found" not in out
+    assert "Lopes" not in out and "Maria" not in out      # the other person is never named
+    with pytest.raises(CoordinatorAccessError, match="does not match any professor"):
+        svc.estimate_professor_pay(**_employee("Ana"), period="2026-10")
+
+
+@pytest.mark.parametrize("label,sheet", [
+    ("Ana Maria", ["Ana Maria Lopes"]),                   # P8
+    ("Ana Lopes", ["Prof. Ana Lopes"]),                   # P10
+    ("Ana M. Lopes", ["Ana Maria Lopes"]),                # P11
+    ("Ana Maria Lopes", ["Ana Lopes", "Ana Beatriz Lopes"]),   # dropped by the guard
+])
+def test_every_counted_refusal_gets_the_reason(label, sheet):
+    svc, _ = _svc(sheet)
+    assert _LABEL_UNRESOLVED in _listing(svc, label, month="2026-10")
+
+
+def test_the_faculty_door_gives_the_same_reason():
+    svc, _ = _svc(["Ana Lopes"], faculty=[["Ana Lopes", "Calculo", "al@example.com"]])
+    with pytest.raises(CoordinatorAccessError) as exc:
+        svc.get_professor_info(**_employee("Ana"))
+    assert str(exc.value) == _LABEL_UNRESOLVED and "example.com" not in str(exc.value)
+
+
+def test_no_classes_in_the_period_is_still_no_classes():
+    """Control: the label IS resolved (its own rows exist, in October) and November is empty."""
+    svc, _ = _svc(["Ana Lopes", "Ana Maria Lopes"])
+    out = _listing(svc, "Ana Lopes", month="2026-11")
+    assert "No classes found." in out and _LABEL_UNRESOLVED not in out
+
+
+def test_a_name_nothing_on_the_sheet_resembles_is_still_no_classes():
+    """Control: «Bruno Reis» resembles nobody — «no classes» is the truth the sheet can tell."""
+    svc, _ = _svc(LEAK)
+    out = _listing(svc, "Bruno Reis", month="2026-10")
+    assert "No classes found." in out and _LABEL_UNRESOLVED not in out
+    assert _near_spellings("Ana", ["Mariana Lopes"]) is False        # F1 is not "near" either
