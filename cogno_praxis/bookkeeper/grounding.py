@@ -17,6 +17,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
+from cogno_praxis.declared_values import values_declared
 from cogno_praxis.grounding import (
     GroundingVerdict,
     Locale,
@@ -172,6 +173,42 @@ class _Bundle:
     recorded_attributive: "Optional[re.Pattern[str]]" = None
 
 
+# ── en / es: THE SAME SPLIT the pt bundle has carried since the attributive fix ──────────
+#
+# The pt bundle separates the EXPLICIT claim (first person, `acabei de`, copula + participle —
+# fires always) from the ATTRIBUTIVE participle (a participle with no copula, modifying a noun
+# — "a receita registrada", "tenho registrado" — which is a DESCRIPTION and is a claim only on
+# a turn that consulted nothing). The en and es bundles never got the split: their `recorded`
+# pattern matched the bare participle as an explicit claim, so "The recorded income is
+# $1,440.00" was rewritten even with a successful `get_summary` in hand, and "tengo
+# registrado" was a claim of a write. Same rule, three bundles.
+#
+# What stays EXPLICIT, deliberately, in all three: the copula + participle form ("is
+# recorded", "está registrado"). It is how every one of these languages CONFIRMS a write that
+# just happened ("Certo, já está lançado o valor de R$ 150,00" is pinned as the canonical pt-BR
+# confirmation in `test_bookkeeper_grounding.py`), so a read in hand does not excuse it.
+_EN_COPULAS = ("was", "were", "is", "are", "been", "got", "gets")
+_EN_RECORDED_RE = re.compile(
+    r"\bi(?:'ve|\s+have|\s+just|)\s+(?:recorded|logged|added|entered)\b|"
+    r"\bjust\s+(?:recorded|logged|added|entered)\b|"
+    r"\b(?:was|were|is|are|been|got|gets)\s+(?:\w+\s+){0,2}"
+    r"(?:recorded|logged|entered|booked)\b", re.IGNORECASE)
+_EN_RECORDED_ATTRIBUTIVE_RE = re.compile(
+    "".join(f"(?<!\\b{w} )" for w in _EN_COPULAS)
+    + r"\b(?:recorded|logged|entered|booked)\b", re.IGNORECASE)
+
+_ES_COPULAS = ("fue", "fueron", "está", "esta", "están", "estan", "sido", "queda", "quedó",
+               "quedo")
+_ES_RECORDED_RE = re.compile(
+    r"\b(?:registr[ée]|anot[ée]|apunt[ée]|a[ñn]ad[íi])\b|"
+    r"\b(?:fue|fueron|est[áa]|est[áa]n|sido|queda|qued[óo])\s+(?:\w+\s+){0,2}"
+    r"(?:registrad|anotad|apuntad|a[ñn]adid)[oa]s?\b|"
+    r"acabo\s+de\s+(?:registrar|anotar|apuntar|a[ñn]adir)", re.IGNORECASE)
+_ES_RECORDED_ATTRIBUTIVE_RE = re.compile(
+    "".join(f"(?<!\\b{w} )" for w in _ES_COPULAS)
+    + r"\b(?:registrad|anotad|apuntad|a[ñn]adid)[oa]s?\b", re.IGNORECASE)
+
+
 _PT_BUNDLE = _Bundle(
     loc=_PT, recorded=_RECORDED_RE, totals=_TOTALS_RE, removed=_REMOVED_RE,
     recorded_attributive=_RECORDED_ATTRIBUTIVE_RE,
@@ -186,10 +223,8 @@ _EN_BUNDLE = _Bundle(
         # sem `already` — "was already recorded" confirma o agora, ver _PT_PAST
         re.compile(r"\b(?:yesterday|earlier|previously|last (?:week|month)|"
                    r"the other day|back (?:then|on))\b", re.I)),
-    recorded=re.compile(
-        r"\b(?:recorded|logged|entered|booked)\b|"
-        r"\bi(?:'ve|\s+have|\s+just|)\s+(?:recorded|logged|added|entered)\b|"
-        r"\bjust\s+(?:recorded|logged|added|entered)\b", re.IGNORECASE),
+    recorded=_EN_RECORDED_RE,
+    recorded_attributive=_EN_RECORDED_ATTRIBUTIVE_RE,
     totals=re.compile(
         r"\b(?:total|totals|balance|net|income|expenses?|revenue|profit|turnover)\b",
         re.IGNORECASE),
@@ -215,10 +250,8 @@ _ES_BUNDLE = _Bundle(
         # sem `ya` — mesma razão do `já`
         re.compile(r"\b(?:ayer|anteayer|anteriormente|la semana pasada|"
                    r"el mes pasado|el otro d[íi]a)\b", re.I)),
-    recorded=re.compile(
-        r"\b(?:registr[ée]|anot[ée]|apunt[ée]|a[ñn]ad[íi])\b|"
-        r"\b(?:registrad|anotad|apuntad|a[ñn]adid)[oa]s?\b|"
-        r"acabo\s+de\s+(?:registrar|anotar|apuntar|a[ñn]adir)", re.IGNORECASE),
+    recorded=_ES_RECORDED_RE,
+    recorded_attributive=_ES_RECORDED_ATTRIBUTIVE_RE,
     totals=re.compile(
         r"\b(?:total|totales|saldo|neto|ingresos?|gastos?|egresos?|facturaci[óo]n|"
         r"balance)\b", re.IGNORECASE),
@@ -334,12 +367,19 @@ def _removed_ok(tools: Sequence[ToolCall]) -> bool:
 
 def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bool = True,
                  is_read_query: bool = False, pending_confirmation: bool = False,
-                 locale: str = "pt") -> Optional[GroundingVerdict]:
+                 locale: str = "pt",
+                 declared_values: Sequence[str] = ()) -> Optional[GroundingVerdict]:
     """Return a :class:`GroundingVerdict` if ``reply`` fabricates a bookkeeping fact, else None.
 
     Same signature as the scheduler backstop (the host adapter treats every vertical
-    alike); ``is_read_query``/``pending_confirmation`` are accepted for symmetry;
-    ``locale`` selects the language bundle (pt/en/es), None on an unsupported language."""
+    alike); ``pending_confirmation`` is accepted for symmetry; ``locale`` selects the
+    language bundle (pt/en/es), None on an unsupported language.
+
+    ``declared_values`` are the VALUES the business wrote in this persona's configuration,
+    resolved for this contact's role (``cogno_praxis.declared_values``) — the tenant told the
+    persona these, so a reply quoting them has a source even when no tool ran. Empty (the
+    default) → every rule below reads exactly as it did before the parameter existed.
+    ``is_read_query`` is read ONLY together with them — see rule (1)."""
     if not reply:
         return None
     b = _BUNDLES.get(normalize_lang(locale))
@@ -354,7 +394,26 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
         alega = affirmed(reply, b.recorded, neg=b.loc.neg, recalled=b.recalled)
         # O particípio ATRIBUTIVO só é alegação num turno que não consultou NADA. Com uma
         # leitura em mão, *"os lançamentos registrados hoje"* é a listagem que foi pedida.
-        if not alega and b.recorded_attributive is not None and not _consulted_ledger(tools):
+        # …and neither is it on a turn whose every value the business DECLARED in this
+        # persona's configuration, when the contact was ASKING. *"Tenho registrado: aluguel
+        # R$ 1.440,00"* over the tenant's own configured rent is the persona reading its rules
+        # back, and the rules are a source — the same description the ledger read excuses.
+        #
+        # BOTH conditions, and each one closes a door the other leaves open:
+        #   * every value declared — a figure the rules do not carry (a total worked out from
+        #     them, a price from nowhere) is not exempted, so a derived value stays caught;
+        #   * a READ query — a declared value answers a QUESTION and never completes a WRITE.
+        #     The most likely amount of a fabricated receipt is the tenant's own price: the
+        #     contact says "registra uma consulta", the voice says "Registrado! R$ 150,00" with
+        #     R$ 150,00 in the rules, and nothing was written. `is_read_query` is the host's
+        #     PRE-execution guess and errs towards False, which here is the strict side — a
+        #     turn it misses is judged exactly as before.
+        # The EXPLICIT claim above is never exempted by a declaration: a declared price makes
+        # a figure grounded, not an act ("Registrei R$ 150,00" is still a write nobody made).
+        declared = bool(declared_values) and is_read_query and values_declared(
+            reply, declared_values)
+        if (not alega and b.recorded_attributive is not None and not _consulted_ledger(tools)
+                and not declared):
             alega = affirmed(reply, b.recorded_attributive, neg=b.loc.neg, recalled=b.recalled)
         if alega:
             return GroundingVerdict(rule="fabricated_entry", message=b.no_entry,
@@ -370,8 +429,14 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
     # (3) conjured totals — the reply quotes saldo/totals with no summary/search read in
     #     hand. Repairable: read the real numbers. Checked LAST: a recorded-entry reply
     #     legitimately echoes the amount ("registrei R$ 500") without a summary read.
+    #     A total the business DECLARED in the persona's configuration is not conjured — it
+    #     was written by the tenant, not by the voice. A total DERIVED from declared values (a
+    #     sum, a monthly figure from an hourly rate) is written nowhere, so `values_declared`
+    #     is False and the rule fires exactly as before. Not gated on `is_read_query` like
+    #     rule (1): a total claims no write, only a figure, and the declaration IS its source.
     if (b.loc.money.search(reply) and affirmed(reply, b.totals, neg=b.loc.neg)
-            and not _summary_read(tools) and not _entry_recorded(tools)):
+            and not _summary_read(tools) and not _entry_recorded(tools)
+            and not values_declared(reply, declared_values)):
         return GroundingVerdict(rule="conjured_totals", message=b.check_totals,
                                 repairable=True, critique=_CHECK_TOTALS_CRITIQUE)
 
