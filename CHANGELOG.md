@@ -4,6 +4,15 @@
 
 ### Added
 
+- **A decisão do estativo passa a API PÚBLICA de `cogno_praxis.bookkeeper.grounding`**
+  (`__all__`): `write_attempted(tools)`, `mask_possessive_stative(reply, locale)` e
+  `mask_declared_stative(reply, *, tools, declared_values, locale)` — a última é a decisão inteira
+  (mascara as orações estativas quando todos os valores estão declarados e nenhuma escrita do
+  livro foi chamada) e o próprio `ground_reply` passa a lê-la. Existe porque a rede genérica de um
+  host lê o mesmo particípio e, com uma cópia desta regra, reescrevia o que ela deixava passar; um
+  host chama estas funções em vez de importar nomes privados. `_write_attempted` fica como alias.
+  Comportamento de `ground_reply` inalterado; `test_the_public_stative_api.py` prende o contrato.
+
 - **`cogno_praxis.declared_values` — os valores que o negócio escreveu na configuração da persona
   são FONTE, por valor.** Uma gramática só para valores escritos literalmente num texto (dinheiro,
   percentagens, datas, números com unidade de tempo — nunca nomes nem frases): `declared_values`

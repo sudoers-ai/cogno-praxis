@@ -30,6 +30,15 @@ from cogno_praxis.grounding import (
     ok_results,
 )
 
+__all__ = [
+    "ground_reply",
+    # the stative decision, public because the host's generic net reads it (M3c+M4)
+    "write_attempted", "mask_possessive_stative", "mask_declared_stative",
+    # the tool-result markers and the honest rewrites
+    "INCOME_RECORDED_PREFIX", "EXPENSE_RECORDED_PREFIX", "REMOVED_PREFIX", "SUMMARY_HEAD_RE",
+    "NO_MATCH_MARKER", "NO_ENTRY_MSG", "CHECK_TOTALS_MSG", "NO_REMOVAL_MSG",
+]
+
 # ── this vertical's tool-result markers (see server.py — same repo, keep in lockstep) ─
 INCOME_RECORDED_PREFIX = "Income recorded: "
 EXPENSE_RECORDED_PREFIX = "Expense recorded: "
@@ -310,8 +319,11 @@ def _entry_recorded(tools: Sequence[ToolCall]) -> bool:
 _LEDGER_WRITES = ("add_income", "add_outcome", "remove_by_search")
 
 
-def _write_attempted(tools: Sequence[ToolCall]) -> bool:
+def write_attempted(tools: Sequence[ToolCall]) -> bool:
     """A ledger write was CALLED this turn — succeeded, failed or refused alike.
+
+    PUBLIC: the host's generic net reads it (``cogno-host`` ``grounding._performative_without_commit``),
+    so a rename here is a contract change — ``test_the_public_stative_api.py`` pins it.
 
     A FACT of the record, read AFTER execution, which is why it can gate an exemption that
     the host's pre-execution ``is_read_query`` guess cannot: that guess was measured False on
@@ -319,6 +331,43 @@ def _write_attempted(tools: Sequence[ToolCall]) -> bool:
     cannot be a prediction. ``side_effect`` counts too, so a write tool this table does not name
     is still a write."""
     return any(t.tool in _LEDGER_WRITES or t.side_effect for t in tools)
+
+
+# The pre-publication name, kept so nothing that read it breaks. New code reads the public one.
+_write_attempted = write_attempted
+
+
+def mask_possessive_stative(reply: str, locale: str = "pt") -> str:
+    """``reply`` with every POSSESSIVE STATIVE clause («tenho registrado …», «tengo registrado
+    …») blanked out; ``reply`` unchanged when the locale has no such pattern (en) or is not
+    supported. The pattern is the bundle's own (``_Bundle.recorded_stative``) — one definition.
+
+    PUBLIC, for the same reason as :func:`write_attempted`."""
+    b = _BUNDLES.get(normalize_lang(locale))
+    if b is None or b.recorded_stative is None:
+        return reply
+    return b.recorded_stative.sub(" ", reply)
+
+
+def mask_declared_stative(reply: str, *, tools: Sequence[ToolCall] = (),
+                          declared_values: Sequence[str] = (), locale: str = "pt") -> str:
+    """The reply as the PARTICIPLE rules must read it, once the declared values are counted.
+
+    The possessive stative («tenho registrado: R$ 10,00 de aluguel») is the persona describing
+    what it holds. When EVERY value in the reply is one the business declared in the persona's
+    configuration AND no ledger write was called this turn, those clauses are a description of
+    the configuration and are masked out (:func:`mask_possessive_stative`); everything else in
+    the reply is still read — a bare «Registrado! R$ 10,00» beside them keeps its rule. In any
+    other case the reply comes back unchanged.
+
+    ONE decision, two readers: :func:`ground_reply` below and the host's generic
+    ``performative_without_commit``, which reads the same participle and used to rewrite what
+    this rule had passed. PUBLIC — ``test_the_public_stative_api.py`` pins the contract."""
+    if not declared_values or write_attempted(tools):
+        return reply
+    if not values_declared(reply, declared_values):
+        return reply
+    return mask_possessive_stative(reply, locale)
 
 
 def _summary_read(tools: Sequence[ToolCall]) -> bool:
@@ -458,10 +507,8 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
         # passes — the form is a description and the request is not read here. Measured over
         # the whole box (569 traces): 8 stative replies, every affirming one answered a
         # QUESTION, the two after a write request were negations, 0 stative fabricated receipts.
-        text = reply
-        if (all_declared and not declared and b.recorded_stative is not None
-                and not _write_attempted(tools)):
-            text = b.recorded_stative.sub(" ", reply)
+        text = reply if declared or not all_declared else mask_declared_stative(
+            reply, tools=tools, declared_values=declared_values, locale=locale)
         if (not alega and b.recorded_attributive is not None and not _consulted_ledger(tools)
                 and not declared):
             alega = affirmed(text, b.recorded_attributive, neg=b.loc.neg, recalled=b.recalled)

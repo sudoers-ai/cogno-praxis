@@ -111,6 +111,21 @@ nothing and declared nothing. `prompts/limits.txt` says the same thing to the ju
 value comes from a tool call or from the values the business declared; computed values are not
 declared, and a recorded entry is confirmed only by the tool that recorded it.
 
+**The stative decision is public API** (`cogno_praxis.bookkeeper.grounding.__all__`), because a
+host's own generic net reads the same participle and, with a copy of this rule, rewrote what this
+rule had passed:
+
+- `write_attempted(tools) -> bool` — a ledger write was CALLED this turn (succeeded, failed or
+  refused), or any call carries `side_effect`;
+- `mask_possessive_stative(reply, locale) -> str` — the reply with the possessive-stative clauses
+  blanked out (unchanged for a locale without the pattern, en, or an unsupported one);
+- `mask_declared_stative(reply, *, tools, declared_values, locale) -> str` — the decision itself:
+  the masked reply when every value is declared and no write was called, the reply unchanged
+  otherwise. `ground_reply` reads it too, so the two readers cannot disagree.
+
+A host calls these instead of copying the pattern; `tests/unit/test_the_public_stative_api.py`
+pins their shape and meaning.
+
 ## Host integration
 
 The host spawns this server over stdio and injects per-tenant config through the environment
