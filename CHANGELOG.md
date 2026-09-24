@@ -11,7 +11,12 @@
   compara. Os dois lados passam pelo mesmo parser: `R$ 120,00` = `R$ 120`, e `R$ 1.440` nunca é
   1,44. `bookkeeper.ground_reply(..., declared_values=())`: a `fabricated_entry` deixa de ler o
   particípio atributivo/estativo («tenho registrado», «a receita registrada») como lançamento
-  quando TODOS os valores da resposta estão declarados e o contacto estava a perguntar; a
+  quando TODOS os valores da resposta estão declarados — o ESTATIVO possessivo («tenho/temos
+  registrado», «tengo registrado») por um FACTO do registo (nenhuma escrita chamada neste turno,
+  nem falhada), o particípio NU («Registrado!») só quando o contacto estava a perguntar
+  (`is_read_query`), porque no recibo inventado também não se chamou escrita nenhuma. Limite
+  declarado: «Tenho registrado: R$ 10,00» depois de um pedido de escrita passa (8 estativos na
+  caixa inteira, nenhum recibo); a
   `conjured_totals` aceita um total que É um valor declarado. Continuam a disparar: a alegação
   explícita («registrei», «acabei de lançar», «já está lançado») mesmo com o preço declarado, o
   recibo numa PETIÇÃO de escrita, um valor não declarado, e um valor DERIVADO (soma, total mensal a

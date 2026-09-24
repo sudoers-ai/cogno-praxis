@@ -75,9 +75,27 @@ _RECORDED_RE = re.compile(
 # CONDICIONADO a não ter havido leitura, exactamente como o ramo elíptico de `cogno-host#612`:
 # num turno que não consultou nada as duas leituras da frase são infundadas e não há descrição
 # legítima a proteger; um `get_summary` bem-sucedido devolve-lhe a ambiguidade.
+_PT_RECORDED_STEMS = ("registrad", "lançad", "lancad", "anotad")
 _RECORDED_ATTRIBUTIVE_RE = re.compile(
-    rf"{_COPULA_LOOKBEHIND}\b(?:registrad|lançad|lancad|anotad)[oa]s?\b",
+    rf"{_COPULA_LOOKBEHIND}\b(?:{'|'.join(_PT_RECORDED_STEMS)})[oa]s?\b",
     re.IGNORECASE)
+# ── The POSSESSIVE STATIVE: «tenho/temos registrado(s)» — the persona describing what it HOLDS.
+# First person of TER + the same participle stems, up to two words between («tenho aqui
+# registrado»). It is a description, never a completion: «Registrado!» (the bare participle) and
+# «registrei» (the explicit claim) are other forms and keep their own rules. Derived from ONE
+# table of auxiliaries and the stems above — no inflection is spelled by hand beyond the four
+# first-person forms of the two auxiliaries (pt `ter`, es `tener`), which is the whole closed set.
+_STATIVE_AUXILIARIES: "dict[str, tuple[str, ...]]" = {"pt": ("tenho", "temos"),
+                                                     "es": ("tengo", "tenemos")}
+
+
+def _possessive_stative(lang: str, stems: "tuple[str, ...]") -> "re.Pattern[str]":
+    return re.compile(
+        rf"\b(?:{'|'.join(_STATIVE_AUXILIARIES[lang])})\s+(?:\w+\s+){{0,2}}"
+        rf"(?:{'|'.join(stems)})[oa]s?\b", re.IGNORECASE)
+
+
+_PT_POSSESSIVE_STATIVE_RE = _possessive_stative("pt", _PT_RECORDED_STEMS)
 # ── RECALL: a escrita é de OUTRO turno, não deste ────────────────────────────────────
 # Duas marcas, e só as duas juntas: construção ESTATIVA (auxiliar + particípio) mais uma
 # referência ao PASSADO. Sozinha, nenhuma separa — "foi registrado com sucesso" é como se
@@ -171,6 +189,7 @@ class _Bundle:
     # tem um que valha a pena ler: `None` = locale não coberto, comportamento idêntico ao de
     # antes (fail-OPEN, como a própria procura do bundle). Só o `pt` foi MEDIDO.
     recorded_attributive: "Optional[re.Pattern[str]]" = None
+    recorded_stative: "Optional[re.Pattern[str]]" = None
 
 
 # ── en / es: THE SAME SPLIT the pt bundle has carried since the attributive fix ──────────
@@ -204,14 +223,17 @@ _ES_RECORDED_RE = re.compile(
     r"\b(?:fue|fueron|est[áa]|est[áa]n|sido|queda|qued[óo])\s+(?:\w+\s+){0,2}"
     r"(?:registrad|anotad|apuntad|a[ñn]adid)[oa]s?\b|"
     r"acabo\s+de\s+(?:registrar|anotar|apuntar|a[ñn]adir)", re.IGNORECASE)
+_ES_RECORDED_STEMS = ("registrad", "anotad", "apuntad", "a[ñn]adid")
 _ES_RECORDED_ATTRIBUTIVE_RE = re.compile(
     "".join(f"(?<!\\b{w} )" for w in _ES_COPULAS)
-    + r"\b(?:registrad|anotad|apuntad|a[ñn]adid)[oa]s?\b", re.IGNORECASE)
+    + rf"\b(?:{'|'.join(_ES_RECORDED_STEMS)})[oa]s?\b", re.IGNORECASE)
+_ES_POSSESSIVE_STATIVE_RE = _possessive_stative("es", _ES_RECORDED_STEMS)
 
 
 _PT_BUNDLE = _Bundle(
     loc=_PT, recorded=_RECORDED_RE, totals=_TOTALS_RE, removed=_REMOVED_RE,
     recorded_attributive=_RECORDED_ATTRIBUTIVE_RE,
+    recorded_stative=_PT_POSSESSIVE_STATIVE_RE,
     recalled=(_PT_STATIVE, _PT_PAST),
     no_entry=NO_ENTRY_MSG, check_totals=CHECK_TOTALS_MSG, no_removal=NO_REMOVAL_MSG)
 
@@ -252,6 +274,7 @@ _ES_BUNDLE = _Bundle(
                    r"el mes pasado|el otro d[íi]a)\b", re.I)),
     recorded=_ES_RECORDED_RE,
     recorded_attributive=_ES_RECORDED_ATTRIBUTIVE_RE,
+    recorded_stative=_ES_POSSESSIVE_STATIVE_RE,
     totals=re.compile(
         r"\b(?:total|totales|saldo|neto|ingresos?|gastos?|egresos?|facturaci[óo]n|"
         r"balance)\b", re.IGNORECASE),
@@ -282,6 +305,20 @@ def _entry_recorded(tools: Sequence[ToolCall]) -> bool:
             if r.startswith((INCOME_RECORDED_PREFIX, EXPENSE_RECORDED_PREFIX)):
                 return True
     return False
+
+
+_LEDGER_WRITES = ("add_income", "add_outcome", "remove_by_search")
+
+
+def _write_attempted(tools: Sequence[ToolCall]) -> bool:
+    """A ledger write was CALLED this turn — succeeded, failed or refused alike.
+
+    A FACT of the record, read AFTER execution, which is why it can gate an exemption that
+    the host's pre-execution ``is_read_query`` guess cannot: that guess was measured False on
+    turns that were in fact reads, and a signal that must be RIGHT for a relaxation to be SAFE
+    cannot be a prediction. ``side_effect`` counts too, so a write tool this table does not name
+    is still a write."""
+    return any(t.tool in _LEDGER_WRITES or t.side_effect for t in tools)
 
 
 def _summary_read(tools: Sequence[ToolCall]) -> bool:
@@ -410,11 +447,24 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
         #     turn it misses is judged exactly as before.
         # The EXPLICIT claim above is never exempted by a declaration: a declared price makes
         # a figure grounded, not an act ("Registrei R$ 150,00" is still a write nobody made).
-        declared = bool(declared_values) and is_read_query and values_declared(
-            reply, declared_values)
+        all_declared = bool(declared_values) and values_declared(reply, declared_values)
+        declared = all_declared and is_read_query
+        # The POSSESSIVE STATIVE («tenho registrado …») is exempted by a FACT instead of the
+        # guess: every value declared AND no ledger write called this turn (M3c+M4, 24/09). Only
+        # the stative clauses are excused — they are masked out and the bare participle is still
+        # looked for in what remains, so «Registrado! R$ 10,00» beside them keeps its rule.
+        # DECLARED LIMIT (`test_known_limit_a_stative_receipt_after_a_write_request_passes`):
+        # «registra o aluguel» → «Tenho registrado: R$ 10,00 do aluguel.» with nothing written
+        # passes — the form is a description and the request is not read here. Measured over
+        # the whole box (569 traces): 8 stative replies, every affirming one answered a
+        # QUESTION, the two after a write request were negations, 0 stative fabricated receipts.
+        text = reply
+        if (all_declared and not declared and b.recorded_stative is not None
+                and not _write_attempted(tools)):
+            text = b.recorded_stative.sub(" ", reply)
         if (not alega and b.recorded_attributive is not None and not _consulted_ledger(tools)
                 and not declared):
-            alega = affirmed(reply, b.recorded_attributive, neg=b.loc.neg, recalled=b.recalled)
+            alega = affirmed(text, b.recorded_attributive, neg=b.loc.neg, recalled=b.recalled)
         if alega:
             return GroundingVerdict(rule="fabricated_entry", message=b.no_entry,
                                     repairable=True, critique=_NO_ENTRY_CRITIQUE)

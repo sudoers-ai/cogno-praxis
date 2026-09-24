@@ -186,3 +186,56 @@ def test_en_es_a_listing_with_the_ledger_read_is_not_a_claim(reply, locale):
 ])
 def test_en_es_the_EXPLICIT_claim_fires_even_with_a_read_in_hand(reply, locale):
     assert _rule(reply, declared=(), tools=LEITURA, locale=locale) == "fabricated_entry"
+
+
+# ── the POSSESSIVE STATIVE is exempted by a FACT, not by the host's guess (M3c+M4, 24/09) ──
+# The host's `is_read_query` is a PRE-execution guess, measured False on turns that were in
+# fact reads — so a reply that only DESCRIBES what the persona holds («tenho registrado …»)
+# kept firing on a read the guess missed. The stative form is now exempted by what the RECORD
+# says after execution: every value declared AND no ledger write called this turn. The bare
+# participle («Registrado!») and the explicit claim («Registrei») keep their own rules.
+FALHOU = [ToolCall(tool="add_outcome", ok=False, side_effect=False, error="refused")]
+
+
+@pytest.mark.parametrize("reply,locale,declared", [
+    ("Tenho registrado o seguinte sobre a sua conta: R$ 1.440,00 de mensalidade.", "pt",
+     DECLARED),
+    ("Temos registrados estes valores: aula R$ 120,00 por hora.", "pt", DECLARED),
+    ("Tengo registrado: €10,00 de alquiler de la sala.", "es", ("€10,00",)),
+])
+def test_the_stative_on_a_read_the_guess_missed_is_exempted_by_the_fact(reply, locale, declared):
+    assert _rule(reply, read=False, locale=locale, declared=declared) is None
+    # the pair: the SAME reply with nothing declared still fires — the exemption is the
+    # declaration plus the fact, not a new reading of the sentence
+    assert _rule(reply, read=False, locale=locale, declared=()) == "fabricated_entry"
+
+
+def test_the_bare_participle_still_needs_the_guess_and_is_not_masked_by_a_stative_beside_it():
+    assert _rule("Registrado! R$ 10,00 do aluguel.", read=False) == "fabricated_entry"
+    assert _rule("Tenho registrado R$ 10,00 de aluguel. Registrado! R$ 120,00 da aula.",
+                 read=False) == "fabricated_entry"
+
+
+def test_the_explicit_claim_fires_on_either_side_of_the_guess():
+    for read in (False, True):
+        assert _rule("Registrei a despesa de R$ 10,00 do aluguel.", read=read) \
+            == "fabricated_entry"
+
+
+def test_a_write_CALLED_this_turn_takes_the_stative_exemption_away_even_when_it_failed():
+    assert _rule("Tenho registrado o seguinte: R$ 10,00 de aluguel.", read=False,
+                 tools=FALHOU) == "fabricated_entry"
+
+
+def test_an_undeclared_value_in_the_stative_still_fires_without_the_guess():
+    assert _rule("Tenho registrado o seguinte: R$ 12,00 de aluguel.", read=False) \
+        == "fabricated_entry"
+
+
+def test_known_limit_a_stative_receipt_after_a_write_request_passes():
+    """DECLARED LIMIT, written down so it is a decision and not a surprise: «registra o
+    aluguel» → «Tenho registrado: R$ 10,00 do aluguel.» with nothing written is exempted — the
+    form is a description, and the request is not read by this rule. Measured over the whole box
+    (569 traces, 2026-08-04 → 09-24): 8 stative replies; every affirming one answered a
+    QUESTION, the two after a write request were negations, 0 stative fabricated receipts."""
+    assert _rule("Tenho registrado: R$ 10,00 do aluguel.", read=False) is None
