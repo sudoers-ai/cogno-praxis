@@ -65,7 +65,24 @@ _NAMED_RE = re.compile(r"\b(\d{1,2})\s*(?:de\s+)?([a-z]+)(?:\s+de\s+(\d{4}))?")
 
 
 def _fold(s: str) -> str:
-    return unicodedata.normalize("NFKD", s.lower()).encode("ascii", "ignore").decode("ascii")
+    """The ecosystem's ONE fold — a REPLICA of ``cogno_host.textfold.fold`` (its base, no flags).
+
+    NFKD → combining marks removed → ``lower()``: the host's operations in the host's order
+    (NFKD FIRST, which is what makes the fold idempotent — ``lower`` first left the characters
+    whose compatibility decomposition is upper-case, the mathematical "fancy" letters of many
+    WhatsApp display names among them, upper-case after folding). The contract is SYNC WITH THE
+    HOST: ``cogno-host`` pins this function against its own over 100 000 strings, because a copy
+    that answered differently would find a professional here that the host could not, or the
+    reverse.
+
+    It used to be ``NFKD(lower).encode("ascii", "ignore")``, which does not strip an accent but
+    DELETES every character outside ASCII: «Łucja Øverby» folded to ``"ucja verby"`` and a name
+    in a non-Latin script to ``""`` — the same empty key as every other one, so no such
+    professional could be found by name. Now only the marks go; the letters stay (``ß`` stays
+    ``ß``, as it does in the host).
+    """
+    folded = unicodedata.normalize("NFKD", s or "")
+    return "".join(ch for ch in folded if not unicodedata.combining(ch)).lower()
 
 
 # Spelled-out counts the model actually emits. Digits are handled by the regex; these cover
@@ -280,7 +297,7 @@ def _host_tokens(s: str) -> frozenset[str]:
     One-character tokens are dropped from the QUERY side on purpose — a bare initial matches
     almost anything, and a match that loose is exactly what must not resolve to one agenda.
     """
-    return frozenset(t for t in re.split(r"[^0-9a-z]+", _fold(s)) if len(t) > 1
+    return frozenset(t for t in re.split(r"[\W_]+", _fold(s)) if len(t) > 1
                      and t not in _HONORIFICS)
 
 

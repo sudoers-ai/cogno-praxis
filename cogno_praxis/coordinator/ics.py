@@ -78,6 +78,13 @@ _UID_HEX = 40
 _TIME = re.compile(r"^\s*([0-2]?\d)\s*[:hH]\s*([0-5]\d)?")
 
 
+# DOBRA de CHAVE — fica FORA da sincronia com o ``textfold`` do host, de propósito.
+# O resultado entra no dígito do UID de cada evento, e o UID é o que os calendários dos
+# professores já GUARDAM: uma dobra que responda diferente dá a uma aula que já lá está um UID
+# novo, e o cliente de calendário mostra-a DUAS vezes. Medido a 2026-09-23 contra o host em
+# ``012a6885``: esta função coincide hoje com ``textfold.fold(t, collapse_whitespace=True)`` em
+# todos os code points — e é precisamente por ser uma chave que não segue o host por arrasto.
+# Mudá-la é outro PR, com o custo dos eventos duplicados escrito nele.
 def _norm(text: str) -> str:
     """Accent-stripped, lowercased, whitespace-collapsed — the digest's input normalizer.
 
