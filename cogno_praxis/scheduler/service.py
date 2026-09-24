@@ -67,7 +67,7 @@ _NAMED_RE = re.compile(r"\b(\d{1,2})\s*(?:de\s+)?([a-z]+)(?:\s+de\s+(\d{4}))?")
 def _fold(s: str) -> str:
     """The ecosystem's ONE fold — a REPLICA of ``cogno_host.textfold.fold`` (its base, no flags).
 
-    NFKD → combining marks removed → ``lower()``: the host's operations in the host's order
+    NFKD → combining marks removed → ``casefold()``: the host's operations in the host's order
     (NFKD FIRST, which is what makes the fold idempotent — ``lower`` first left the characters
     whose compatibility decomposition is upper-case, the mathematical "fancy" letters of many
     WhatsApp display names among them, upper-case after folding). The contract is SYNC WITH THE
@@ -78,11 +78,11 @@ def _fold(s: str) -> str:
     It used to be ``NFKD(lower).encode("ascii", "ignore")``, which does not strip an accent but
     DELETES every character outside ASCII: «Łucja Øverby» folded to ``"ucja verby"`` and a name
     in a non-Latin script to ``""`` — the same empty key as every other one, so no such
-    professional could be found by name. Now only the marks go; the letters stay (``ß`` stays
-    ``ß``, as it does in the host).
+    professional could be found by name. Now only the marks go; the letters stay. ``casefold``
+    and not ``lower``, as in the host since 2026-09-23: «Straße» and «Strasse» are one name.
     """
     folded = unicodedata.normalize("NFKD", s or "")
-    return "".join(ch for ch in folded if not unicodedata.combining(ch)).lower()
+    return "".join(ch for ch in folded if not unicodedata.combining(ch)).casefold()
 
 
 # Spelled-out counts the model actually emits. Digits are handled by the regex; these cover

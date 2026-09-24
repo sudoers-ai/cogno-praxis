@@ -133,11 +133,11 @@ def normalize_name(name: str) -> str:
 def _fold(s: str) -> str:
     """Accent/case-insensitive fold for keyword search — the ecosystem's ONE fold, a replica of
     ``cogno_host.textfold.fold`` and of the scheduler's ``_fold`` (NFKD → marks removed →
-    ``lower``; ``cogno-host`` pins all of them against each other). It used to
+    ``casefold``; ``cogno-host`` pins all of them against each other). It used to
     ``encode("ascii", "ignore")``, which DELETED every non-ASCII character instead of stripping
     its accent: a term like «ßa» searched for "a" and matched every entry with an «a» in it."""
     folded = unicodedata.normalize("NFKD", s or "")
-    return "".join(ch for ch in folded if not unicodedata.combining(ch)).lower()
+    return "".join(ch for ch in folded if not unicodedata.combining(ch)).casefold()
 
 
 #: The refusal a search term with nothing to search for gets — worded for the model to relay.

@@ -159,9 +159,13 @@ _MONTH_NAMES: dict[str, int] = {
 
 
 def _norm(text: str) -> str:
-    """Accent-stripped, lowercased — for label/name comparison ('Ciência'→'ciencia')."""
+    """Accent-stripped, case-folded — for label/name comparison ('Ciência'→'ciencia').
+
+    A replica of ``cogno_host.textfold.fold(text, strip=True)``, the ecosystem's one fold: NFKD →
+    combining marks removed → ``casefold`` (so «Straße» and «Strasse» compare equal), then the ends
+    stripped. ``cogno-host`` pins the two against each other over 100 000 strings."""
     nfkd = unicodedata.normalize("NFKD", text or "")
-    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower().strip()
+    return "".join(c for c in nfkd if not unicodedata.combining(c)).casefold().strip()
 
 
 #: The separator a secretary writes between a discipline and the exception she is annotating it

@@ -31,9 +31,10 @@ _CNPJ_DIGITS = re.compile(r"\A[0-9]{14}\Z")
 # DOBRA de CHAVE, CONGELADA — não alinhar ao ``textfold`` do host sem migração do ``company_id``.
 # ``company_id_for`` deriva daqui a CHAVE PRIMÁRIA de linhas vivas: uma dobra que responda
 # diferente chaveia uma empresa já registada numa linha nova e perde a antiga. O host passou a
-# dobrar com o NFKD ANTES do ``lower`` (idempotente); esta faz o ``lower`` primeiro e difere dele em
-# 627 code points — letras matemáticas, sobrescritas, ℃/℉, ϒ —, nenhum num nome de empresa até
-# hoje. Se um dia aparecer uma empresa assim, é outro PR, com migração das chaves.
+# dobrar com o NFKD ANTES do caso (idempotente) e com ``casefold`` em vez de ``lower``; esta faz o
+# ``lower`` primeiro e difere dele em 817 code points — letras matemáticas, sobrescritas, ℃/℉, ϒ,
+# e o ``ß`` («Straße» fica ``straße`` aqui e ``strasse`` no host). Se um dia aparecer uma empresa
+# cujo nome dependa disso, é outro PR, com migração das chaves.
 def fold(text: "str | None", *, punctuation: bool = False) -> str:
     """Lower-case and strip accents, so ``nao`` and ``não`` compare equal.
 
