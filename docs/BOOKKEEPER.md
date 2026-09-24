@@ -74,6 +74,30 @@ carried by `cogno-mcp` today (`grep -rn needs_confirmation` in that repo: zero h
 MCP bridge the proposal travels as ordinary tool text; the two-step is what protects the ledger
 either way.
 
+## Values the business declared are a source
+
+A business can write fixed values into a persona's configured rules (a rent, an hourly rate, a
+fee) and the persona quotes them with no tool. The reply-grounding backstop
+(`bookkeeper/grounding.py: ground_reply`) takes them as `declared_values=` — the literal values of
+the rules the host resolved for this contact's role, extracted by the ONE grammar in
+`cogno_praxis.declared_values` (money, percentages, dates, numbers with a unit of time; never a
+name or a sentence):
+
+- `fabricated_entry`: an attributive or stative participle ("tenho registrado R$ 10,00", "the
+  recorded income is $1,440.00") is not a claim of a write when every value in the reply is
+  declared and the contact was asking (`is_read_query`) — the same exemption a ledger read in
+  hand already gave it. An explicit claim ("registrei", "I've recorded", "registré") is never
+  exempted by a declared price, and a write request answered with a receipt of one still fires.
+- `conjured_totals`: a total that IS a declared value is not conjured; a derived one (a sum, a
+  monthly total from an hourly rate) is written nowhere and still fires.
+- No declared values → the rules read exactly as before.
+
+The pt, en and es bundles share one split: explicit claim (first person, "acabei de / just",
+copula + participle) fires always; the bare attributive participle only on a turn that read
+nothing and declared nothing. `prompts/limits.txt` says the same thing to the judge: a financial
+value comes from a tool call or from the values the business declared; computed values are not
+declared, and a recorded entry is confirmed only by the tool that recorded it.
+
 ## Host integration
 
 The host spawns this server over stdio and injects per-tenant config through the environment
