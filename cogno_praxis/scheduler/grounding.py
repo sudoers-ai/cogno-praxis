@@ -515,7 +515,8 @@ def _concludes_action_now(reply: str, b: _Bundle) -> bool:
 
 def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bool = True,
                  is_read_query: bool = False, pending_confirmation: bool = False,
-                 locale: str = "pt") -> Optional[GroundingVerdict]:
+                 locale: str = "pt",
+                 declared_values: Sequence[str] = ()) -> Optional[GroundingVerdict]:
     """Return a :class:`GroundingVerdict` if ``reply`` fabricates a scheduler fact, else None.
 
     ``tools`` is this turn's executed-call trace; ``had_executor`` is False when the turn
@@ -523,7 +524,11 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
     read/listing turn (a stative "confirmado" in a listing is never a status-change claim);
     ``pending_confirmation`` marks a turn that carried an accept/refuse notice in context;
     ``locale`` is the reply's language family (pt/en/es) — an unsupported language returns
-    None (fail open: never rewrite a reply we have no rules for)."""
+    None (fail open: never rewrite a reply we have no rules for). ``declared_values`` (the
+    values the business wrote in the persona's configuration — see
+    ``cogno_praxis.declared_values``) is ACCEPTED and not read: the host hands every vertical
+    the same keywords, and none of these rules asks where a money figure came from. Accepting
+    it is what keeps a scheduler persona with a price in its rules from raising."""
     if not reply:
         return None
     b = _BUNDLES.get(normalize_lang(locale))

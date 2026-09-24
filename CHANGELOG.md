@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### Added
+
+- **`cogno_praxis.declared_values` — os valores que o negócio escreveu na configuração da persona
+  são FONTE, por valor.** Uma gramática só para valores escritos literalmente num texto (dinheiro,
+  percentagens, datas, números com unidade de tempo — nunca nomes nem frases): `declared_values`
+  extrai (o host chama-a sobre as regras resolvidas para o papel do contacto), `values_declared`
+  compara. Os dois lados passam pelo mesmo parser: `R$ 120,00` = `R$ 120`, e `R$ 1.440` nunca é
+  1,44. `bookkeeper.ground_reply(..., declared_values=())`: a `fabricated_entry` deixa de ler o
+  particípio atributivo/estativo («tenho registrado», «a receita registrada») como lançamento
+  quando TODOS os valores da resposta estão declarados — o ESTATIVO possessivo («tenho/temos
+  registrado», «tengo registrado») por um FACTO do registo (nenhuma escrita chamada neste turno,
+  nem falhada), o particípio NU («Registrado!») só quando o contacto estava a perguntar
+  (`is_read_query`), porque no recibo inventado também não se chamou escrita nenhuma. Limite
+  declarado: «Tenho registrado: R$ 10,00» depois de um pedido de escrita passa (8 estativos na
+  caixa inteira, nenhum recibo); a
+  `conjured_totals` aceita um total que É um valor declarado. Continuam a disparar: a alegação
+  explícita («registrei», «acabei de lançar», «já está lançado») mesmo com o preço declarado, o
+  recibo numa PETIÇÃO de escrita, um valor não declarado, e um valor DERIVADO (soma, total mensal a
+  partir de um preço por hora). Sem valores declarados, tudo como antes. O `scheduler.ground_reply`
+  aceita a palavra-chave e não a lê.
+
+### Changed
+
+- **en/es: o particípio atributivo passa a ter a mesma regra do pt.** Até aqui os bundles en e es
+  liam o particípio nu («the recorded income», «los ingresos registrados») como alegação
+  explícita, portanto uma listagem verdadeira era reescrita mesmo com uma leitura do livro na mão.
+  Cópula + particípio continua explícita nas três línguas. Controlo: sobre um corpus determinístico
+  (todas as strings com dígitos dos testes e benches da praxis e do host, 73 044 células), 0
+  fabricações perdidas sem leitura; as 172 células que mudam são todas en/es COM leitura do livro.
+- **`bookkeeper/prompts/limits.txt`**: um valor financeiro vem de uma ferramenta OU dos valores
+  que o negócio declarou na configuração da persona; valores calculados não são declarados, e um
+  lançamento só é confirmado pela ferramenta que o fez. A frase «invents
+  amounts/summaries/confirmations without a tool call» fica intacta.
+
 ### Fixed
 
 - **`coordinator` — três seguimentos do #142: a resposta parcial diz que é parcial; a escrita

@@ -17,6 +17,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
+from cogno_praxis.declared_values import values_declared
 from cogno_praxis.grounding import (
     GroundingVerdict,
     Locale,
@@ -74,9 +75,27 @@ _RECORDED_RE = re.compile(
 # CONDICIONADO a não ter havido leitura, exactamente como o ramo elíptico de `cogno-host#612`:
 # num turno que não consultou nada as duas leituras da frase são infundadas e não há descrição
 # legítima a proteger; um `get_summary` bem-sucedido devolve-lhe a ambiguidade.
+_PT_RECORDED_STEMS = ("registrad", "lançad", "lancad", "anotad")
 _RECORDED_ATTRIBUTIVE_RE = re.compile(
-    rf"{_COPULA_LOOKBEHIND}\b(?:registrad|lançad|lancad|anotad)[oa]s?\b",
+    rf"{_COPULA_LOOKBEHIND}\b(?:{'|'.join(_PT_RECORDED_STEMS)})[oa]s?\b",
     re.IGNORECASE)
+# ── The POSSESSIVE STATIVE: «tenho/temos registrado(s)» — the persona describing what it HOLDS.
+# First person of TER + the same participle stems, up to two words between («tenho aqui
+# registrado»). It is a description, never a completion: «Registrado!» (the bare participle) and
+# «registrei» (the explicit claim) are other forms and keep their own rules. Derived from ONE
+# table of auxiliaries and the stems above — no inflection is spelled by hand beyond the four
+# first-person forms of the two auxiliaries (pt `ter`, es `tener`), which is the whole closed set.
+_STATIVE_AUXILIARIES: "dict[str, tuple[str, ...]]" = {"pt": ("tenho", "temos"),
+                                                     "es": ("tengo", "tenemos")}
+
+
+def _possessive_stative(lang: str, stems: "tuple[str, ...]") -> "re.Pattern[str]":
+    return re.compile(
+        rf"\b(?:{'|'.join(_STATIVE_AUXILIARIES[lang])})\s+(?:\w+\s+){{0,2}}"
+        rf"(?:{'|'.join(stems)})[oa]s?\b", re.IGNORECASE)
+
+
+_PT_POSSESSIVE_STATIVE_RE = _possessive_stative("pt", _PT_RECORDED_STEMS)
 # ── RECALL: a escrita é de OUTRO turno, não deste ────────────────────────────────────
 # Duas marcas, e só as duas juntas: construção ESTATIVA (auxiliar + particípio) mais uma
 # referência ao PASSADO. Sozinha, nenhuma separa — "foi registrado com sucesso" é como se
@@ -170,11 +189,51 @@ class _Bundle:
     # tem um que valha a pena ler: `None` = locale não coberto, comportamento idêntico ao de
     # antes (fail-OPEN, como a própria procura do bundle). Só o `pt` foi MEDIDO.
     recorded_attributive: "Optional[re.Pattern[str]]" = None
+    recorded_stative: "Optional[re.Pattern[str]]" = None
+
+
+# ── en / es: THE SAME SPLIT the pt bundle has carried since the attributive fix ──────────
+#
+# The pt bundle separates the EXPLICIT claim (first person, `acabei de`, copula + participle —
+# fires always) from the ATTRIBUTIVE participle (a participle with no copula, modifying a noun
+# — "a receita registrada", "tenho registrado" — which is a DESCRIPTION and is a claim only on
+# a turn that consulted nothing). The en and es bundles never got the split: their `recorded`
+# pattern matched the bare participle as an explicit claim, so "The recorded income is
+# $1,440.00" was rewritten even with a successful `get_summary` in hand, and "tengo
+# registrado" was a claim of a write. Same rule, three bundles.
+#
+# What stays EXPLICIT, deliberately, in all three: the copula + participle form ("is
+# recorded", "está registrado"). It is how every one of these languages CONFIRMS a write that
+# just happened ("Certo, já está lançado o valor de R$ 150,00" is pinned as the canonical pt-BR
+# confirmation in `test_bookkeeper_grounding.py`), so a read in hand does not excuse it.
+_EN_COPULAS = ("was", "were", "is", "are", "been", "got", "gets")
+_EN_RECORDED_RE = re.compile(
+    r"\bi(?:'ve|\s+have|\s+just|)\s+(?:recorded|logged|added|entered)\b|"
+    r"\bjust\s+(?:recorded|logged|added|entered)\b|"
+    r"\b(?:was|were|is|are|been|got|gets)\s+(?:\w+\s+){0,2}"
+    r"(?:recorded|logged|entered|booked)\b", re.IGNORECASE)
+_EN_RECORDED_ATTRIBUTIVE_RE = re.compile(
+    "".join(f"(?<!\\b{w} )" for w in _EN_COPULAS)
+    + r"\b(?:recorded|logged|entered|booked)\b", re.IGNORECASE)
+
+_ES_COPULAS = ("fue", "fueron", "está", "esta", "están", "estan", "sido", "queda", "quedó",
+               "quedo")
+_ES_RECORDED_RE = re.compile(
+    r"\b(?:registr[ée]|anot[ée]|apunt[ée]|a[ñn]ad[íi])\b|"
+    r"\b(?:fue|fueron|est[áa]|est[áa]n|sido|queda|qued[óo])\s+(?:\w+\s+){0,2}"
+    r"(?:registrad|anotad|apuntad|a[ñn]adid)[oa]s?\b|"
+    r"acabo\s+de\s+(?:registrar|anotar|apuntar|a[ñn]adir)", re.IGNORECASE)
+_ES_RECORDED_STEMS = ("registrad", "anotad", "apuntad", "a[ñn]adid")
+_ES_RECORDED_ATTRIBUTIVE_RE = re.compile(
+    "".join(f"(?<!\\b{w} )" for w in _ES_COPULAS)
+    + rf"\b(?:{'|'.join(_ES_RECORDED_STEMS)})[oa]s?\b", re.IGNORECASE)
+_ES_POSSESSIVE_STATIVE_RE = _possessive_stative("es", _ES_RECORDED_STEMS)
 
 
 _PT_BUNDLE = _Bundle(
     loc=_PT, recorded=_RECORDED_RE, totals=_TOTALS_RE, removed=_REMOVED_RE,
     recorded_attributive=_RECORDED_ATTRIBUTIVE_RE,
+    recorded_stative=_PT_POSSESSIVE_STATIVE_RE,
     recalled=(_PT_STATIVE, _PT_PAST),
     no_entry=NO_ENTRY_MSG, check_totals=CHECK_TOTALS_MSG, no_removal=NO_REMOVAL_MSG)
 
@@ -186,10 +245,8 @@ _EN_BUNDLE = _Bundle(
         # sem `already` — "was already recorded" confirma o agora, ver _PT_PAST
         re.compile(r"\b(?:yesterday|earlier|previously|last (?:week|month)|"
                    r"the other day|back (?:then|on))\b", re.I)),
-    recorded=re.compile(
-        r"\b(?:recorded|logged|entered|booked)\b|"
-        r"\bi(?:'ve|\s+have|\s+just|)\s+(?:recorded|logged|added|entered)\b|"
-        r"\bjust\s+(?:recorded|logged|added|entered)\b", re.IGNORECASE),
+    recorded=_EN_RECORDED_RE,
+    recorded_attributive=_EN_RECORDED_ATTRIBUTIVE_RE,
     totals=re.compile(
         r"\b(?:total|totals|balance|net|income|expenses?|revenue|profit|turnover)\b",
         re.IGNORECASE),
@@ -215,10 +272,9 @@ _ES_BUNDLE = _Bundle(
         # sem `ya` — mesma razão do `já`
         re.compile(r"\b(?:ayer|anteayer|anteriormente|la semana pasada|"
                    r"el mes pasado|el otro d[íi]a)\b", re.I)),
-    recorded=re.compile(
-        r"\b(?:registr[ée]|anot[ée]|apunt[ée]|a[ñn]ad[íi])\b|"
-        r"\b(?:registrad|anotad|apuntad|a[ñn]adid)[oa]s?\b|"
-        r"acabo\s+de\s+(?:registrar|anotar|apuntar|a[ñn]adir)", re.IGNORECASE),
+    recorded=_ES_RECORDED_RE,
+    recorded_attributive=_ES_RECORDED_ATTRIBUTIVE_RE,
+    recorded_stative=_ES_POSSESSIVE_STATIVE_RE,
     totals=re.compile(
         r"\b(?:total|totales|saldo|neto|ingresos?|gastos?|egresos?|facturaci[óo]n|"
         r"balance)\b", re.IGNORECASE),
@@ -249,6 +305,20 @@ def _entry_recorded(tools: Sequence[ToolCall]) -> bool:
             if r.startswith((INCOME_RECORDED_PREFIX, EXPENSE_RECORDED_PREFIX)):
                 return True
     return False
+
+
+_LEDGER_WRITES = ("add_income", "add_outcome", "remove_by_search")
+
+
+def _write_attempted(tools: Sequence[ToolCall]) -> bool:
+    """A ledger write was CALLED this turn — succeeded, failed or refused alike.
+
+    A FACT of the record, read AFTER execution, which is why it can gate an exemption that
+    the host's pre-execution ``is_read_query`` guess cannot: that guess was measured False on
+    turns that were in fact reads, and a signal that must be RIGHT for a relaxation to be SAFE
+    cannot be a prediction. ``side_effect`` counts too, so a write tool this table does not name
+    is still a write."""
+    return any(t.tool in _LEDGER_WRITES or t.side_effect for t in tools)
 
 
 def _summary_read(tools: Sequence[ToolCall]) -> bool:
@@ -334,12 +404,19 @@ def _removed_ok(tools: Sequence[ToolCall]) -> bool:
 
 def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bool = True,
                  is_read_query: bool = False, pending_confirmation: bool = False,
-                 locale: str = "pt") -> Optional[GroundingVerdict]:
+                 locale: str = "pt",
+                 declared_values: Sequence[str] = ()) -> Optional[GroundingVerdict]:
     """Return a :class:`GroundingVerdict` if ``reply`` fabricates a bookkeeping fact, else None.
 
     Same signature as the scheduler backstop (the host adapter treats every vertical
-    alike); ``is_read_query``/``pending_confirmation`` are accepted for symmetry;
-    ``locale`` selects the language bundle (pt/en/es), None on an unsupported language."""
+    alike); ``pending_confirmation`` is accepted for symmetry; ``locale`` selects the
+    language bundle (pt/en/es), None on an unsupported language.
+
+    ``declared_values`` are the VALUES the business wrote in this persona's configuration,
+    resolved for this contact's role (``cogno_praxis.declared_values``) — the tenant told the
+    persona these, so a reply quoting them has a source even when no tool ran. Empty (the
+    default) → every rule below reads exactly as it did before the parameter existed.
+    ``is_read_query`` is read ONLY together with them — see rule (1)."""
     if not reply:
         return None
     b = _BUNDLES.get(normalize_lang(locale))
@@ -354,8 +431,40 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
         alega = affirmed(reply, b.recorded, neg=b.loc.neg, recalled=b.recalled)
         # O particípio ATRIBUTIVO só é alegação num turno que não consultou NADA. Com uma
         # leitura em mão, *"os lançamentos registrados hoje"* é a listagem que foi pedida.
-        if not alega and b.recorded_attributive is not None and not _consulted_ledger(tools):
-            alega = affirmed(reply, b.recorded_attributive, neg=b.loc.neg, recalled=b.recalled)
+        # …and neither is it on a turn whose every value the business DECLARED in this
+        # persona's configuration, when the contact was ASKING. *"Tenho registrado: aluguel
+        # R$ 1.440,00"* over the tenant's own configured rent is the persona reading its rules
+        # back, and the rules are a source — the same description the ledger read excuses.
+        #
+        # BOTH conditions, and each one closes a door the other leaves open:
+        #   * every value declared — a figure the rules do not carry (a total worked out from
+        #     them, a price from nowhere) is not exempted, so a derived value stays caught;
+        #   * a READ query — a declared value answers a QUESTION and never completes a WRITE.
+        #     The most likely amount of a fabricated receipt is the tenant's own price: the
+        #     contact says "registra uma consulta", the voice says "Registrado! R$ 150,00" with
+        #     R$ 150,00 in the rules, and nothing was written. `is_read_query` is the host's
+        #     PRE-execution guess and errs towards False, which here is the strict side — a
+        #     turn it misses is judged exactly as before.
+        # The EXPLICIT claim above is never exempted by a declaration: a declared price makes
+        # a figure grounded, not an act ("Registrei R$ 150,00" is still a write nobody made).
+        all_declared = bool(declared_values) and values_declared(reply, declared_values)
+        declared = all_declared and is_read_query
+        # The POSSESSIVE STATIVE («tenho registrado …») is exempted by a FACT instead of the
+        # guess: every value declared AND no ledger write called this turn (M3c+M4, 24/09). Only
+        # the stative clauses are excused — they are masked out and the bare participle is still
+        # looked for in what remains, so «Registrado! R$ 10,00» beside them keeps its rule.
+        # DECLARED LIMIT (`test_known_limit_a_stative_receipt_after_a_write_request_passes`):
+        # «registra o aluguel» → «Tenho registrado: R$ 10,00 do aluguel.» with nothing written
+        # passes — the form is a description and the request is not read here. Measured over
+        # the whole box (569 traces): 8 stative replies, every affirming one answered a
+        # QUESTION, the two after a write request were negations, 0 stative fabricated receipts.
+        text = reply
+        if (all_declared and not declared and b.recorded_stative is not None
+                and not _write_attempted(tools)):
+            text = b.recorded_stative.sub(" ", reply)
+        if (not alega and b.recorded_attributive is not None and not _consulted_ledger(tools)
+                and not declared):
+            alega = affirmed(text, b.recorded_attributive, neg=b.loc.neg, recalled=b.recalled)
         if alega:
             return GroundingVerdict(rule="fabricated_entry", message=b.no_entry,
                                     repairable=True, critique=_NO_ENTRY_CRITIQUE)
@@ -370,8 +479,14 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
     # (3) conjured totals — the reply quotes saldo/totals with no summary/search read in
     #     hand. Repairable: read the real numbers. Checked LAST: a recorded-entry reply
     #     legitimately echoes the amount ("registrei R$ 500") without a summary read.
+    #     A total the business DECLARED in the persona's configuration is not conjured — it
+    #     was written by the tenant, not by the voice. A total DERIVED from declared values (a
+    #     sum, a monthly figure from an hourly rate) is written nowhere, so `values_declared`
+    #     is False and the rule fires exactly as before. Not gated on `is_read_query` like
+    #     rule (1): a total claims no write, only a figure, and the declaration IS its source.
     if (b.loc.money.search(reply) and affirmed(reply, b.totals, neg=b.loc.neg)
-            and not _summary_read(tools) and not _entry_recorded(tools)):
+            and not _summary_read(tools) and not _entry_recorded(tools)
+            and not values_declared(reply, declared_values)):
         return GroundingVerdict(rule="conjured_totals", message=b.check_totals,
                                 repairable=True, critique=_CHECK_TOTALS_CRITIQUE)
 
