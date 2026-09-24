@@ -29,6 +29,7 @@ from cogno_praxis.bookkeeper.engine import (
     matches_entry,
     normalize_name,
     parse_amount,
+    require_searchable,
     resolve_date,
     summarize,
 )
@@ -178,6 +179,7 @@ class BookkeeperService:
 
     def search(self, query: str, identity_id: str, role: str, *,
                date_from: str = "", date_to: str = "") -> list[dict]:
+        require_searchable(query)
         who = self._scope(identity_id, role)
         rows = self._store.list(identity_id=who, date_from=date_from or None, date_to=date_to or None)
         hits = [t for t in rows if matches_entry(t.description, t.client_name,
@@ -213,6 +215,7 @@ class BookkeeperService:
         is actually there. Guessing which row a stale id meant is exactly the mistake the two
         steps exist to prevent.
         """
+        require_searchable(query)
         rows = self._store.list(identity_id=identity_id)   # own only, most-recent first
         hits = [t for t in rows if matches_entry(t.description, t.client_name,
                                                  t.amount, query)]

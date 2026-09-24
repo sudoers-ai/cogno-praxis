@@ -131,8 +131,33 @@ def normalize_name(name: str) -> str:
 
 
 def _fold(s: str) -> str:
-    """Accent/case-insensitive fold for keyword search (matches the scheduler's ``_fold``)."""
-    return unicodedata.normalize("NFKD", (s or "").lower()).encode("ascii", "ignore").decode("ascii")
+    """Accent/case-insensitive fold for keyword search — the ecosystem's ONE fold, a replica of
+    ``cogno_host.textfold.fold`` and of the scheduler's ``_fold`` (NFKD → marks removed →
+    ``lower``; ``cogno-host`` pins all of them against each other). It used to
+    ``encode("ascii", "ignore")``, which DELETED every non-ASCII character instead of stripping
+    its accent: a term like «ßa» searched for "a" and matched every entry with an «a» in it."""
+    folded = unicodedata.normalize("NFKD", s or "")
+    return "".join(ch for ch in folded if not unicodedata.combining(ch)).lower()
+
+
+#: The refusal a search term with nothing to search for gets — worded for the model to relay.
+NOT_SEARCHABLE = "termo de pesquisa sem letras ou números"
+
+
+def require_searchable(query: str) -> None:
+    """Refuse a term that is not blank but holds no letter and no digit («€», «!!!», «–»).
+
+    Such a term used to fold to ``""`` under the ASCII-deleting fold, and an empty term matches
+    EVERY entry: a search for the euro sign returned the whole ledger, and a removal by it would
+    have proposed whichever entry was most recent. Answering "nothing found" instead would be the
+    other silent failure — a statement about the contact's books that was never checked. So it is
+    a refusal that says why. A BLANK term is not this case: it is the explicit "list everything",
+    and it keeps that meaning.
+    """
+    if (query or "").strip() and not any(ch.isalnum() for ch in _fold(query)):
+        raise BookkeeperError(
+            f"{NOT_SEARCHABLE}: {query!r}. Nothing was searched — ask the user for a word from "
+            "the entry's description, a client name, or an amount.")
 
 
 def matches_query(text: str, query: str) -> bool:
