@@ -44,7 +44,8 @@ the two gates cannot both hold, because B stops the call before C could speak.
 
 An annotation is read per tool **name**, before anything runs. It can say *a deletion is coming*
 and it can never say *what would be deleted* — the tool name is identical for every removal, while
-which row an accent-folded substring query selects (`matches_query`), of what value, of what date,
+which row an accent- and case-folded substring query selects (`matches_query`, the ecosystem's
+fold: NFKD, marks removed, `casefold`, so «Strasse» finds «Straße»), of what value, of what date,
 and whether it selected three siblings alongside it, is knowable only **after** the read. So
 `remove_by_search` reads first and proposes the row, quoting it; a second call naming that row's
 `confirm_tx_id` commits it.

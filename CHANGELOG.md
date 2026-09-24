@@ -38,6 +38,24 @@
 
 ### Fixed
 
+- **A dobra passa de `lower` a `casefold`, como no host: «Straße» e «Strasse» são o mesmo nome
+  (#145).** A dobra única do ecossistema (`cogno_host.textfold.fold`) é NFKD → marcas
+  combinantes removidas → `casefold`, por esta ordem, e continua idempotente sobre todo o Unicode.
+  As três cópias da praxis que SEGUEM o host acompanham-no: `scheduler.service._fold`,
+  `bookkeeper.engine._fold` (a pesquisa `matches_query`) e `coordinator.service._norm`. **Ficam
+  como estão, de propósito** (só os comentários ao lado mudam, com a distância nova ao host):
+  `companies.identifiers.fold` (chave do `company_id`, congelada; alinhar pede migração; 817 code
+  points, o `ß` incluído), `coordinator.ics._norm` (chave do UID dos eventos que os calendários
+  guardam; 190 code points) e `coordinator.rsvp._norm` (decisão do Director; 867 code points).
+  Medido contra `4dc5043`: das 100 000 cadeias do scheduler, 7 280 dobram de outra maneira, todas
+  pelo conjunto do `casefold`. Das 170 consultas de agenda sobre 14 marcáveis inventados, 167 ficam
+  iguais, 3 ganham um match («Strasse», «STRASSE», «GRAÇA STRASSE» → «Graça Straße») e 0 perdem.
+  As 15 expressões do `resolve_date` dão o mesmo. Na pesquisa do bookkeeper, 3 de 20 000 veredictos
+  mudam, todos False→True. `tests/unit/test_the_fold_keeps_the_letters.py` fixa a definição (o
+  sigma final testado como cadeia, «ΟΔΟΣ», porque o `lower` o decide por contexto) e a paridade do
+  `ß`. O PR irmão do host troca o `textfold` junto com o pino da praxis, porque o teste de
+  sincronia do host fica vermelho enquanto só uma das pontas tiver o `casefold`.
+
 - **`coordinator` — três seguimentos do #142: a resposta parcial diz que é parcial; a escrita
   ambígua fica provada intacta; o resultado IBOPE deixa de ir para outra pessoa.** (F1) Com o
   rótulo «Ana Lopes» numa folha com uma linha «Ana Lopes» e duas «Prof. Ana Lopes», a agenda e a
