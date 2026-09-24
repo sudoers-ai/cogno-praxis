@@ -8,8 +8,8 @@ bookkeeper, a search term made only of such characters («€») folded to ``""`
 matches EVERY entry.
 
 The contract is the ecosystem's ONE fold, ``cogno_host.textfold.fold`` as it stands since
-``cogno-host`` #1004: NFKD → combining marks removed → ``lower``, in that order (idempotent;
-``ß`` stays ``ß``). ``cogno-host`` pins these copies against its own over 100 000 strings; this
+``cogno-host`` #1004 and its ``casefold`` follow-up: NFKD → combining marks removed →
+``casefold``, in that order (idempotent over all of Unicode; «Straße» and «Strasse» are one). ``cogno-host`` pins these copies against its own over 100 000 strings; this
 file pins the definition and what it changes here. Every name below is INVENTED.
 """
 
@@ -31,7 +31,7 @@ from cogno_praxis.scheduler.store import Host, InMemoryAppointmentStore
 def _host_base_fold(s: str) -> str:
     """``cogno_host.textfold.fold`` with no flags, written out — the replica must match it."""
     folded = unicodedata.normalize("NFKD", s or "")
-    return "".join(ch for ch in folded if not unicodedata.combining(ch)).lower()
+    return "".join(ch for ch in folded if not unicodedata.combining(ch)).casefold()
 
 
 CATALOGUE = ["Dra. Valquíria de Assunção Bragantim", "João da Conceição Araújo",
@@ -61,7 +61,7 @@ def test_the_fold_is_the_hosts_on_accents_ligatures_and_non_latin_letters(fold, 
     rng = random.Random(0)
     alphabet = "aeiouçãõáéíóúâêôàüñßøłİıﬁ ’-ÆæŒœ李王€–ᴬϒ℃𝐉𝐨𝓜" + string.ascii_letters
     corpus = ["".join(rng.choice(alphabet) for _ in range(rng.randint(1, 12)))
-              for _ in range(20_000)] + ["", "ᴬ", "ϒ", "ẞ", "ΟΔΟΣ", "  João  "]
+              for _ in range(20_000)] + ["", "ᴬ", "ϒ", "ẞ", "ΟΔΟΣ", "ΟΔΟΣ ΚΑΙ", "Ꭰꭰ", "  João  "]
     assert [fold(t) for t in corpus] == [host_equivalent(t) for t in corpus]
 
 
@@ -69,7 +69,8 @@ def test_the_fold_keeps_the_letters_and_removes_only_the_marks():
     assert _fold("João da Conceição") == "joao da conceicao"        # accents: gone, as before
     assert _fold("Łucja Øverby") == "łucja øverby"                   # was "ucja verby"
     assert _fold("李小龙") == "李小龙"                                  # was ""
-    assert _fold("Straße") == "straße"                               # the host keeps ß, so do we
+    assert _fold("Straße") == "strasse"                              # casefold, as in the host
+    assert _fold("ΟΔΟΣ") == "οδοσ"                                   # final sigma: no context
     assert _fold("𝐄𝐬𝐭𝐞𝐯𝐚𝐨") == "estevao"                             # NFKD first: lower-case
 
 
@@ -95,9 +96,10 @@ def test_a_letter_nfkd_does_not_decompose_stays_in_the_token():
 
 
 def test_sharp_s_behaves_exactly_as_in_the_host():
-    """Parity, not preference: the host keeps ``ß``, so «Strasse» is not «Straße» here either."""
+    """Parity with the host, which folds with ``casefold``: «Strasse» IS «Straße»."""
     assert _names(_svc(), "Straße") == ["Graça Straße"]
-    assert _names(_svc(), "Strasse") == []
+    assert _names(_svc(), "Strasse") == ["Graça Straße"]
+    assert _names(_svc(), "GRAÇA STRASSE") == ["Graça Straße"]
 
 
 def test_CONTROL_accents_omitted_resolve_exactly_as_before():

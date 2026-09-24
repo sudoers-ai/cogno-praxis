@@ -46,9 +46,9 @@ RECORDABLE: tuple[str, ...] = (RSVP_ACCEPTED, RSVP_DECLINED)
 # FICA como está, FORA da sincronia com o ``textfold`` do host — decisão do Director (2026-09-23).
 # Compara a resposta de um professor («sim», «não») com os rótulos que o inquilino escreveu na
 # coluna de estado da folha, e os dois lados passam por ESTA mesma função, portanto concordam
-# entre si. Difere do host em 677 code points (faz o ``lower`` antes do NFKD, e o ``strip`` antes
-# de tudo, o que deixa um diacrítico solto como «¨» virar um espaço que já não é aparado) — nenhum
-# numa resposta de presença. Alinhá-la é outro PR, medido sobre as respostas reais.
+# entre si. Difere do host em 867 code points (faz o ``lower`` — não o ``casefold`` — antes do
+# NFKD, e o ``strip`` antes de tudo, o que deixa um diacrítico solto como «¨» virar um espaço que
+# já não é aparado) — nenhum numa resposta de presença. Alinhá-la é outro PR, medido sobre as respostas reais.
 def _norm(s: str) -> str:
     """Accent- and case-folded, for comparing a human's spelling of a label with the tenant's.
 
