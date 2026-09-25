@@ -4,6 +4,48 @@
 
 ### Fixed
 
+- **`cogno_praxis.declared_values` — a gramática ÚNICA lê três formas que lia mal (F2.1 PR-1).**
+  Os desacordos da proveniência por valor classificaram-se em três leituras ERRADAS do
+  extractor (não em fontes que faltassem). A gramática é partilhada com o M3c, com as redes e com
+  a proveniência do host, e cada correcção vale para todos eles:
+  - **(i) o sinal.** `R$ -45,00`, `R$-45,00`, `-R$ 45,00`, `R$ −45,00` (U+2212), um `-45.00`
+    nu e `-45 reais` são MENOS quarenta e cinco; antes eram lidos `45,00`, e um valor de sinal
+    trocado passava pelo mesmo valor. O sinal só conta encostado ao número ou ao símbolo: `R$
+    45,00 - R$ 10,00` continua a ser dois positivos, `10-20` um intervalo, `2026-09-25` uma data e
+    `91234-5678` nada. Só dinheiro.
+  - **(ii) o negrito partido pela voz.** `**R$**\n**1.440**` passa a ser UM valor: entre o
+    símbolo e o número a gramática aceita brancos, ênfase markdown e no máximo UMA quebra de
+    linha (uma linha em branco é outro parágrafo, e nada se cola ao símbolo). O literal volta sem
+    a ênfase, `R$ 1.440`. Antes, um valor sem centavos nessa forma não era lido de todo.
+    (A forma `**R$\n1.234,56**` citada no briefing já era lida, medido; a cegueira era sem
+    centavos ou com a ênfase pelo meio.)
+  - **(iii) a unidade debaixo de uma chave de máquina.** `"window_days": 7` passa a ser 7 DIAS:
+    um número cuja chave tem uma palavra de unidade como UMA das suas partes lê-se nessa unidade.
+    Contam só plurais e as abreviaturas (`days/dias/d`, `hours/horas/hrs/h`,
+    `minutes/minutos/mins/min`, `weeks/semanas`, `months/meses`, `years/anos`). Uma parte no
+    singular (`day`, `month`, `hour`) é muito mais vezes um componente de data ou uma taxa do que
+    uma duração: `{"year": 2026, "month": 7, "day": 7}`, `day_of_week: 7` e `price_per_hour: 7`
+    não lêem unidade nenhuma. A chave tem de PARECER de máquina (entre aspas, snake_case ou
+    `chave=`), por isso a prosa («Dias: 7») nunca é lida assim. A unidade é exigida DENTRO do
+    padrão, por isso uma chave que não a nomeia (`"amount": 45.00`) nunca é consumida aqui, e o
+    número dela lê-se como antes.
+- **O que isto NÃO fecha, dito:** a proveniência do host lê ainda os números nus de uma fonte de
+  máquina com a SUA própria regex (`value_provenance._BARE_NUMBER_RE`), que não leva o sinal.
+  Com o pino novo, uma fonte `-45.00` fonteia `R$ -45,00` (pela gramática) mas continua a
+  fontear também `R$ 45,00` (pela regex do host). O sentido inverso já fica fechado aqui (uma
+  fonte `45.00` não fonteia `R$ -45,00`). O resto é uma linha no host.
+- **Testes** (`tests/unit/test_declared_values_three_readings.py`, valores inventados): em cada
+  forma, o gémeo com o controlo —
+  - o negativo fonteado pelo mesmo negativo, e NÃO pelo positivo, nos dois sentidos da troca;
+  - os traços que não são sinal;
+  - o valor na linha seguinte ao símbolo, e o símbolo sem número (ou com o número no parágrafo
+    seguinte), que não dá nada;
+  - a chave que nomeia a unidade, e as dez que não a nomeiam;
+  - a chave sem unidade que devolve o número à gramática;
+  - todo o literal que a extracção entrega relê-se como a mesma chave.
+
+### Fixed
+
 - **A regra 6 (`unread_schedule_claim`) passa a admitir a `consult_documents`.** A excepção que
   deixa uma leitura de MATERIAL registado fundamentar uma resposta de horário — quando a saída da
   leitura CONTÉM um valor de horário que a resposta afirma — estava presa a um nome só,
