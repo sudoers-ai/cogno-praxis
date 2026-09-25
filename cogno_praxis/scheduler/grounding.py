@@ -373,10 +373,14 @@ def _settings_read(tools: Sequence[ToolCall]) -> bool:
                 or ok_results(tools, "set_schedule_settings"))
 
 
-# ── a read that is NOT the scheduler's: the host's registered-material lookup ─────────
-# `consult_material` is not a tool this vertical ships. It is the HOST's read over the tenant's
-# REGISTERED material — a timetable, a syllabus: documents a person wrote — offered to the same
-# persona beside the scheduler's tools. Rule 6 admitted only the scheduler's own reads, so a
+# ── a read that is NOT the scheduler's: the host's registered-material lookups ────────
+# `consult_material` and `consult_documents` are not tools this vertical ships. They are the
+# HOST's reads over the tenant's REGISTERED material — a timetable, a syllabus: documents a
+# person wrote — offered to the same persona beside the scheduler's tools. `consult_documents`
+# searches the documents the business PUBLISHED (the document store) and replaces
+# `consult_material`; the older name stays admitted for as long as a host still offers it, and
+# leaves this set only after the host has stopped serving it. Rule 6 admitted only the
+# scheduler's own reads, so a
 # reply grounded in that lookup was repaired as "answered from memory" (measured 2/2 in the
 # rehearsal tenant, 2026-09-22: "60 horas" over a syllabus saying "(60h)", and a class's
 # "19h00 às 22h30" over the timetable that says exactly that — each paid a repair re-step, and
@@ -386,11 +390,12 @@ def _settings_read(tools: Sequence[ToolCall]) -> bool:
 # judge's own ruler for a preserved term. A read of the scheduler's own kind is evidence by
 # construction (a listing IS what is booked); a lookup over free text is evidence only of what
 # it returned, so it grounds a schedule claim exactly when its output HOLDS a figure the reply
-# states. Keyed to this one tool rather than "any read whose output holds the figure", because
-# a graph read whose query echoes the request hands back the model's own earlier sentence — the
-# echo the host's `_Call.echo` bit exists for — and a figure invented last turn must not ground
-# itself this turn. Registered material is written by a person, not learned from the model.
-MATERIAL_READ_TOOL = "consult_material"
+# states. Keyed to these NAMED tools rather than "any read whose output holds the figure",
+# because a graph read whose query echoes the request hands back the model's own earlier
+# sentence — the echo the host's `_Call.echo` bit exists for — and a figure invented last turn
+# must not ground itself this turn. Registered material is written by a person, not learned from
+# the model; a new material read joins this set by name, never by the shape of its output.
+MATERIAL_READ_TOOLS: frozenset[str] = frozenset({"consult_material", "consult_documents"})
 
 # A figure is a NUMBER WITH A TIME UNIT — a time of day or a duration — and nothing else: the
 # bare "30" inside the read's "22h30" is not a figure, so it can never stand in for a claimed
@@ -430,8 +435,8 @@ def schedule_figures(text: str) -> "set[str]":
 
 
 def _material_holds_a_claimed_figure(reply: str, tools: Sequence[ToolCall]) -> bool:
-    """A successful ``consult_material`` read whose output holds a schedule figure the reply
-    states. Over the WHOLE reply, like :func:`_lists_dated_appointment`: the clause that trips
+    """A successful read of a :data:`MATERIAL_READ_TOOLS` tool whose output holds a schedule
+    figure the reply states. Over the WHOLE reply, like :func:`_lists_dated_appointment`: the clause that trips
     the occupancy pattern is often a courtesy tail with no figure in it ("ajuda com
     agendamentos"), and the figures live in the sentences before. ANY figure in common, not
     every one: the specimen states a duration DERIVED from the read (22h30 − 19h00 = 3h30) beside
@@ -443,7 +448,8 @@ def _material_holds_a_claimed_figure(reply: str, tools: Sequence[ToolCall]) -> b
     claimed = schedule_figures(reply)
     if not claimed:
         return False
-    return any(claimed & schedule_figures(out) for out in ok_results(tools, MATERIAL_READ_TOOL))
+    return any(claimed & schedule_figures(out)
+               for tool in sorted(MATERIAL_READ_TOOLS) for out in ok_results(tools, tool))
 
 
 def _contradicts_booking(tools: Sequence[ToolCall]) -> bool:
@@ -595,7 +601,7 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
     #     Repairable: the re-step forces a real listing. Suppressed when a listing OR an
     #     availability read is in hand (that claim is grounded; availability is rule 2's turf),
     #     or when the host's registered-material read holds a figure the reply states — the
-    #     VALUE admits that read, never its name (see `MATERIAL_READ_TOOL`).
+    #     VALUE admits that read, never its name (see `MATERIAL_READ_TOOLS`).
     if (is_read_query and affirmed(reply, b.occupancy_claim, neg=b.loc.neg)
             and not ok_results(tools, "list_appointments")
             and not _availability_read(tools)
