@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Fixed
+
+- **A regra 6 (`unread_schedule_claim`) passa a admitir a `consult_documents`.** A excepção que
+  deixa uma leitura de MATERIAL registado fundamentar uma resposta de horário — quando a saída da
+  leitura CONTÉM um valor de horário que a resposta afirma — estava presa a um nome só,
+  `MATERIAL_READ_TOOL = "consult_material"`. A `consult_documents` (a pesquisa do host sobre os
+  documentos que o negócio PUBLICOU), que já está servida e substitui a `consult_material`, não
+  estava admitida: uma resposta de horário tirada dos documentos disparava o reparo e uma
+  resposta reescrita, a mesma forma medida 2/2 no ensaio de 22/09 antes de a `consult_material`
+  ser admitida. A constante passa a um conjunto, **`MATERIAL_READ_TOOLS`** =
+  `{"consult_material", "consult_documents"}`. A `consult_material` fica enquanto o host a
+  servir, e só sai do conjunto depois de o host a retirar. A regra não muda: a admissão continua
+  a ser pelo NOME e depois pelo VALOR, nunca pela forma da saída. O nome singular desaparece (não
+  tinha nenhum leitor fora deste módulo em nenhum repo do ecossistema).
+- **Testes** (`tests/unit/test_unread_schedule_claim_material_read.py`, conteúdo inventado na
+  forma do payload da `consult_documents`):
+  - o gémeo dos dois casos medidos — «60 horas» sobre «(60h)» e «19h00 às 22h30» sobre a grade —
+    agora lidos pela `consult_documents`, que não dão reparo;
+  - o CONTROLO: a MESMA saída devolvida por uma ferramenta que não é de material continua a não
+    fundamentar;
+  - uma leitura dos documentos que não contém o valor continua a dar reparo, e uma leitura
+    falhada não fundamenta nada;
+  - o conjunto preso aos dois nomes.
+
 ### Added
 
 - **A decisão do estativo passa a API PÚBLICA de `cogno_praxis.bookkeeper.grounding`**
