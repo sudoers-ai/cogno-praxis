@@ -373,16 +373,15 @@ def _settings_read(tools: Sequence[ToolCall]) -> bool:
                 or ok_results(tools, "set_schedule_settings"))
 
 
-# ── a read that is NOT the scheduler's: the host's registered-material lookups ────────
-# `consult_material` and `consult_documents` are not tools this vertical ships. They are the
-# HOST's reads over the tenant's REGISTERED material — a timetable, a syllabus: documents a
-# person wrote — offered to the same persona beside the scheduler's tools. `consult_documents`
-# searches the documents the business PUBLISHED (the document store) and replaces
-# `consult_material`; the older name stays admitted for as long as a host still offers it, and
-# leaves this set only after the host has stopped serving it. Rule 6 admitted only the
-# scheduler's own reads, so a
-# reply grounded in that lookup was repaired as "answered from memory" (measured 2/2 in the
-# rehearsal tenant, 2026-09-22: "60 horas" over a syllabus saying "(60h)", and a class's
+# ── a read that is NOT the scheduler's: the host's registered-material lookup ─────────
+# `consult_documents` is not a tool this vertical ships. It is the HOST's read over the tenant's
+# REGISTERED material — a timetable, a syllabus: documents a person wrote — offered to the same
+# persona beside the scheduler's tools: a search over the documents the business PUBLISHED (the
+# document store). It replaced `consult_material`, which left this set once no host offered it
+# any more (the host retired it in its F2.4 P5c); a read under the old name grounds nothing now,
+# like any read that is not registered material. Rule 6 admitted only the scheduler's own
+# reads, so a reply grounded in that lookup was repaired as "answered from memory" (measured
+# 2/2 in the rehearsal tenant, 2026-09-22: "60 horas" over a syllabus saying "(60h)", and a class's
 # "19h00 às 22h30" over the timetable that says exactly that — each paid a repair re-step, and
 # in one the re-step called a `list_appointments` nobody had asked for).
 #
@@ -395,7 +394,7 @@ def _settings_read(tools: Sequence[ToolCall]) -> bool:
 # sentence — the echo the host's `_Call.echo` bit exists for — and a figure invented last turn
 # must not ground itself this turn. Registered material is written by a person, not learned from
 # the model; a new material read joins this set by name, never by the shape of its output.
-MATERIAL_READ_TOOLS: frozenset[str] = frozenset({"consult_material", "consult_documents"})
+MATERIAL_READ_TOOLS: frozenset[str] = frozenset({"consult_documents"})
 
 # A figure is a NUMBER WITH A TIME UNIT — a time of day or a duration — and nothing else: the
 # bare "30" inside the read's "22h30" is not a figure, so it can never stand in for a claimed
