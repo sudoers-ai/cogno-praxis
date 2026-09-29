@@ -24,6 +24,42 @@
 
 ### Fixed
 
+- **`coordinator/prompts/system.txt`: the COORDINATOR's tool mapping tells the deadlines OPEN now
+  from the deadline RULES.** The mapping had one line, «Grade/attendance deadlines →
+  check_deadlines(professor?)». Asked «what deadlines does the teacher have to meet?», the
+  executor called `check_deadlines` 5/5 and `consult_documents` 0/5 on a rehearsal tenant,
+  although `consult_documents` was on the table and the host's generic documents duty was in the
+  prompt. The mapping line won.
+  - The fix splits that line in two: the deadlines currently OPEN (which disciplines are due now)
+    stay with `check_deadlines`; the deadline RULES a teacher must follow (what is due, by when,
+    after each class) go to `consult_documents`, «when it is among this turn's tools». The bytes
+    are the replay's, and they are not padded to the arrow column the other lines use.
+  - The condition closes the RULES line, after the arrow. `consult_documents` is the host's tool,
+    offered only on a turn whose reader has a published document to read, so without the
+    condition the mapping would send the question to a tool that is not on that turn's table. A version with
+    the condition BEFORE the arrow scored 4/5 in the same replay and was discarded.
+  - Measurement (offline A/B, calibrated, the served host's real executor prompt, n=5): the
+    question went from `check_deadlines` 5/5 to `consult_documents` 5/5, and a records control
+    («which disciplines have a grade deadline expiring this week?») stayed on `check_deadlines`
+    5/5. A generic documents duty, tried on the same calibration, stayed on `check_deadlines` 5/5,
+    so the lever is the persona's own mapping. The final line, with its condition, measured the
+    same: the question 5/5 on `consult_documents`, the control 5/5 on `check_deadlines`.
+  - The judge, measured with `coordinator/prompts/limits.txt` unchanged (it lists the tools a
+    schedule fact may come from, and `consult_documents` is not among them): it APPROVED the
+    correct reply 5/5 and REJECTED 5/5 a control reply that invents a deadline. So `limits.txt`
+    does not change.
+  - The question is ambiguous (rules, or deadlines open now). This change sends it to the rules;
+    reading both was not measured and is not done.
+  - This is the first prompt in this repo that names `consult_documents`. The measured turns had
+    it on the table; a turn without it is what the condition is for (`docs/COORDINATOR.md`).
+  - Tests (`tests/unit/test_coordinator_deadline_rules_read_the_documents.py`, prompt-only):
+    - the twin: the two lines are in the mapping, in the old line's place, and the old line is
+      gone; the RULES line ends with its condition;
+    - the control: with the old line put back, the file is `main`'s byte for byte (sha256
+      pinned, and the new digest too);
+    - every other prompt of every vertical is unchanged (20 digests).
+  - Who reads the file outside this repo: the host, which loads it as the COORDINATOR's executor
+    prompt. Of this repo's `prompts/*.txt`, this is the only file that changes.
 - **`bookkeeper/prompts/scope.txt`: the BOOKKEEPER's scope now names the business's own ASSETS
   and INVESTMENTS, not only its ledger.** The ALLOW paragraph said «any message about the
   business's finances» but listed ledger operations only. The relevance guard BLOCKED a question
