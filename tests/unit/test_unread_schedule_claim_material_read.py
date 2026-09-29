@@ -15,6 +15,12 @@ the scheduler's own listing keeps grounding by KIND, as it always has (twin 4).
 
 The tool outputs below carry the specimens' VALUES in the specimens' SHAPE (the
 ``consult_material`` header, the timetable and syllabus sections) and no tenant or person.
+
+**The name moved on (2026-09-29).** ``consult_documents`` replaced ``consult_material``, and once
+the host retired the old tool (its F2.4 P5c) the old name LEFT ``MATERIAL_READ_TOOLS``: a read
+under it grounds nothing now, like any read that is not registered material. The specimens' twins
+below are therefore read through ``consult_documents``, over the very same payloads, and the
+retired name has a twin of its own (the SAME payload, the SAME reply — repaired).
 """
 
 from __future__ import annotations
@@ -26,6 +32,12 @@ from cogno_praxis.scheduler.grounding import UNREAD_SCHEDULE_MSG, ground_reply
 
 
 def _material(result: str) -> ToolCall:
+    """A successful read of the registered material — the tool that serves it today."""
+    return ToolCall(tool="consult_documents", ok=True, result=result)
+
+
+def _retired(result: str) -> ToolCall:
+    """The SAME read under the retired name: no host offers ``consult_material`` any more."""
     return ToolCall(tool="consult_material", ok=True, result=result)
 
 
@@ -70,6 +82,19 @@ _P12 = "A carga horária total de **Modelagem de Dados** é de **60 horas**." + 
 def test_a_schedule_figure_the_material_read_holds_grounds_the_claim(reply, material):
     v = ground_reply(reply, tools=[_material(material)], had_executor=True, is_read_query=True)
     assert v is None, v.rule
+
+
+# ── twin 1b: the SAME read under the RETIRED name → it grounds nothing any more ────────
+@pytest.mark.parametrize("reply, material", [
+    pytest.param(_P11, _GRADE, id="P11-times-and-derived-duration"),
+    pytest.param(_P12, _EMENTA, id="P12-60-horas-spelled-60h"),
+])
+def test_a_read_under_the_retired_consult_material_name_grounds_nothing(reply, material):
+    """The twin of the narrowing: twin 1's replies and payloads, byte for byte, returned by a
+    ``consult_material`` read. While the old name was admitted this was ``None``; now it is the
+    repair, exactly as for any read that is not registered material."""
+    v = ground_reply(reply, tools=[_retired(material)], had_executor=True, is_read_query=True)
+    assert v is not None and v.rule == "unread_schedule_claim"
 
 
 # ── twin 2: the same claim with no read at all → the repair stands ────────────────────
@@ -195,6 +220,6 @@ def test_a_failed_documents_read_grounds_nothing():
     assert v is not None and v.rule == "unread_schedule_claim"
 
 
-def test_both_material_reads_are_admitted_while_the_old_one_is_still_served():
+def test_only_the_documents_read_is_admitted_now_that_the_old_one_is_retired():
     from cogno_praxis.scheduler.grounding import MATERIAL_READ_TOOLS
-    assert MATERIAL_READ_TOOLS == {"consult_material", "consult_documents"}
+    assert MATERIAL_READ_TOOLS == {"consult_documents"}

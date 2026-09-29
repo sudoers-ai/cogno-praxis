@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Changed
+
+- **A regra 6 (`unread_schedule_claim`) deixa de admitir a `consult_material`:
+  `MATERIAL_READ_TOOLS` = `{"consult_documents"}`.** O conjunto tinha dois nomes enquanto um host
+  ainda servisse a ferramenta antiga, e dizia que o velho só sairia depois de o host a retirar.
+  Retirou: o host tirou a `consult_material` na F2.4 P5c e fez o corte final do `# MATERIAL`
+  (cogno-host #1085). Nenhum host a oferece já. Uma leitura com o nome antigo passa a fundamentar
+  tanto como qualquer leitura que não seja material registado, ou seja, NADA. A regra não muda:
+  admite-se pelo NOME e depois pelo VALOR.
+- **Testes** (`tests/unit/test_unread_schedule_claim_material_read.py`, conteúdo inventado):
+  - o gémeo: as duas respostas medidas e os MESMOS payloads, devolvidos por uma leitura
+    `consult_material`, passam a ser reparados (antes: `None`);
+  - os gémeos dos casos medidos, e o da leitura que NÃO contém o valor, correm agora pela
+    `consult_documents` sobre os mesmos payloads;
+  - o conjunto preso a `{"consult_documents"}`.
+- **Quem lê o conjunto fora daqui:** nenhum código. No `origin/main` das irmãs, o nome aparece só
+  em prosa no host (o `CHANGELOG.md` e o docstring de `test_rule6_admits_consult_documents.py`).
+  Esse teste exercita só a `consult_documents`, por isso o próximo pino da praxis no host não o
+  parte.
+
 ### Fixed
 
 - **`cogno_praxis.declared_values` — a gramática ÚNICA lê três formas que lia mal (F2.1 PR-1).**
