@@ -24,6 +24,26 @@
 
 ### Fixed
 
+- **`bookkeeper/prompts/scope.txt`: the BOOKKEEPER's scope now names the business's own ASSETS
+  and INVESTMENTS, not only its ledger.** The ALLOW paragraph said «any message about the
+  business's finances» but listed ledger operations only. The relevance guard BLOCKED a question
+  about what one of the business's properties cost to build and renovate, with the owner's
+  document outline (its «Investimento» section included) already in the guard's prompt. So the
+  cause was the definition, not the prompt's structure.
+  - The fix is one sentence, spliced right after «…listing clients, and AI-usage questions.» on
+    the same line, byte for byte as measured.
+  - Measurement (production guard, n=5): the question went from BLOCK 5/5 to ALLOW 5/5, and an
+    out-of-scope control stayed BLOCK 5/5 either way.
+  - The other definitions that list only their tools' operations were NOT widened, because none
+    of them was measured.
+  - Tests (`tests/unit/test_bookkeeper_scope_names_assets_and_investments.py`, prompt-only):
+    - the twin: the sentence is in the ALLOW paragraph of the file the host loads;
+    - the control: without the sentence, the file is `main`'s byte for byte (sha256 pinned, and
+      the new digest too);
+    - every neighbouring `scope.txt` is unchanged.
+  - Who reads the file outside this repo: the host's scope guard, through its
+    `_bookkeeper_prompts_dir()`. Of this repo's `prompts/*.txt`, this is the only file that
+    changes.
 - **`bookkeeper/grounding.py::ground_reply` — a read of the business's DOCUMENT, declared by the
   host, is a source (`source_reads=`, optional, default `()` = the verdicts of before, byte for
   byte).** Measured 10 of 10 on a rehearsal tenant (2026-09-29): the executor read the document,

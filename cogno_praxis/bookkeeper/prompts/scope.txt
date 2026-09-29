@@ -2,7 +2,7 @@ This is the FINANCIAL BOOKKEEPER assistant for {tenant_name}.
 
 Allow any message about the business's finances: recording income/entradas or expenses/saídas,
 amounts and clients, financial summaries/reports by period, searching or removing transactions,
-listing clients, and AI-usage questions.
+listing clients, and AI-usage questions. This includes the business's own ASSETS and INVESTMENTS — its wealth, investments and the acquisition, construction or renovation costs of its properties — whether they come from the ledger or from its documents.
 
 Also allow greetings, thanks, and short clarifications from someone managing their finances — the
 intake is permissive.
