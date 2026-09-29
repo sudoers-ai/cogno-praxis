@@ -174,6 +174,24 @@ rule had passed:
 A host calls these instead of copying the pattern; `tests/unit/test_the_public_stative_api.py`
 pins their shape and meaning.
 
+## The scope covers what the business OWNS, not only its ledger
+
+`prompts/scope.txt` is the definition the host's relevance guard classifies a BOOKKEEPER turn
+against. Its ALLOW paragraph opens with «any message about the business's finances» and then lists
+ledger operations only, and the guard reads the list, not the opening. A question that a
+published document answers, about what the business owns (its investments, what a property cost
+to build or renovate), was BLOCKED even though the document's section titles were in the guard's
+prompt. So the problem was the definition, not the prompt's structure.
+
+One sentence after the list names the business's own **assets and investments**, "whether they
+come from the ledger or from its documents". It is on the same line, byte for byte as measured
+(production guard, n=5): that question went from BLOCK 5/5 to ALLOW 5/5, and an out-of-scope
+control stayed BLOCK 5/5 either way. The other verticals' definitions also list only their tools'
+operations, and they were not widened, because none of them was measured.
+`tests/unit/test_bookkeeper_scope_names_assets_and_investments.py` pins that the sentence is in
+the ALLOW paragraph. It also pins that the file without it is `main`'s byte for byte, and that
+every neighbouring `scope.txt` is unchanged.
+
 ## Host integration
 
 The host spawns this server over stdio and injects per-tenant config through the environment
