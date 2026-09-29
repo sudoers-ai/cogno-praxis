@@ -24,6 +24,35 @@
 
 ### Fixed
 
+- **`coordinator/prompts/system.txt`: the COORDINATOR's tool mapping tells the deadlines OPEN now
+  from the deadline RULES.** The mapping had one line, «Grade/attendance deadlines →
+  check_deadlines(professor?)». Asked «what deadlines does the teacher have to meet?», the
+  executor called `check_deadlines` 5/5 and `consult_documents` 0/5 on a rehearsal tenant,
+  although `consult_documents` was on the table and the host's generic documents duty was in the
+  prompt. The mapping line won.
+  - The fix splits that line in two: the deadlines currently OPEN (which disciplines are due now)
+    stay with `check_deadlines`; the deadline RULES a teacher must follow (what is due, by when,
+    after each class) go to `consult_documents`. The bytes are the replay's, and they are not
+    padded to the arrow column the other lines use.
+  - Measurement (offline A/B, calibrated, the served host's real executor prompt, n=5): the
+    question went from `check_deadlines` 5/5 to `consult_documents` 5/5, and a records control
+    («which disciplines have a grade deadline expiring this week?») stayed on `check_deadlines`
+    5/5. A generic documents duty, tried on the same calibration, stayed on `check_deadlines` 5/5,
+    so the lever is the persona's own mapping.
+  - The question is ambiguous (rules, or deadlines open now). This change sends it to the rules;
+    reading both was not measured and is not done.
+  - Not measured: a turn with no published document this reader may read (the host then offers
+    no `consult_documents`, and this is the first prompt here that names it), and the judge's
+    verdict (`coordinator/prompts/limits.txt` lists the tools a deadline may come from, and
+    `consult_documents` is not among them). Both are described in `docs/COORDINATOR.md`.
+  - Tests (`tests/unit/test_coordinator_deadline_rules_read_the_documents.py`, prompt-only):
+    - the twin: the two lines are in the mapping, in the old line's place, and the old line is
+      gone;
+    - the control: with the old line put back, the file is `main`'s byte for byte (sha256
+      pinned, and the new digest too);
+    - every other prompt of every vertical is unchanged (20 digests).
+  - Who reads the file outside this repo: the host, which loads it as the COORDINATOR's executor
+    prompt. Of this repo's `prompts/*.txt`, this is the only file that changes.
 - **`bookkeeper/prompts/scope.txt`: the BOOKKEEPER's scope now names the business's own ASSETS
   and INVESTMENTS, not only its ledger.** The ALLOW paragraph said «any message about the
   business's finances» but listed ledger operations only. The relevance guard BLOCKED a question
