@@ -15,7 +15,8 @@ holds the notes about its prompts that the README does not.
   today) is a read of the institution's records. It goes to `check_deadlines(professor?)`.
 - **the deadline RULES a teacher must follow** (what is due, by when, after each class) is not a
   record. When the institution publishes those rules, the host offers its documents to the
-  persona through `consult_documents(query)`, and the mapping sends the question there.
+  persona through `consult_documents(query)`, and the mapping sends the question there, «when it
+  is among this turn's tools».
 
 The mapping used to have one line for both, «Grade/attendance deadlines →
 check_deadlines(professor?)». Asked «what deadlines does the teacher have to meet?», the executor
@@ -31,16 +32,20 @@ lines use, and aligning them would make them a byte string nobody measured. The 
 is ambiguous (the rules, or the deadlines open now); this mapping sends it to the rules, and
 reading both was not measured.
 
-Two cases the measurement did not cover:
+**The condition closes the RULES line.** `consult_documents` is the HOST's tool, and the host
+offers it only on a turn whose reader has a published document to read. This is the first prompt
+in this repo that names it, and without the condition the mapping would send the question to a
+tool that is not on that turn's table. The condition sits at the END of the line, after the
+arrow: that version measured the same as the first cut (the question 5/5 on `consult_documents`,
+the records control 5/5 on `check_deadlines`, on turns that had the tool on the table), and a
+version with the condition BEFORE the arrow scored 4/5 and was discarded.
 
-- `consult_documents` is the HOST's tool, and the host offers it only when the institution has
-  published documents that this reader may read. This is the first prompt in this repo that
-  names it. On a turn with no such document, the mapping names a tool that is not on the
-  executor's table.
-- `prompts/limits.txt` (the judge) lists the tools a schedule fact, deadlines included, may come
-  from, and `consult_documents` is not in that list. The A/B measured the executor's first call,
-  not the judge's verdict on the reply.
+**The judge reads the reply with `prompts/limits.txt` as it is.** That file lists the tools a
+schedule fact, deadlines included, may come from, and `consult_documents` is not in that list.
+Measured with it unchanged, the judge APPROVED the correct reply 5/5 and REJECTED 5/5 a control
+reply that invents a deadline. So `limits.txt` does not change.
 
 `tests/unit/test_coordinator_deadline_rules_read_the_documents.py` pins that the two lines are in
-the mapping in the old line's place, that the old line is gone, that the file with the old line
-put back is `main`'s byte for byte, and that every other prompt of every vertical is unchanged.
+the mapping in the old line's place, that the old line is gone, that the RULES line ends with its
+condition, that the file with the old line put back is `main`'s byte for byte, and that every
+other prompt of every vertical is unchanged.

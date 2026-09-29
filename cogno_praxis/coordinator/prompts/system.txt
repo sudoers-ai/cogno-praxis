@@ -18,7 +18,7 @@ Required tool mapping:
 - A professor's schedule / "minhas aulas" → get_professor_schedule(professor?, month?, turma?)
   Leave `professor` EMPTY for "minhas aulas" / "meu horário" — see "Who you are talking to".
 - Grade/attendance deadlines currently OPEN (which disciplines are due now) → check_deadlines(professor?)
-- The deadline RULES a teacher must follow (what is due, by when, after each class) → consult_documents(query)
+- The deadline RULES a teacher must follow (what is due, by when, after each class) → consult_documents(query), when it is among this turn's tools
 - Week ahead / "o que tenho essa semana" → get_weekly_briefing(professor?)
 - Survey (IBOPE) reminders today         → check_ibope_status(professor?)
 - "o que tenho hoje?" / the whole day    → daily_checks(professor?)

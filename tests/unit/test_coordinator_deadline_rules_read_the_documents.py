@@ -18,9 +18,9 @@ written for every persona does not beat a MAPPING written for this one.
 ## The repair, and the measurement it rests on (cited, not repeated here)
 
 The one mapping line becomes TWO (``OPEN`` and ``RULES`` below): the deadlines currently OPEN go
-to ``check_deadlines``, the deadline RULES go to ``consult_documents``. Offline A/B, calibrated
-(the base reproduced the live turn, 5/5), the served host's real executor prompt with the context
-rebuilt from the live trace, n=5:
+to ``check_deadlines``, the deadline RULES go to ``consult_documents``, when it is among this
+turn's tools. Offline A/B, calibrated (the base reproduced the live turn, 5/5), the served host's
+real executor prompt with the context rebuilt from the live trace, n=5:
 
     the question above                            served → check_deadlines 5/5
                                                   a generic documents duty → check_deadlines 5/5
@@ -37,6 +37,22 @@ The question is AMBIGUOUS (the rules, or the deadlines open now), and the best a
 both. This change sends the ambiguous form to the rules. Forcing it to read both was not measured,
 so it is not done here.
 
+## The condition that closes the RULES line
+
+``consult_documents`` is the HOST's tool, and the host offers it only on a turn whose reader has a
+published document to read. Without a condition, the mapping would send the question to a tool
+that is not on that turn's table. So the RULES line ends with ``CONDITION`` («, when it is among
+this turn's tools»), AFTER the arrow. That is the version measured above, on turns that had the
+tool on the table. A version with the condition BEFORE the arrow scored 4/5 in the same replay and
+was discarded.
+
+## The judge, measured with ``limits.txt`` as it is
+
+``coordinator/prompts/limits.txt`` lists the tools a schedule fact may come from, and
+``consult_documents`` is not in that list. Measured with that file unchanged: the judge APPROVED
+the correct reply 5/5 and REJECTED 5/5 a control reply that invents a deadline. So
+``limits.txt`` does not change, and it stays among the NEIGHBOURS below.
+
 ## What this file pins, and what it does not
 
 Everything here is an assertion about the PROMPT. Whether the model obeys was measured above, and
@@ -44,7 +60,7 @@ is not what a unit test measures. What this buys is that a future edit does not 
 back in silence, and that the change was THESE two lines and nothing else:
 
 * the TWIN: the two lines are in the mapping, once each, in the old line's place, and the old line
-  is gone;
+  is gone; the RULES line ends with its condition, after the arrow;
 * the CONTROL: put the old line back and the file is, byte for byte, ``origin/main``'s (its digest,
   pinned), so not a comma of the rest moved;
 * the NEIGHBOURS: every other prompt of every vertical is byte for byte what it was.
@@ -55,11 +71,15 @@ text (``sha256`` of the file at the new base), never edited to silence a red.
 
 MUTATIONS:
     put ``OLD`` back in place of the two lines (``main``'s file)
-    → both twins die; the control dies at its PRECONDITION (it refuses to run over a file without
-      the two lines, because that file IS main's and the control would pass on it vacuously); the
-      neighbours SURVIVE.
+    → the three twins die; the control dies at its PRECONDITION (it refuses to run over a file
+      without the two lines, because that file IS main's and the control would pass on it
+      vacuously); the neighbours SURVIVE.
     swap the two tools between the lines (OPEN → consult_documents, RULES → check_deadlines)
-    → both twins die, and the control at its precondition; the neighbours SURVIVE.
+    → the three twins die, and the control at its precondition; the neighbours SURVIVE.
+    take the condition off the RULES line (the first cut of this PR)
+    → the three twins die, and the control at its precondition; the neighbours SURVIVE.
+    move the condition BEFORE the arrow (the variant the replay discarded)
+    → the three twins die, and the control at its precondition; the neighbours SURVIVE.
     append ``RULES`` to ``coordinator/prompts/limits.txt``
     → ``test_each_neighbour_prompt_is_byte_for_byte_main[coordinator/limits.txt]`` dies, and only it.
 """
@@ -79,11 +99,13 @@ SYSTEM_PATH = PKG / "coordinator" / "prompts" / "system.txt"
 #: The line the two replace, byte for byte as it was at ``origin/main`` 6d1ca3a.
 OLD = "- Grade/attendance deadlines             → check_deadlines(professor?)"
 
-#: The two lines, byte for byte as measured.
+#: The two lines, byte for byte as measured. ``RULES`` is its route plus the ``CONDITION`` that
+#: closes it.
 OPEN = ("- Grade/attendance deadlines currently OPEN (which disciplines are due now) "
         "→ check_deadlines(professor?)")
+CONDITION = ", when it is among this turn's tools"
 RULES = ("- The deadline RULES a teacher must follow (what is due, by when, after each class) "
-         "→ consult_documents(query)")
+         "→ consult_documents(query)" + CONDITION)
 
 #: ``sha256`` of ``coordinator/prompts/system.txt`` at ``origin/main`` 6d1ca3a, with ``OLD``.
 SYSTEM_AT_MAIN = "d5c3938722b016ad092126b229c6c52965f2ae6afaa5aca144046c39a4714d16"
@@ -91,7 +113,7 @@ SYSTEM_AT_MAIN = "d5c3938722b016ad092126b229c6c52965f2ae6afaa5aca144046c39a4714d
 #: ``sha256`` of the file WITH the two lines: the new digest, pinned. It follows from the twin plus
 #: the control's first half; written out so a reader holding a digest can compare it without
 #: rebuilding the file.
-SYSTEM_NOW = "1882c35cca1b7c8bcdf72793ab70cd91befa5b828b5a3d6f5136882ed61046c1"
+SYSTEM_NOW = "5085d29f398179ea208eb2b81f28b2a51489004b12e6c7f2f3527f02dcee1e89"
 
 #: ``sha256`` of every OTHER prompt of every vertical at ``origin/main`` 6d1ca3a.
 NEIGHBOURS_AT_MAIN = {
@@ -165,6 +187,18 @@ def test_the_two_lines_sit_in_the_mapping_where_the_old_one_sat() -> None:
     assert block[i + 2].startswith("- Week ahead"), "the week-ahead entry follows it"
     assert system.count("check_deadlines") == 1 and "→ check_deadlines(" in OPEN
     assert system.count("consult_documents") == 1 and "→ consult_documents(" in RULES
+
+
+def test_the_rules_line_ends_with_its_condition() -> None:
+    """The RULES line sends the question to ``consult_documents`` only when the tool is on this
+    turn's table, and the condition CLOSES the line, after the arrow, where it was measured. One
+    line of the mapping routes to the tool, and the condition appears once in the whole file, so
+    it cannot drift onto another line while the route stays."""
+    system = _system()
+    routes = [line for line in _mapping(system) if "→ consult_documents(" in line]
+    assert routes == [RULES]
+    assert routes[0].endswith("→ consult_documents(query)" + CONDITION)
+    assert system.count(CONDITION) == 1
 
 
 # ── the control ──────────────────────────────────────────────────────────────────────────────
