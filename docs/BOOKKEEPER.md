@@ -108,9 +108,56 @@ name or a sentence):
 
 The pt, en and es bundles share one split: explicit claim (first person, "acabei de / just",
 copula + participle) fires always; the bare attributive participle only on a turn that read
-nothing and declared nothing. `prompts/limits.txt` says the same thing to the judge: a financial
+nothing and declared nothing (and, since `source_reads=`, whose declared source read does not hold
+every value — see the next section). `prompts/limits.txt` says the same thing to the judge: a financial
 value comes from a tool call or from the values the business declared; computed values are not
 declared, and a recorded entry is confirmed only by the tool that recorded it.
+
+## A document the host DECLARES a source read is a source
+
+A host can offer the BOOKKEEPER a read over what the business WROTE — its documents — beside the
+ledger tools this vertical ships. A reply answering from that read quotes the document's figures,
+and often its words: a document that says «receitas registradas» gets a draft that says it too.
+`ground_reply` read that as a receipt on a turn with no LEDGER read (rule 1, the attributive
+participle) or as conjured totals (rule 3, «total»/«entradas» beside money), and rewrote a correct,
+judge-approved answer into «Deixa eu consultar…» — measured 10 of 10 turns on a rehearsal tenant
+(2026-09-29): 8 by rule 1 (always the POST-nominal participle, «… mensal registrada», «… meses
+registrados»), 2 by rule 3 («líquido», «total») — and 4 of the 8 carried «líquido» as well, so the
+two rules are excused together.
+
+`ground_reply(..., source_reads=)` takes the host's declaration: the names of ITS tools that read
+the business's material. **No tool name is written in this repo** — a read is a source because the
+host said so, and an undeclared read of the same document grounds nothing. The exemption is by
+VALUE: every money value in the reply (at least one) must be written in the result of a successful
+(`ok`) call to a declared tool, compared through the one grammar of `cogno_praxis.declared_values`
+(«R$ 4.500» in the document and «R$ 4.500,00» in the reply are one value). The whole result is
+read, not a trace excerpt — a long document's figures sit far past one.
+
+- `fabricated_entry`: only the ATTRIBUTIVE participle — the one that follows a word it describes,
+  «as receitas registradas», «os valores registrados no contrato» — is excused, and only when no
+  ledger write was CALLED this turn (the fact the stative exemption reads). Never excused:
+  - the RECEIPT shape, the participle OPENING its clause («Registrado! R$ 150,00», «Lançado:
+    R$ 500,00», «Lançada a despesa de R$ 50,00») — even when the document holds that value: a
+    document grounds a figure, never an act, and the likeliest amount of a fabricated receipt is a
+    price the business itself wrote;
+  - the EXPLICIT claim («registrei», copula + participle, «acabei de lançar»).
+- `conjured_totals`: a total the document WROTE is not conjured; a total COMPUTED from it (a sum of
+  its rows, a year worked out from a month) is written nowhere and still fires.
+- One value the document does not hold, a read that failed, or a read nobody declared → the rule
+  reads exactly as before. No declaration → every verdict as before (a digest over 896 verdicts,
+  taken on `main` before the parameter existed, pins it).
+- KNOWN LIMITS (pinned in `test_a_source_read_grounds_the_listing_never_the_receipt.py`): a receipt
+  with a word — or its value's comma — before the participle («Tudo registrado: R$ 150,00»,
+  «Vistoria registrada: R$ 150,00», «R$ 150,00 registrado!») reads as the listing when a declared
+  read holds every value and no write was called. That is the exposure a LEDGER read already has
+  for ANY value, narrowed to values the document wrote. And a presentational ESTAR two words before
+  the participle («Aqui estão os valores registrados») is the explicit branch's copula + participle,
+  never excused. In English the attributive participle comes BEFORE its noun, so a clause-initial
+  «Recorded income: $1,440.00» reads as the receipt shape and is not excused — the strict side;
+  only pt was measured.
+- The scheduler accepts the keyword and reads nothing from it: its rule 6 already admits a
+  registered-material read by the value it returns (`MATERIAL_READ_TOOLS`), and moving that set
+  onto the host's declaration is a change of its own.
 
 **The stative decision is public API** (`cogno_praxis.bookkeeper.grounding.__all__`), because a
 host's own generic net reads the same participle and, with a copy of this rule, rewrote what this

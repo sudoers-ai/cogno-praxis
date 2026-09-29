@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Iterable, Optional, Sequence
 
-from cogno_praxis.declared_values import values_declared
+from cogno_praxis.declared_values import value_keys, values_declared
 from cogno_praxis.grounding import (
     GroundingVerdict,
     Locale,
@@ -105,6 +105,32 @@ def _possessive_stative(lang: str, stems: "tuple[str, ...]") -> "re.Pattern[str]
 
 
 _PT_POSSESSIVE_STATIVE_RE = _possessive_stative("pt", _PT_RECORDED_STEMS)
+
+
+# ── The RECEIPT: the participle OPENING its clause — «Registrado!», «Lançado: R$ 500,00»,
+# «Lançada a despesa de R$ 50,00». It is the one shape of the bare participle that reads as a
+# receipt and never as a description, because nothing in the clause comes before it for it to
+# describe. The attributive participle MODIFIES a word written before it («as receitas
+# registradas», «os valores registrados no contrato») — that is the listing a document read
+# grounds (see :func:`_money_from_source_reads`), and the receipt is the shape it must not.
+#
+# Read per CLAUSE (`affirmed`, the shared split), anchored at the clause start, with only
+# blanks, punctuation, markdown and emoji allowed before the stem (``[\W_]``) — never a digit:
+# the clause split cuts a thousands point («R$ 3.715 (registrado no contrato)» → «715
+# (registrado…»), and skipping digits would turn that parenthetical into a receipt.
+#
+# DECLARED LIMITS (pinned in `test_a_source_read_grounds_the_listing_never_the_receipt.py`), and
+# every one of them needs a successful SOURCE read this turn whose result holds EVERY money value
+# of the reply, with no ledger write called: «Tudo registrado: R$ 150,00» and «Despesa
+# registrada: R$ 150,00» (a word before the participle) are read as the listing; «R$ 150,00
+# registrado!» too (the value's comma is a clause boundary). That is the exposure a LEDGER read
+# already has today for ANY value, narrowed here to values the document itself holds.
+def _receipt(stems: "Sequence[str]", *, inflects: bool = True) -> "re.Pattern[str]":
+    tail = "[oa]s?" if inflects else ""
+    return re.compile(rf"^[\W_]*(?:{'|'.join(stems)}){tail}\b", re.IGNORECASE)
+
+
+_PT_RECEIPT_RE = _receipt(_PT_RECORDED_STEMS)
 # ── RECALL: a escrita é de OUTRO turno, não deste ────────────────────────────────────
 # Duas marcas, e só as duas juntas: construção ESTATIVA (auxiliar + particípio) mais uma
 # referência ao PASSADO. Sozinha, nenhuma separa — "foi registrado com sucesso" é como se
@@ -199,6 +225,10 @@ class _Bundle:
     # antes (fail-OPEN, como a própria procura do bundle). Só o `pt` foi MEDIDO.
     recorded_attributive: "Optional[re.Pattern[str]]" = None
     recorded_stative: "Optional[re.Pattern[str]]" = None
+    # The RECEIPT shape of the bare participle (it opens its clause — see `_receipt`): the part
+    # of the attributive branch a SOURCE read never excuses. `None` = no source-read exemption
+    # at all in this locale — the strict direction, the reply judged as before.
+    recorded_receipt: "Optional[re.Pattern[str]]" = None
 
 
 # ── en / es: THE SAME SPLIT the pt bundle has carried since the attributive fix ──────────
@@ -216,6 +246,7 @@ class _Bundle:
 # just happened ("Certo, já está lançado o valor de R$ 150,00" is pinned as the canonical pt-BR
 # confirmation in `test_bookkeeper_grounding.py`), so a read in hand does not excuse it.
 _EN_COPULAS = ("was", "were", "is", "are", "been", "got", "gets")
+_EN_RECORDED_PARTICIPLES = ("recorded", "logged", "entered", "booked")
 _EN_RECORDED_RE = re.compile(
     r"\bi(?:'ve|\s+have|\s+just|)\s+(?:recorded|logged|added|entered)\b|"
     r"\bjust\s+(?:recorded|logged|added|entered)\b|"
@@ -223,7 +254,11 @@ _EN_RECORDED_RE = re.compile(
     r"(?:recorded|logged|entered|booked)\b", re.IGNORECASE)
 _EN_RECORDED_ATTRIBUTIVE_RE = re.compile(
     "".join(f"(?<!\\b{w} )" for w in _EN_COPULAS)
-    + r"\b(?:recorded|logged|entered|booked)\b", re.IGNORECASE)
+    + rf"\b(?:{'|'.join(_EN_RECORDED_PARTICIPLES)})\b", re.IGNORECASE)
+# English puts the attributive participle BEFORE its noun, so a clause-initial «Recorded income:
+# $1,440.00» reads as the receipt shape here and is NOT excused by a source read — the strict
+# side, and only pt was measured.
+_EN_RECEIPT_RE = _receipt(_EN_RECORDED_PARTICIPLES, inflects=False)
 
 _ES_COPULAS = ("fue", "fueron", "está", "esta", "están", "estan", "sido", "queda", "quedó",
                "quedo")
@@ -237,12 +272,14 @@ _ES_RECORDED_ATTRIBUTIVE_RE = re.compile(
     "".join(f"(?<!\\b{w} )" for w in _ES_COPULAS)
     + rf"\b(?:{'|'.join(_ES_RECORDED_STEMS)})[oa]s?\b", re.IGNORECASE)
 _ES_POSSESSIVE_STATIVE_RE = _possessive_stative("es", _ES_RECORDED_STEMS)
+_ES_RECEIPT_RE = _receipt(_ES_RECORDED_STEMS)
 
 
 _PT_BUNDLE = _Bundle(
     loc=_PT, recorded=_RECORDED_RE, totals=_TOTALS_RE, removed=_REMOVED_RE,
     recorded_attributive=_RECORDED_ATTRIBUTIVE_RE,
     recorded_stative=_PT_POSSESSIVE_STATIVE_RE,
+    recorded_receipt=_PT_RECEIPT_RE,
     recalled=(_PT_STATIVE, _PT_PAST),
     no_entry=NO_ENTRY_MSG, check_totals=CHECK_TOTALS_MSG, no_removal=NO_REMOVAL_MSG)
 
@@ -256,6 +293,7 @@ _EN_BUNDLE = _Bundle(
                    r"the other day|back (?:then|on))\b", re.I)),
     recorded=_EN_RECORDED_RE,
     recorded_attributive=_EN_RECORDED_ATTRIBUTIVE_RE,
+    recorded_receipt=_EN_RECEIPT_RE,
     totals=re.compile(
         r"\b(?:total|totals|balance|net|income|expenses?|revenue|profit|turnover)\b",
         re.IGNORECASE),
@@ -284,6 +322,7 @@ _ES_BUNDLE = _Bundle(
     recorded=_ES_RECORDED_RE,
     recorded_attributive=_ES_RECORDED_ATTRIBUTIVE_RE,
     recorded_stative=_ES_POSSESSIVE_STATIVE_RE,
+    recorded_receipt=_ES_RECEIPT_RE,
     totals=re.compile(
         r"\b(?:total|totales|saldo|neto|ingresos?|gastos?|egresos?|facturaci[óo]n|"
         r"balance)\b", re.IGNORECASE),
@@ -447,6 +486,57 @@ def _consulted_ledger(tools: Sequence[ToolCall]) -> bool:
             or _searched_and_found_nothing(tools))
 
 
+# ── A SOURCE read: the business's own material, DECLARED by the host ─────────────────────
+#
+# The rules above ask "did the turn read the LEDGER?", and a ledger read is the only one this
+# vertical ships. A host can offer the same persona a read over what the business WROTE — its
+# documents — and a reply answering from that read is grounded in it exactly as a listing is in
+# `get_summary`. Measured on a rehearsal tenant (10 of 10 turns, 2026-09-29): the executor read
+# the document, the draft quoted the three figures of the section asked about, the judge approved
+# — and this net rewrote every reply into «Deixa eu consultar…», because the document uses the
+# attributive participle and the draft copied it, always post-nominal («… mensal registrada»,
+# «… meses registrados»: 8 turns, rule 1), or put «líquido»/«total» beside the money (2 turns,
+# rule 3). Four of the eight carried «líquido» too, so the two rules are excused TOGETHER or the
+# reply only moves from one to the other. The contact got no answer.
+#
+# WHICH tools are source reads is the HOST's catalog, never a name written here: the host
+# declares them (`ground_reply(..., source_reads=)`), and a tool this vertical has never heard of
+# is admitted only because the host said so. No declaration → no source read → every rule reads
+# as it did before the parameter existed.
+#
+# The read admits the reply by VALUE, never by name: EVERY money value the reply states must be
+# written in the RESULT of a successful source read — the one grammar of `declared_values`, so
+# «R$ 4.500» in the document and «R$ 4.500,00» in the reply are one value. Any value the document
+# does not hold — a sum, a monthly figure worked out from a yearly one, a price from nowhere, ONE
+# of three — and the exemption is gone. Money only, because money is what rules (1) and (3)
+# anchor on. The WHOLE result is read: the host hands the tool's output uncut, and the figures of
+# a long document live far past any trace excerpt.
+def _money_from_source_reads(reply: str, tools: Sequence[ToolCall],
+                             source_reads: "frozenset[str]") -> bool:
+    """Every money value in ``reply`` (at least one) is written in the result of a successful
+    call to a tool the host DECLARED a source read. ``False`` with no declaration, no money in
+    the reply, or one value the reads do not hold."""
+    if not source_reads:
+        return False
+    stated = [k for k in value_keys(reply) if k[0] == "money"]
+    if not stated:
+        return False
+    held = {k for t in tools if t.ok and t.tool in source_reads
+            for k in value_keys(t.result or "") if k[0] == "money"}
+    return all(k in held for k in stated)
+
+
+def _declared_reads(source_reads: "Iterable[str]") -> "frozenset[str]":
+    """The host's declaration as a set of names; anything that is not a non-blank string is not
+    a declaration (the strict side). A bare string is ONE name, never its characters."""
+    if isinstance(source_reads, str):
+        source_reads = (source_reads,)
+    try:
+        return frozenset(s for s in source_reads if isinstance(s, str) and s.strip())
+    except TypeError:
+        return frozenset()
+
+
 def _removed_ok(tools: Sequence[ToolCall]) -> bool:
     return any(r.startswith(REMOVED_PREFIX) for r in ok_results(tools, "remove_by_search"))
 
@@ -454,7 +544,8 @@ def _removed_ok(tools: Sequence[ToolCall]) -> bool:
 def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bool = True,
                  is_read_query: bool = False, pending_confirmation: bool = False,
                  locale: str = "pt",
-                 declared_values: Sequence[str] = ()) -> Optional[GroundingVerdict]:
+                 declared_values: Sequence[str] = (),
+                 source_reads: Iterable[str] = ()) -> Optional[GroundingVerdict]:
     """Return a :class:`GroundingVerdict` if ``reply`` fabricates a bookkeeping fact, else None.
 
     Same signature as the scheduler backstop (the host adapter treats every vertical
@@ -465,12 +556,20 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
     resolved for this contact's role (``cogno_praxis.declared_values``) — the tenant told the
     persona these, so a reply quoting them has a source even when no tool ran. Empty (the
     default) → every rule below reads exactly as it did before the parameter existed.
-    ``is_read_query`` is read ONLY together with them — see rule (1)."""
+    ``is_read_query`` is read ONLY together with them — see rule (1).
+
+    ``source_reads`` are the tool names the HOST declares to be reads over the business's own
+    material (its documents) — never a name this module knows. A reply whose every money value
+    is written in the result of a successful call to one of them is grounded in that read: the
+    attributive participle of rule (1) and the totals of rule (3) are excused, and nothing else
+    (see :func:`_money_from_source_reads`). Empty (the default) → every rule reads exactly as it
+    did before the parameter existed."""
     if not reply:
         return None
     b = _BUNDLES.get(normalize_lang(locale))
     if b is None:
         return None
+    sourced = _money_from_source_reads(reply, tools, _declared_reads(source_reads))
 
     # (1) fabricated entry — the reply claims a transaction was recorded (with a money
     #     anchor so book-keeping small talk doesn't trip it), but no write succeeded.
@@ -509,9 +608,20 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
         # QUESTION, the two after a write request were negations, 0 stative fabricated receipts.
         text = reply if declared or not all_declared else mask_declared_stative(
             reply, tools=tools, declared_values=declared_values, locale=locale)
-        if (not alega and b.recorded_attributive is not None and not _consulted_ledger(tools)
+        # …and neither is it on a turn whose every money value is written in a SOURCE read the
+        # host declared (the business's document, read this turn with `ok`), with no ledger write
+        # CALLED — the same FACT the stative exemption reads. «As receitas registradas: R$ 4.500»
+        # over a document that says exactly that is the listing the contact asked for. What the
+        # read never excuses is the RECEIPT shape — the participle opening its clause,
+        # «Registrado! R$ 150,00» — even when the document holds R$ 150,00: a document grounds a
+        # FIGURE, never an act, and a tenant's own price is the likeliest amount of a fabricated
+        # receipt. The EXPLICIT claim above is not reached at all.
+        attributive = b.recorded_attributive
+        if sourced and b.recorded_receipt is not None and not write_attempted(tools):
+            attributive = b.recorded_receipt
+        if (not alega and attributive is not None and not _consulted_ledger(tools)
                 and not declared):
-            alega = affirmed(text, b.recorded_attributive, neg=b.loc.neg, recalled=b.recalled)
+            alega = affirmed(text, attributive, neg=b.loc.neg, recalled=b.recalled)
         if alega:
             return GroundingVerdict(rule="fabricated_entry", message=b.no_entry,
                                     repairable=True, critique=_NO_ENTRY_CRITIQUE)
@@ -531,9 +641,12 @@ def ground_reply(reply: str, *, tools: Sequence[ToolCall] = (), had_executor: bo
     #     sum, a monthly figure from an hourly rate) is written nowhere, so `values_declared`
     #     is False and the rule fires exactly as before. Not gated on `is_read_query` like
     #     rule (1): a total claims no write, only a figure, and the declaration IS its source.
+    #     A total written in a declared SOURCE read is not conjured either — the document said
+    #     it — and the same value rule keeps the one it did not say (a sum of its rows, a month
+    #     worked out from a year) caught.
     if (b.loc.money.search(reply) and affirmed(reply, b.totals, neg=b.loc.neg)
             and not _summary_read(tools) and not _entry_recorded(tools)
-            and not values_declared(reply, declared_values)):
+            and not values_declared(reply, declared_values) and not sourced):
         return GroundingVerdict(rule="conjured_totals", message=b.check_totals,
                                 repairable=True, critique=_CHECK_TOTALS_CRITIQUE)
 

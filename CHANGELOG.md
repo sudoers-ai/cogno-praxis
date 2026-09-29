@@ -24,6 +24,44 @@
 
 ### Fixed
 
+- **`bookkeeper/grounding.py::ground_reply` — a read of the business's DOCUMENT, declared by the
+  host, is a source (`source_reads=`, optional, default `()` = the verdicts of before, byte for
+  byte).** Measured 10 of 10 on a rehearsal tenant (2026-09-29): the executor read the document,
+  the draft quoted the three figures of the section asked about, the judge approved — and this net
+  replaced every reply with «Deixa eu consultar…»: 8 by `fabricated_entry` (the document's
+  attributive participle, copied by the draft and always POST-nominal — «… mensal registrada» 4×,
+  «… meses registrados» 4× — on a turn with no LEDGER read) and 2 by `conjured_totals` (money
+  beside «líquido» in one, «total» in the other). **4 of the 8 carry «líquido» too**, so rules (1)
+  and (3) are excused together or the reply only moves from one to the other. `is_read_query` was
+  true in all ten; it is not a gate here.
+  - The host passes the names of ITS source-read tools; **no tool name is written in this repo**,
+    and an undeclared read of the same document grounds nothing.
+  - By VALUE: EVERY money value in the reply must be written in the WHOLE result of a successful
+    call to a declared tool (the one grammar of `declared_values`: «R$ 4.500» = «R$ 4.500,00»).
+  - It excuses only the ATTRIBUTIVE participle of rule (1) — with no ledger write called this turn —
+    and rule (3). Never: the RECEIPT shape (the participle opening its clause, «Registrado!
+    R$ 150,00», even when the document holds R$ 150,00), the EXPLICIT claim («Registrei», «foi
+    registrada»), a value computed from the document (a sum of its rows, a year from a month), ONE
+    value the document does not hold, a failed read.
+  - The measured contradiction with the briefing, written down: «Registrado! R$ X» was described
+    as the explicit branch; in the code it is the attributive one (`_RECORDED_RE` only reads first
+    person, «acabei de» and copula + participle). Exempting the attributive branch whole would have
+    let a receipt of a document's own price through, hence the receipt shape.
+  - The scheduler's `ground_reply` accepts the keyword and reads nothing from it (the host hands
+    every vertical the same keywords); its rule 6 keeps `MATERIAL_READ_TOOLS`.
+- **Declared limits** (pinned): a receipt with a word or its value's comma before the participle
+  («Tudo registrado: R$ 150,00», «Vistoria registrada: R$ 150,00», «R$ 150,00 registrado!») reads as
+  the listing when a declared read holds every value and no write was called — the exposure a
+  LEDGER read already has for any value, narrowed to the document's; a presentational ESTAR («Aqui
+  estão os valores registrados») is the explicit branch and is never excused; English
+  «Recorded income: …» at a clause start reads as the receipt (strict side, only pt measured).
+- **Tests** (`tests/unit/test_a_source_read_grounds_the_listing_never_the_receipt.py`, invented
+  document and figures, the figures past char 4000): the ten twins in their form (8 + 2, each in
+  both worlds), the old corpus shape unchanged, the receipt and explicit controls with the value IN
+  the document, computed totals, one-of-three, undeclared / failed / cut reads, a write called,
+  en/es, the scheduler keyword, and the no-declaration digest over 896 verdicts taken on `main`
+  d81d3ca. Docs: `docs/BOOKKEEPER.md` § «A document the host DECLARES a source read is a source».
+
 - **`cogno_praxis.declared_values` — a gramática ÚNICA lê três formas que lia mal (F2.1 PR-1).**
   Os desacordos da proveniência por valor classificaram-se em três leituras ERRADAS do
   extractor (não em fontes que faltassem). A gramática é partilhada com o M3c, com as redes e com
