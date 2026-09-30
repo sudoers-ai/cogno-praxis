@@ -135,6 +135,14 @@ def _fmt_report(report: ReadReport) -> str:
             f"group. The groups are: {known}. If the request was not about a class group at all, "
             f"call again with `turma` empty — a word like \"de\" is usually a preposition, not a "
             f"group.")
+    if report.unmatched_discipline:
+        known = ", ".join(report.known_disciplines) or "(none in this schedule)"
+        lines.append(
+            f'NO SUCH DISCIPLINE: "{report.unmatched_discipline}" does not match any discipline '
+            f"in this schedule — it may be the name of a programme or course, not of a "
+            f"discipline — so the list above is the upcoming classes WITHOUT that filter. The "
+            f"disciplines here are: {known}. If the user meant one of them, call again with "
+            f"`discipline` set to it.")
     if report.hidden_past:
         lines.append(
             "(This list covers today onward — this tool's default window. Earlier classes are "

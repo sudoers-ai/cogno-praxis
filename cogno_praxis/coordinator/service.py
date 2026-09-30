@@ -456,6 +456,22 @@ def _fuzzy_match_discipline(query: str, candidate: str,
     return True
 
 
+#: How many discipline names an unmatched ``discipline`` footer lists, at most. A supervisor's
+#: master schedule can hold dozens; the footer is a hint for the next call, not a catalogue.
+_KNOWN_DISCIPLINES_MAX = 30
+
+
+def _known_disciplines(entries: "list[ClassEntry]") -> tuple[str, ...]:
+    """The distinct subjects of ``entries`` — already scoped to what the caller may see — one
+    spelling per accent/case fold (the first met), sorted under the fold, free slots left out."""
+    seen: dict[str, str] = {}
+    for e in entries:
+        subject = (e.subject or "").strip()
+        if subject and not e.is_free_slot:
+            seen.setdefault(_norm(subject), subject)
+    return tuple(sorted(seen.values(), key=_norm))[:_KNOWN_DISCIPLINES_MAX]
+
+
 # One class-group designator, split into the pieces a human varies: letters and digits, with
 # every separator, accent and capital thrown away. "DE_09", "de 09", "DE09" and "Turma  DE_09"
 # all become the same token list, so the tenant's spacing (one of the live keys carries a DOUBLE
@@ -952,6 +968,17 @@ class CoordinatorService:
                 return []
             wanted = set(keys)
             entries = [e for e in entries if e.sheet_key in wanted]
+        # M6-c (30/09) — a ``discipline`` that names NOTHING in this schedule (the trace-2056
+        # shape: the name of a PROGRAMME, not of a discipline) is dropped, and SAID. Judged over
+        # the whole scoped read, BEFORE the month: a discipline that exists in another month is
+        # not a miss, and «no classes found» is then the true answer. Only for a caller that
+        # takes the ``report`` — an unfiltered list nobody marks as unfiltered would be a wrong
+        # answer, so a report-less caller keeps today's empty list.
+        if (discipline.strip() and report is not None
+                and not any(_fuzzy_match_discipline(discipline, e.subject) for e in entries)):
+            report.unmatched_discipline = discipline.strip()
+            report.known_disciplines = _known_disciplines(entries)
+            discipline = ""
         mspec = _resolve_month(month)
         if mspec:
             mm, yy = mspec

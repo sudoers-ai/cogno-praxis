@@ -49,3 +49,22 @@ reply that invents a deadline. So `limits.txt` does not change.
 the mapping in the old line's place, that the old line is gone, that the RULES line ends with its
 condition, that the file with the old line put back is `main`'s byte for byte, and that every
 other prompt of every vertical is unchanged.
+
+## A `discipline` that names nothing is dropped and said (M6-c, 2026-09-30)
+
+`get_professor_schedule(discipline=…)` filters by subject, typo-tolerant
+(`service._fuzzy_match_discipline`). An executor that fills it with the name of a PROGRAMME
+(«MBA em …») instead of a discipline matched no row, and the tool answered «No classes found.» — a
+false sentence about a professor who has classes next week (the trace-2056 shape).
+
+It now follows the `unmatched_turma` precedent. When the argument matches no subject in the
+caller's scoped read (judged BEFORE the month filter, so a discipline that exists in another month
+is not a miss), `ReadReport.unmatched_discipline` records it, `ReadReport.known_disciplines` holds
+the subjects that read DOES contain (at most `_KNOWN_DISCIPLINES_MAX`, free slots left out, only
+what the caller may see), and the list is the upcoming classes WITHOUT the filter, under the
+default window. The tool's footer says `NO SUCH DISCIPLINE`, names the disciplines and tells the
+executor to call again with one of them. Unlike an unmatched `turma` (which returns nothing — a
+guessed group sends a professor to the wrong room), a dropped discipline filter still answers the
+question «what are my classes?». A caller that passes no `report` keeps the empty list: an
+unfiltered list nobody marks as unfiltered would be a wrong answer.
+`tests/unit/test_coordinator_unmatched_discipline.py`.
