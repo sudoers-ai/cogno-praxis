@@ -4,6 +4,15 @@
 
 ### Changed
 
+- **`get_professor_schedule`: uma `discipline` que não casa com nada deixa de dar «No classes
+  found» (M6-c).** Na forma do traço 2056, o executor punha em `discipline` o nome do PROGRAMA
+  («MBA em …») e a ferramenta dizia que o professor não tinha aulas. Segue o precedente do
+  `unmatched_turma`: `ReadReport.unmatched_discipline` + `known_disciplines` (as disciplinas da
+  leitura do chamador), e a lista passa a ser as próximas aulas SEM o filtro, com a janela por
+  omissão. O rodapé diz `NO SUCH DISCIPLINE` e nomeia as disciplinas. Julgado antes do mês (uma
+  disciplina que existe noutro mês não é um falhanço); sem `report`, a lista vazia de antes.
+  `docs/COORDINATOR.md`; `tests/unit/test_coordinator_unmatched_discipline.py` (nomes inventados:
+  gémeo, controlo da disciplina que casa, do outro mês e do chamador sem `report`).
 - **A regra 6 (`unread_schedule_claim`) deixa de admitir a `consult_material`:
   `MATERIAL_READ_TOOLS` = `{"consult_documents"}`.** O conjunto tinha dois nomes enquanto um host
   ainda servisse a ferramenta antiga, e dizia que o velho só sairia depois de o host a retirar.
