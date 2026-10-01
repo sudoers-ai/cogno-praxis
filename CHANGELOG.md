@@ -4,6 +4,19 @@
 
 ### Changed
 
+- **`find_replacement_slot`: uma vaga escrita como FRASE que traz o rótulo conta como livre.**
+  A planilha de um professor marca as vagas como «Espaço Reservado para Reposição (se
+  necessário)», e o `_is_free` comparava a célula INTEIRA com `FREE_SLOT_LABELS`; a ferramenta
+  respondia «No open slots in the next 21 days» (incidente do dono, persona COORDINATOR). Regra do
+  dono, sem nada novo na configuração (`_is_free_by_word`): a célula é livre quando (a) traz um
+  rótulo como PALAVRA INTEIRA, dobrada, e (b) a linha não é aula — sem professor, sem nenhuma
+  disciplina conhecida da leitura inteira (`_known_class_names`) e sem nenhuma turma. O rótulo na
+  célula inteira continua livre como antes. O guarda do turno 105 fica pelos controlos: «Redes -
+  Reposição» continua aula, «… - Aula adiada» continua adiada, uma disciplina cujo nome contém
+  «reposição» continua aula, e «Livreto» não traz «livre». O mesmo predicado alimenta o
+  `confirm_swap` e a estimativa de pagamento. `ReadReport.free_by_word` conta as vagas DEVOLVIDAS
+  lidas assim e o rodapé di-lo. `docs/COORDINATOR.md`;
+  `tests/unit/test_coordinator_free_slot_by_word.py` (nomes inventados).
 - **The five `scope.txt` that block "abusive" messages now say what the word means — the same
   sentence in all five** (`bookkeeper`, `closer`, `companies`, `coordinator`, `interviewer`; the
   `scheduler` never uses the word and is unchanged). Undefined, the relevance guard read the word

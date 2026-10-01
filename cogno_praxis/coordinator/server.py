@@ -126,7 +126,12 @@ def _fmt_report(report: ReadReport) -> str:
     line above already speaks this way: it names the argument to change, not the size of the
     miss. Note also what this line does NOT claim: it never says the list is complete, because a
     failed spreadsheet can be cut from the SAME read and the two lines would then contradict
-    each other."""
+    each other.
+
+    ``free_by_word`` is the one other COUNT, and it is not a window: it counts rows that ARE on
+    the list (open slots whose cell carries a free-slot label as a word inside a sentence,
+    ``service._is_free_by_word``), so it can be checked against the list above it and it makes
+    the rule visible in the trace. It admits no deficit; it is worded as a reading."""
     lines: list[str] = []
     if report.unmatched_turma:
         known = ", ".join(report.known_turmas) or "(none configured)"
@@ -156,6 +161,12 @@ def _fmt_report(report: ReadReport) -> str:
             "there.)")
     if report.unconfirmed_similar:
         lines.append(UNCONFIRMED_SIMILAR_LINE)
+    if report.free_by_word:
+        lines.append(
+            f"({report.free_by_word} of the open slots above are written on the sheet as a "
+            f"sentence that carries the free-slot label — e.g. \"reserved for a make-up class, "
+            f"if needed\" — with no professor and no class named; they are open slots like "
+            f"the others.)")
     if report.errors:
         detail = "; ".join(f"{e.sheet_key}: {e.message}" for e in report.errors)
         lines.append(
