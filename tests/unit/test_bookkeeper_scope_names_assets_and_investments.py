@@ -67,6 +67,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit.test_abusive_is_defined_in_every_scope import PARAGRAPH as ABUSIVE_PARAGRAPH
+
 #: The package the HOST reads the prompt from (``Path(cogno_praxis.__file__).parent /
 #: "bookkeeper" / "prompts"`` is its ``_bookkeeper_prompts_dir``) — the installed package, never a
 #: path relative to this checkout, so the file under test is the one a host would load.
@@ -89,12 +91,18 @@ BOOKKEEPER_AT_MAIN = "3e6b0812521d1c5ea2214736539406aba6d202ba72c44300921e17c241
 #: holding a digest can compare it without rebuilding the file.
 BOOKKEEPER_NOW = "4f33eb5c6791691c32c7451d735a72bd4e1af2bd4d7809ba73b0ece076bf240d"
 
-#: ``sha256`` of every OTHER vertical's ``scope.txt`` at ``origin/main`` 5ae6ce3.
+#: Paragraphs a LATER PR appended to this file, each pinned by its own test: the definition of
+#: "abusive" (``test_abusive_is_defined_in_every_scope.py``). Taken out before the control, so the
+#: control keeps measuring THIS sentence and nothing that landed after it.
+LATER = (ABUSIVE_PARAGRAPH,)
+
+#: ``sha256`` of every OTHER vertical's ``scope.txt`` at ``origin/main`` 5ae6ce3 — regenerated for
+#: the four that later gained the definition of "abusive" (``test_abusive_is_defined_in_every_scope``).
 NEIGHBOURS_AT_MAIN = {
-    "closer": "8e4f6efceced8f822b717f82fc311aad14b20ce76772f7175a3ef223a0cd8802",
-    "companies": "b73e4e51036e6ebf17ad5e4ba8c7ef56a1b8b0c31c394047ec9d1a976671e2e4",
-    "coordinator": "ff38d9a124d1cb5d28464391868c098fec329874bc400059f9cf5dd2fc912dc3",
-    "interviewer": "69b772297a1fb1ef5e5ad90d78b536bb6c19a2e4d11ab5df6d361160041754e3",
+    "closer": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
+    "companies": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
+    "coordinator": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
+    "interviewer": "d80bcb9076c17f2c9cf87776cd1212316801a6f5677f64027509aeed06748b8c",
     "scheduler": "633c8edf7cdb568137e31a6b2b64be1746231b16932b157605d43ee99f1ff7eb",
 }
 
@@ -139,6 +147,9 @@ def test_the_rest_of_the_definition_is_byte_for_byte_main() -> None:
     """THE CONTROL. Take the sentence out and what is left is ``origin/main``'s file, byte for
     byte: the digest moved by the sentence and by nothing else — and the new digest is pinned."""
     scope = _scope()
+    for later in LATER:
+        assert scope.endswith(later), "a later paragraph this control strips is not where it was"
+        scope = scope[: -len(later)]
     assert LINE in scope, "the control must be run over the file that HAS the sentence"
     assert _sha(scope.replace(LINE, "", 1)) == BOOKKEEPER_AT_MAIN
     assert _sha(scope) == BOOKKEEPER_NOW != BOOKKEEPER_AT_MAIN
