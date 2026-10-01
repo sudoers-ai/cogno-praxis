@@ -54,6 +54,13 @@ class ClassEntry:
         return getattr(self, "_free", False)
 
     @property
+    def is_free_by_word(self) -> bool:
+        """A free slot whose cell is NOT a label on its own but carries one as a whole word, on
+        a row that is not a class («Espaço Reservado para Reposição (se necessário)», nobody in
+        the professor column) — see ``CoordinatorService._is_free_by_word``."""
+        return getattr(self, "_free_by_word", False)
+
+    @property
     def is_postponed(self) -> bool:
         """Did the schedule ANNOTATE this class as put off — ``"<discipline> - Aula adiada"``?
 
@@ -109,6 +116,13 @@ class ReadReport:
     #: A BIT, never a count and never a name: how many similar rows there are already says how
     #: many similar people the sheet holds.
     unconfirmed_similar: bool = False
+    #: How many of the open slots ``find_replacement_slot`` RETURNED were read as open by a
+    #: free-slot label WORD inside a longer cell, on a row that is not a class
+    #: (``service._is_free_by_word`` — «Espaço Reservado para Reposição (se necessário)»). A
+    #: COUNT, unlike the bits above, because it is about rows that ARE on the list, not about
+    #: what was left out: it can be checked against the list it sits under, and it is how the
+    #: trace shows the rule working.
+    free_by_word: int = 0
 
 
 @dataclass(frozen=True)

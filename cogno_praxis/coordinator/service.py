@@ -189,6 +189,30 @@ def _annotation(subject: str) -> str:
     return parts[-1].strip() if len(parts) > 1 else ""
 
 
+def _has_phrase(text: str, phrase: str) -> bool:
+    """Does ``text`` contain ``phrase`` as WHOLE words — both under the module's fold
+    (:func:`_norm`), runs of whitespace collapsed?
+
+    ``"Espaço Reservado para Reposição"`` has ``"reposição"``; ``"Livreto de Exercícios"`` does
+    NOT have ``"livre"`` — a label inside a longer word is not the label.
+    """
+    t = " ".join(_norm(text).split())
+    ph = " ".join(_norm(phrase).split())
+    return bool(ph) and re.search(rf"(?<!\w){re.escape(ph)}(?!\w)", t) is not None
+
+
+def _names_a_turma(text: str, keys: "Iterable[str]") -> bool:
+    """Does ``text`` name one of the configured class groups — the key's designator (its tokens
+    with a leading «turma» dropped) as a contiguous run of whole tokens (:func:`_turma_matches`)?"""
+    for key in keys:
+        toks = _turma_tokens(key)
+        if toks[:1] == ["turma"]:
+            toks = toks[1:]
+        if toks and _turma_matches(toks, text):
+            return True
+    return False
+
+
 def _discipline(subject: str) -> str:
     """What a subject cell names BEFORE its last spaced dash — the DISCIPLINE on its own, with
     the exception a secretary appended to it taken off.
@@ -768,9 +792,63 @@ class CoordinatorService:
         n = _norm(subject)
         return any(n == _norm(lbl) for lbl in self.cfg.skip_labels)
 
-    def _is_free(self, subject: str) -> bool:
+    def _is_free_label(self, subject: str) -> bool:
+        """The WHOLE cell is a free-slot label — the comparison every label here started with.
+        A whole-cell label is free whoever is in the professor column, as it always was."""
         n = _norm(subject)
         return any(n == _norm(lbl) for lbl in self.cfg.free_slot_labels)
+
+    def _names_free_label(self, subject: str) -> bool:
+        """The cell carries a free-slot label as a WHOLE WORD somewhere inside it."""
+        return any(_has_phrase(subject, lbl) for lbl in self.cfg.free_slot_labels)
+
+    def _is_free_by_word(self, subject: str, professor: str,
+                         known: "frozenset[str]") -> bool:
+        """Is this row an open slot whose cell says so in a SENTENCE, not as a bare label?
+
+        «Espaço Reservado para Reposição (se necessário)» is how a professor's sheet marks a
+        slot held open for a make-up class, and the whole-cell comparison did not recognise
+        it: ``find_replacement_slot`` answered «No open slots in the next 21 days» over a sheet
+        that had them (an owner's incident, coordinator persona). The owner's rule, which adds
+        nothing to the tenant's configuration:
+
+        (a) the cell carries a ``FREE_SLOT_LABELS`` label as a WHOLE word, folded; and
+        (b) the row is NOT a class — nobody in the professor column, and the cell names no
+            discipline this read knows (``known``, see :meth:`_known_class_names`) and no
+            configured class group.
+
+        (b) is what keeps the turn-105 guard of :meth:`_is_postponed`: «Redes - Reposição» is
+        the make-up OF a class — it has a professor, and «Redes» is a discipline — so it is a
+        class and is paid; a discipline whose NAME contains «reposição» is a known name.
+        Separate from :meth:`_is_free_label` so a read can COUNT the slots found this way
+        (``ReadReport.free_by_word``): a rule that widens what counts as free must be seen
+        working in the trace, not inferred.
+        """
+        if professor.strip() or not self._names_free_label(subject):
+            return False
+        if any(_has_phrase(subject, name) for name in known):
+            return False
+        return not _names_a_turma(subject, self.cfg.spreadsheets)
+
+    def _known_class_names(self, rows: "Iterable[tuple[str, str]]") -> frozenset[str]:
+        """The discipline names a whole read KNOWS — the ``_discipline`` of every row that is a
+        class, over ``(subject, professor)`` pairs from every spreadsheet.
+
+        Every row counts except skip rows, whole-cell free labels and the rows rule (a) of
+        :meth:`_is_free_by_word` could make free (a label word, nobody in the professor
+        column) — those are the question, so they cannot be part of the answer. A name that is
+        itself a label is left out: it would make every slot carrying that label a class.
+        """
+        labels = {_norm(lbl) for lbl in self.cfg.free_slot_labels}
+        names: set[str] = set()
+        for subject, professor in rows:
+            if (not subject.strip() or self._is_skip(subject) or self._is_free_label(subject)
+                    or (not professor.strip() and self._names_free_label(subject))):
+                continue
+            name = _norm(_discipline(subject))
+            if name and name not in labels:
+                names.add(name)
+        return frozenset(names)
 
     def _is_postponed(self, subject: str) -> bool:
         """Does this subject cell say the class was PUT OFF — the whole cell, or its annotation?
@@ -816,7 +894,7 @@ class CoordinatorService:
         turn that ends in "I could not access the schedule". The caller decides what to do with
         the record — the read tools SAY it, ``confirm_swap`` REFUSES on it (a write must not be
         planned against a schedule it only half read)."""
-        out: list[ClassEntry] = []
+        read: list[tuple[str, str, list[str], ColumnLayout, list[list[str]]]] = []
         for key, sid in self.cfg.spreadsheets.items():
             try:
                 rows = self.store.read_range(sid, self.cfg.tab_schedule, self.cfg.range_schedule)
@@ -829,12 +907,21 @@ class CoordinatorService:
             if not rows:
                 continue
             header = [c.strip() for c in rows[0]]
-            cols = self._resolve_columns(header)
-            for r_i, row in enumerate(rows[1:], start=1):
+            read.append((key, sid, header, self._resolve_columns(header), rows[1:]))
+        # The WHOLE read first: whether a sentence-like slot is free depends on which
+        # disciplines the other rows — in every spreadsheet — name (``_is_free_by_word``).
+        known = self._known_class_names(
+            (self._cell(row, cols.subject_idx), self._cell(row, cols.professor_idx))
+            for _k, _s, _h, cols, body in read for row in body)
+        out: list[ClassEntry] = []
+        for key, sid, header, cols, body in read:
+            for r_i, row in enumerate(body, start=1):
                 subject = self._cell(row, cols.subject_idx)
                 if self._is_skip(subject) and not include_skip:
                     continue
-                free = self._is_free(subject)
+                by_word = (not self._is_free_label(subject) and self._is_free_by_word(
+                    subject, self._cell(row, cols.professor_idx), known))
+                free = by_word or self._is_free_label(subject)
                 if free and not include_free:
                     continue
                 when = _parse_date(self._cell(row, cols.date_idx))
@@ -844,6 +931,7 @@ class CoordinatorService:
                     professor=self._cell(row, cols.professor_idx),
                     subject=subject, cells=list(row), header=header)
                 entry._free = free  # type: ignore[attr-defined]
+                entry._free_by_word = by_word  # type: ignore[attr-defined]
                 entry._postponed = self._is_postponed(subject)  # type: ignore[attr-defined]
                 out.append(entry)
         out.sort(key=lambda e: (e.when is None, e.when or date.max))
@@ -1057,8 +1145,14 @@ class CoordinatorService:
         today = self._today()
         horizon = today + timedelta(days=REPLACEMENT_HORIZON_DAYS)
         # free slots are not professor-owned; oversight sees all, a professor sees the pool too
-        return [e for e in self.aggregate(include_free=True, report=report)
-                if e.is_free_slot and e.when and today <= e.when <= horizon]
+        slots = [e for e in self.aggregate(include_free=True, report=report)
+                 if e.is_free_slot and e.when and today <= e.when <= horizon]
+        if report is not None:
+            # Counted over the slots RETURNED, never over the sheet: the line says how many of
+            # the slots above were read as open by a label WORD inside the cell, so it can be
+            # checked against the list it sits under.
+            report.free_by_word += sum(1 for e in slots if e.is_free_by_word)
+        return slots
 
     def ibope_status(self, *, professor: str = "", role: str = "",
                      identity_label: str = "",

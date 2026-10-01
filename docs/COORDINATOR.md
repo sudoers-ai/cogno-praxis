@@ -68,3 +68,31 @@ guessed group sends a professor to the wrong room), a dropped discipline filter 
 question «what are my classes?». A caller that passes no `report` keeps the empty list: an
 unfiltered list nobody marks as unfiltered would be a wrong answer.
 `tests/unit/test_coordinator_unmatched_discipline.py`.
+
+## A free slot written as a sentence that carries its label is still a free slot (2026-10-01)
+
+`FREE_SLOT_LABELS` (e.g. «Livre, Reposição») used to be compared against the WHOLE subject cell.
+A professor's sheet that marks an open slot «Espaço Reservado para Reposição (se necessário)»
+therefore had no open slots at all, and `find_replacement_slot` answered «No open slots in the
+next 21 days» to a contact asking which days were free to move a class (an owner's incident on
+the coordinator persona).
+
+The owner's rule, which adds nothing to the tenant's configuration (`service._is_free_by_word`):
+a cell that is not a label on its own is FREE when (a) it carries a `FREE_SLOT_LABELS` label as a
+WHOLE word under the module's `_norm` fold («Livreto» does not carry «livre»), and (b) the row is
+NOT a class — nobody in the professor column, no discipline the read knows, and no configured
+class group in the cell. The known disciplines (`_known_class_names`) are the `_discipline` of
+every row of the WHOLE read (every spreadsheet) except skip rows, whole-cell labels and the rows
+(a) could make free. A whole-cell label is free as before, whoever is in the professor column.
+
+(b) is what keeps the turn-105 guard of the pay estimate: «Redes - Reposição» is the make-up OF a
+class (it has a professor, and «Redes» is a known discipline) and is paid; «<discipline> - Aula
+adiada» stays a postponed class; a discipline whose name contains «reposição» is a known name.
+The same entries feed `confirm_swap` (a slot the read offers is one the swap accepts) and the pay
+estimate.
+
+`ReadReport.free_by_word` counts how many of the slots `find_replacement_slot` RETURNED were read
+this way, and the footer says so («N of the open slots above are written on the sheet as a
+sentence that carries the free-slot label…»). It is a count of rows ON the list — not of anything
+left out, which is why it is not a bit like the window lines — so the trace shows the rule working.
+`tests/unit/test_coordinator_free_slot_by_word.py`.
