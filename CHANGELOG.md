@@ -15,6 +15,10 @@
     aimed at a PERSON (anyone in the conversation, the assistant included). Criticism of what the
     assistant wrote, even crude or profane, is NOT abuse: treat it as a request to change that
     text.» It is English in the two Portuguese files too (one string, kept equal by a test).
+  - The INTERVIEWER's scope also says «ofensivas», so its copy opens with
+    «"Abusive"/"offensive" means …», derived from the same sentence by one substitution. The
+    variant is in that file alone, so the other four (the measured coordinator included) do not
+    move.
   - No shared include exists (the host reads each file raw), so the sameness is a test.
   - Tests (`tests/unit/test_abusive_is_defined_in_every_scope.py`, prompt-only): the files that
     say "abusiv…" are derived from disk and must be exactly the five; the twin (the sentence is

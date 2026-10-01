@@ -132,7 +132,7 @@ NEIGHBOURS_AT_MAIN = {
     "coordinator/scope.txt": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
     "coordinator/voice.txt": "21ca2bcf50fc42613687c6cb61f40ec6c0510b6384061a7c22bf8d45308b9ead",
     "interviewer/limits.txt": "02a8bc07cb85464f3ca8e0df28385329473429b0b479f92a29ec1b4dfad0f918",
-    "interviewer/scope.txt": "30e5e7ec214aa76863318bf2d42deb6bc379db544cc8698e79d3b5f19857eafc",
+    "interviewer/scope.txt": "d80bcb9076c17f2c9cf87776cd1212316801a6f5677f64027509aeed06748b8c",
     "interviewer/system.txt": "640c76109c62a142f6304af1b8592b79e1c9808735a3daf067c24f3abc42be27",
     "interviewer/voice.txt": "0dfe458c1778ed53dfcb8cadbcfdc69993ecd8cc7233e7ca3dcc5de9a8b1887e",
     "scheduler/limits.txt": "92becaf1d23c56570833082fe1507e01c0afe3a52922ee8404ed671a53a6a2a4",

@@ -27,6 +27,17 @@ because the abuse control the measurement must keep at BLOCK («sua burra, vou t
 aimed at the assistant. Without it, "a PERSON" can be read as "not the assistant", and the
 definition would let that control through.
 
+## The one variant: the INTERVIEWER also says "offensive"
+
+The INTERVIEWER blocks messages that are «abusivas, ofensivas», and "offensive" was just as
+undefined. So in that file alone the sentence opens with «"Abusive"/"offensive" means …» and
+the rest is the same, byte for byte (Director, 2026-10-01). This is the variant in ONE file,
+not the longer form in all five. The four other files stay exactly as they were first written,
+including the coordinator, whose slot is the one being measured against the served guard. The
+variant is DERIVED from ``DEFINITION`` by one substitution, never written out by hand. The
+sameness test undoes that substitution before it compares, so the five still have to be one
+sentence.
+
 ## What this file pins, and what it does not
 
 Assertions about the PROMPT only. Whether the model obeys is measured outside this repo, against
@@ -34,9 +45,10 @@ the served guard. Here:
 
 * the DENOMINATOR — the files that say "abusiv…" are DERIVED from disk and must be exactly the
   five, so a new vertical that blocks abuse is covered the day it arrives;
-* the TWIN — each of the five carries ``DEFINITION`` once, as its last paragraph, after its last
-  mention of the word;
-* the SAMENESS — the definition paragraph, read out of each file, is one string across the five;
+* the TWIN — each of the five carries its sentence (``DEFINITION``, or ``OFFENSIVE`` in the
+  interviewer) once, as its last paragraph, after its last mention of the word;
+* the SAMENESS — the definition paragraph read out of each file, with the one substitution
+  undone, is one string across the five, and only the interviewer carries the variant;
 * the CONTROL — remove the paragraph and each file is, byte for byte, the file at ``origin/main``
   5f1ae0e (digests pinned), and the new digests are pinned as well;
 * the NEIGHBOUR — ``scheduler/prompts/scope.txt`` never says "abusive" and did not move.
@@ -56,6 +68,9 @@ MUTATIONS:
     change one comma elsewhere in ``bookkeeper/prompts/scope.txt``
     → ``test_the_rest_of_each_definition_is_byte_for_byte_main[bookkeeper]`` dies; the twin and
       the sameness survive.
+    write the interviewer's variant into ``closer/prompts/scope.txt`` as well
+    → ``test_the_definition_is_the_same_sentence_in_all_five`` dies (the variant is the
+      interviewer's alone), with the twin and control for ``closer``.
     In each case the scope digests that #153 and #154 pin die too, for the same file only.
 """
 
@@ -81,6 +96,23 @@ DEFINITION = (
 #: What is appended to each file: a blank line, then the sentence and the newline that ends it.
 PARAGRAPH = "\n" + DEFINITION + "\n"
 
+#: The one substitution that makes the INTERVIEWER's variant (its scope also says «ofensivas»).
+_PLAIN, _WITH_OFFENSIVE = '"Abusive" means', '"Abusive"/"offensive" means'
+
+#: The interviewer's sentence — DERIVED from ``DEFINITION``, never written out a second time.
+OFFENSIVE = DEFINITION.replace(_PLAIN, _WITH_OFFENSIVE, 1)
+
+#: Which vertical carries which sentence. Every vertical not named here carries ``DEFINITION``.
+VARIANTS = {"interviewer": OFFENSIVE}
+
+
+def _sentence(vertical: str) -> str:
+    return VARIANTS.get(vertical, DEFINITION)
+
+
+def _paragraph(vertical: str) -> str:
+    return "\n" + _sentence(vertical) + "\n"
+
 #: ``sha256`` of each ``scope.txt`` at ``origin/main`` 5f1ae0e, before the sentence.
 AT_MAIN = {
     "bookkeeper": "4f33eb5c6791691c32c7451d735a72bd4e1af2bd4d7809ba73b0ece076bf240d",
@@ -97,7 +129,7 @@ NOW = {
     "closer": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
     "companies": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
     "coordinator": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
-    "interviewer": "30e5e7ec214aa76863318bf2d42deb6bc379db544cc8698e79d3b5f19857eafc",
+    "interviewer": "d80bcb9076c17f2c9cf87776cd1212316801a6f5677f64027509aeed06748b8c",
 }
 
 #: The scope that never says "abusive", at ``origin/main`` 5f1ae0e. It is not given the sentence:
@@ -127,8 +159,8 @@ def _paragraphs(text: str) -> "list[str]":
 
 def _without_the_definition(text: str) -> str:
     """The file as it was before: the definition paragraph is not part of what blocks abuse, so
-    the mentions of the word are counted without it."""
-    return text.replace(PARAGRAPH, "", 1)
+    the mentions of the word are counted without it (either sentence)."""
+    return text.replace(PARAGRAPH, "", 1).replace("\n" + OFFENSIVE + "\n", "", 1)
 
 
 # ── the denominator ──────────────────────────────────────────────────────────────────────────
@@ -144,7 +176,8 @@ def test_every_scope_that_blocks_abuse_defines_it() -> None:
     """Derived: a scope that blocks abuse without saying what it is fails here, whatever its
     name, including one that does not exist yet."""
     missing = [v for v, t in _scopes().items()
-               if _ABUSIVE.search(_without_the_definition(t)) and DEFINITION not in t]
+               if _ABUSIVE.search(_without_the_definition(t))
+               and DEFINITION not in t and OFFENSIVE not in t]
     assert not missing, f"these scope.txt say 'abusive' and never define it: {missing}"
 
 
@@ -154,19 +187,23 @@ def test_the_definition_is_the_last_paragraph(vertical: str) -> None:
     """THE TWIN. Once, as its own last paragraph — so it follows the last place the file names
     the word it defines, and nothing after it qualifies it."""
     text = _scopes()[vertical]
-    assert text.count(DEFINITION) == 1
-    assert text.endswith(PARAGRAPH)
+    assert text.count(_sentence(vertical)) == 1
+    assert text.endswith(_paragraph(vertical))
     paragraphs = _paragraphs(text)
-    assert paragraphs[-1] == DEFINITION + "\n"
+    assert paragraphs[-1] == _sentence(vertical) + "\n"
     assert any(_ABUSIVE.search(p) for p in paragraphs[:-1]), "nothing above it to define"
 
 
 def test_the_definition_is_the_same_sentence_in_all_five() -> None:
     """THE SAMENESS. Read OUT of each file (its last paragraph), not compared against the constant
-    — so two files that drifted apart in the same way would still be caught against the others."""
+    — so two files that drifted apart in the same way would still be caught against the others.
+    The interviewer's one substitution is undone first; it is the ONLY file that may carry it."""
     last = {v: _paragraphs(_scopes()[v])[-1] for v in AT_MAIN}
-    assert len(set(last.values())) == 1, {v: p[:60] for v, p in last.items()}
-    assert set(last.values()) == {DEFINITION + "\n"}
+    carriers = {v for v, p in last.items() if _WITH_OFFENSIVE in p}
+    assert carriers == set(VARIANTS), carriers
+    same = {v: p.replace(_WITH_OFFENSIVE, _PLAIN, 1) for v, p in last.items()}
+    assert len(set(same.values())) == 1, {v: p[:60] for v, p in same.items()}
+    assert set(same.values()) == {DEFINITION + "\n"}
 
 
 # ── the control ──────────────────────────────────────────────────────────────────────────────
@@ -175,8 +212,9 @@ def test_the_rest_of_each_definition_is_byte_for_byte_main(vertical: str) -> Non
     """THE CONTROL. Take the paragraph out and what is left is ``origin/main``'s file, byte for
     byte; the new digest is pinned too."""
     text = _scopes()[vertical]
-    assert text.endswith(PARAGRAPH), "the control must be run over the file that HAS the paragraph"
-    assert _sha(text[: -len(PARAGRAPH)]) == AT_MAIN[vertical]
+    para = _paragraph(vertical)
+    assert text.endswith(para), "the control must be run over the file that HAS the paragraph"
+    assert _sha(text[: -len(para)]) == AT_MAIN[vertical]
     assert _sha(text) == NOW[vertical] != AT_MAIN[vertical]
 
 

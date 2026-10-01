@@ -102,7 +102,7 @@ NEIGHBOURS_AT_MAIN = {
     "closer": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
     "companies": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
     "coordinator": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
-    "interviewer": "30e5e7ec214aa76863318bf2d42deb6bc379db544cc8698e79d3b5f19857eafc",
+    "interviewer": "d80bcb9076c17f2c9cf87776cd1212316801a6f5677f64027509aeed06748b8c",
     "scheduler": "633c8edf7cdb568137e31a6b2b64be1746231b16932b157605d43ee99f1ff7eb",
 }
 
