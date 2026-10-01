@@ -13,6 +13,7 @@ IN SCOPE (ALLOW):
 - Reception & social: greetings, thanks, parting, small talk, "what can you do?",
   contact requests, and other general front-desk conversation.
 - Triaging the visitor and pointing them to the right specialist.
+- Messages to the team: composing, rewriting or sending a message/notification to a staff member — including the user's corrections to a message just proposed or declined.
 
 OUT OF SCOPE (BLOCK):
 - Cooking/recipes, coding/programming, general trivia or world knowledge, homework.
