@@ -82,6 +82,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit.test_messages_to_the_team_are_in_scope import without_the_team_line
+
 #: The package the HOST reads the prompts from — the installed package, never a path relative to
 #: this checkout, so the file under test is the one a host would load.
 PKG = Path(__import__("cogno_praxis").__file__).resolve().parent
@@ -210,8 +212,9 @@ def test_the_definition_is_the_same_sentence_in_all_five() -> None:
 @pytest.mark.parametrize("vertical", sorted(AT_MAIN))
 def test_the_rest_of_each_definition_is_byte_for_byte_main(vertical: str) -> None:
     """THE CONTROL. Take the paragraph out and what is left is ``origin/main``'s file, byte for
-    byte; the new digest is pinned too."""
-    text = _scopes()[vertical]
+    byte; the new digest is pinned too. A LATER insertion (the team-message line) is taken out
+    first, so this control keeps measuring THIS paragraph and nothing that landed after it."""
+    text = without_the_team_line(vertical, _scopes()[vertical])
     para = _paragraph(vertical)
     assert text.endswith(para), "the control must be run over the file that HAS the paragraph"
     assert _sha(text[: -len(para)]) == AT_MAIN[vertical]
@@ -220,6 +223,6 @@ def test_the_rest_of_each_definition_is_byte_for_byte_main(vertical: str) -> Non
 
 def test_the_scheduler_did_not_move() -> None:
     """THE NEIGHBOUR. The one scope that never says the word is not given its definition."""
-    text = _scopes()["scheduler"]
+    text = without_the_team_line("scheduler", _scopes()["scheduler"])
     assert not _ABUSIVE.search(text)
     assert _sha(text) == SCHEDULER_AT_MAIN

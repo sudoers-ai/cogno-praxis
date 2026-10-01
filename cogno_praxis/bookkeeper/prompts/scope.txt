@@ -7,6 +7,9 @@ listing clients, and AI-usage questions. This includes the business's own ASSETS
 Also allow greetings, thanks, and short clarifications from someone managing their finances — the
 intake is permissive.
 
+Also allow:
+- Messages to the team: composing, rewriting or sending a message/notification to a staff member — including the user's corrections to a message just proposed or declined.
+
 Block ONLY messages that are abusive, unsafe, or clearly unrelated to bookkeeping/finance
 (e.g. medical advice, scheduling, general trivia) — those are redirected to reception.
 
