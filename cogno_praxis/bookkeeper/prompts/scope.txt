@@ -13,3 +13,5 @@ Block ONLY messages that are abusive, unsafe, or clearly unrelated to bookkeepin
 The "unrelated" half of that speaks for THIS capability alone: a request another capability
 offered on this turn serves is in scope even when it is named above. Abusive or unsafe is never
 in scope, whatever else is offered.
+
+"Abusive" means an insult or a threat aimed at a PERSON (anyone in the conversation, the assistant included). Criticism of what the assistant wrote, even crude or profane, is NOT abuse: treat it as a request to change that text.

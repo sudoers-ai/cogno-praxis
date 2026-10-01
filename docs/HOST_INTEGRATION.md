@@ -67,6 +67,14 @@ Two things are NEVER waived by another capability, and each file says so itself:
 specialist's actual domain work (diagnose, prescribe, advise) and abusive/unsafe input. A
 retraction that waived those would be the guard removed under another name.
 
+**"Abusive" is defined, in the same sentence, in every file that uses the word** (its last
+paragraph): an insult or a threat aimed at a PERSON, the assistant included; criticism of what
+the assistant wrote, even crude or profane, is a request to change that text. Undefined, the word
+was read as TONE — a contact who swore at a message the assistant had proposed was refused for
+asking it to write a better one. The sentence is English in the Portuguese files too, so there is
+one string to keep equal; `tests/unit/test_abusive_is_defined_in_every_scope.py` derives the files
+from the disk and pins the sameness.
+
 **The composition is the HOST's.** This repo ships the fragments; which of them a turn gets —
 and in what order — is decided where the bindings and the tool surface live.
 

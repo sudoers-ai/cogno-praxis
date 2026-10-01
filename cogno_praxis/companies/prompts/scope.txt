@@ -12,3 +12,5 @@ This capability speaks only for those records. It claims nothing else and withdr
 it is one of several a turn may carry, and a request another capability offered on this turn
 serves is in scope even where this definition is silent. Abusive or unsafe is never in scope,
 whatever else is offered.
+
+"Abusive" means an insult or a threat aimed at a PERSON (anyone in the conversation, the assistant included). Criticism of what the assistant wrote, even crude or profane, is NOT abuse: treat it as a request to change that text.

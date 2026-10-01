@@ -4,6 +4,26 @@
 
 ### Changed
 
+- **The five `scope.txt` that block "abusive" messages now say what the word means — the same
+  sentence in all five** (`bookkeeper`, `closer`, `companies`, `coordinator`, `interviewer`; the
+  `scheduler` never uses the word and is unchanged). Undefined, the relevance guard read the word
+  as TONE. In the shape measured on a rehearsal tenant, a contact rejected a message the
+  assistant had proposed, with a swear word, and asked for a better one: BLOCK 5/5, even with the
+  specific pending request in the prompt (host #1145). The same sentence without the swear word:
+  ALLOW 5/5.
+  - The sentence, appended as each file's last paragraph: «"Abusive" means an insult or a threat
+    aimed at a PERSON (anyone in the conversation, the assistant included). Criticism of what the
+    assistant wrote, even crude or profane, is NOT abuse: treat it as a request to change that
+    text.» It is English in the two Portuguese files too (one string, kept equal by a test).
+  - No shared include exists (the host reads each file raw), so the sameness is a test.
+  - Tests (`tests/unit/test_abusive_is_defined_in_every_scope.py`, prompt-only): the files that
+    say "abusiv…" are derived from disk and must be exactly the five; the twin (the sentence is
+    each file's last paragraph); the sameness (read out of each file); the control (without the
+    paragraph, each file is `main`'s byte for byte, old and new digests pinned); the scheduler
+    unchanged. The scope digests pinned by `test_bookkeeper_scope_names_assets_and_investments.py`
+    and `test_coordinator_deadline_rules_read_the_documents.py` are regenerated here, and the
+    first one's control strips the later paragraph before measuring its own sentence.
+  - Whether the guard obeys is measured outside this repo, against the served guard.
 - **`get_professor_schedule`: uma `discipline` que não casa com nada deixa de dar «No classes
   found» (M6-c).** Na forma do traço 2056, o executor punha em `discipline` o nome do PROGRAMA
   («MBA em …») e a ferramenta dizia que o professor não tinha aulas. Segue o precedente do
