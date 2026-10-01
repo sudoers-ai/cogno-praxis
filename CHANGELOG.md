@@ -4,6 +4,16 @@
 
 ### Changed
 
+- **`scheduler/prompts/scope.txt` also defines "abusive" — the same sentence, as its last
+  paragraph.** #156 defined the word only in the five files that USE it. The scheduler's scope
+  never says it, but it is the BASE of a SECRETARY's guard, and the host's composition rule tells
+  that guard that "abusive or unsafe input" is never in scope. Measured live after #156: on a
+  SECRETARY turn the specific pending request (host #1145) did its job and the crude critique was
+  still BLOCKED. The definition was there only inside the `companies` contribution.
+  - `tests/unit/test_abusive_is_defined_in_every_scope.py` now ENUMERATES the six `scope.txt` and
+    checks them against the disk both ways, instead of "the files that say the word".
+  - Twin, sameness and control as before, with the scheduler's digest before the sentence
+    pinned at `main` 5c57490. The scheduler digests pinned by #153 and #154 are regenerated.
 - **`find_replacement_slot`: uma vaga escrita como FRASE que traz o rótulo conta como livre.**
   A planilha de um professor marca as vagas como «Espaço Reservado para Reposição (se
   necessário)», e o `_is_free` comparava a célula INTEIRA com `FREE_SLOT_LABELS`; a ferramenta

@@ -39,3 +39,5 @@ This capability covers {tenant_name}, its departments, and scheduling. It is not
 everything the assistant can do, and it withdraws nothing another capability grants — the
 assistant is routinely offered more than this one. When in doubt about a borderline
 social/reception message, ALLOW it — the guard must not refuse a legitimate visitor.
+
+"Abusive" means an insult or a threat aimed at a PERSON (anyone in the conversation, the assistant included). Criticism of what the assistant wrote, even crude or profane, is NOT abuse: treat it as a request to change that text.
