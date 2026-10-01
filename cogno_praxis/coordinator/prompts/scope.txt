@@ -19,9 +19,6 @@ Also allow the coordination asking about the faculty's remuneration — a profes
 everyone ("os valores de todos os professores", "por professor"): the coordinator is who a
 professor's pay is a working fact for, and the tool decides by role what may be shown.
 
-Also allow:
-- Messages to the team: composing, rewriting or sending a message/notification to a staff member — including the user's corrections to a message just proposed or declined.
-
 Block ONLY messages that are abusive, unsafe, or clearly unrelated to academic scheduling
 (e.g. medical advice, general trivia) — those are redirected elsewhere. Finance is blocked
 EXCEPT for those openings: another person's pay asked by someone who is not the coordination,

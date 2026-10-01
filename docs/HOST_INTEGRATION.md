@@ -76,9 +76,10 @@ one string to keep equal (the interviewer, whose file also says «ofensivas», o
 `"Abusive"/"offensive"`, the one permitted variant); `tests/unit/test_abusive_is_defined_in_every_scope.py` derives the files
 from the disk and pins the sameness.
 
-**A message to the team is in scope wherever the notification tool is offered.** The four
-definitions whose persona the host offers `notify_user` (scheduler, bookkeeper, coordinator,
-interviewer) carry the same IN SCOPE line for composing, rewriting or sending a message to a staff
+**A message to the team is in scope wherever the notification tool is offered.** The
+definitions whose persona the host offers `notify_user` carry the same IN SCOPE line (scheduler,
+bookkeeper, interviewer; the coordinator's measured definition already allows it and is left as
+it was) for composing, rewriting or sending a message to a staff
 member, corrections to a just-proposed or declined message included. The guard's "a request
 another capability serves is in scope" clause did not carry it on its own: the definition is the
 lever. `tests/unit/test_messages_to_the_team_are_in_scope.py` pins the line and the set.

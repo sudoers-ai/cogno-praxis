@@ -117,7 +117,7 @@ SYSTEM_NOW = "5085d29f398179ea208eb2b81f28b2a51489004b12e6c7f2f3527f02dcee1e89"
 
 #: ``sha256`` of every OTHER prompt of every vertical at ``origin/main`` 6d1ca3a — the five
 #: ``scope.txt`` that later gained the definition of "abusive" regenerated in that PR
-#: (``test_abusive_is_defined_in_every_scope``), and the four that then gained the team-message
+#: (``test_abusive_is_defined_in_every_scope``), and the three that then gained the team-message
 #: line (``test_messages_to_the_team_are_in_scope``).
 NEIGHBOURS_AT_MAIN = {
     "bookkeeper/limits.txt": "d1e1abdbb376861fe42b923037bf3341927306836c4e181247887b48608b7c54",
@@ -130,7 +130,7 @@ NEIGHBOURS_AT_MAIN = {
     "closer/voice.txt": "ecf7b265950d2b9797fb2329c430fad558988c07e0e4652228ec81e0a7bb73c1",
     "companies/scope.txt": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
     "coordinator/limits.txt": "693599819f703f755d863a5298caaba2573685fed63091f80690ada60dc7c8d0",
-    "coordinator/scope.txt": "6baff6feab18bf5d8d4abf18bedb407372e7b7ec9ec409e0c1d23ac9f9d77b9d",
+    "coordinator/scope.txt": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
     "coordinator/voice.txt": "21ca2bcf50fc42613687c6cb61f40ec6c0510b6384061a7c22bf8d45308b9ead",
     "interviewer/limits.txt": "02a8bc07cb85464f3ca8e0df28385329473429b0b479f92a29ec1b4dfad0f918",
     "interviewer/scope.txt": "b25231522c0c48c4658bbf5e1824cf9bc3fc544ecf02b0d09a2b0df1e815a921",

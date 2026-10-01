@@ -99,11 +99,11 @@ LATER = (ABUSIVE_PARAGRAPH,)
 
 #: ``sha256`` of every OTHER vertical's ``scope.txt`` at ``origin/main`` 5ae6ce3 — regenerated for
 #: the four that later gained the definition of "abusive" (``test_abusive_is_defined_in_every_scope``),
-#: and for the three that then gained the team-message line (``test_messages_to_the_team_are_in_scope``).
+#: and for the two that then gained the team-message line (``test_messages_to_the_team_are_in_scope``).
 NEIGHBOURS_AT_MAIN = {
     "closer": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
     "companies": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
-    "coordinator": "6baff6feab18bf5d8d4abf18bedb407372e7b7ec9ec409e0c1d23ac9f9d77b9d",
+    "coordinator": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
     "interviewer": "b25231522c0c48c4658bbf5e1824cf9bc3fc544ecf02b0d09a2b0df1e815a921",
     "scheduler": "b2f942c84374955d9aad03f951ce4082d4cc4d0c45638cad4d1c6b9f89b3448f",
 }

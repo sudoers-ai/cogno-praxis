@@ -21,26 +21,31 @@ every vertical whose persona is offered ``notify_user``. The host's catalog make
 skill for staff, and probing the host's production surface per persona and role puts it on the
 table of the SECRETARY (``scheduler``), the BOOKKEEPER, the COORDINATOR and the INTERVIEWER, for
 SUPERVISOR and EMPLOYEE alike; never for a GUEST, and never for the CLOSER. None of the four
-definitions covered it in its text, so all four take the line:
+definitions covers it in its text. Three take the line:
 
 * ``scheduler`` — as a bullet at the end of its ``IN SCOPE (ALLOW):`` list;
-* ``bookkeeper``, ``coordinator``, ``interviewer`` — their definitions are prose with no list, so
-  the same bullet goes under an ``Also allow:`` lead, as its own paragraph right before the BLOCK
-  paragraph (the interviewer's lead is English like the line; the file is Portuguese).
+* ``bookkeeper``, ``interviewer`` — their definitions are prose with no list, so the same bullet
+  goes under an ``Also allow:`` lead, as its own paragraph right before the BLOCK paragraph (the
+  interviewer's lead is English like the line; the file is Portuguese).
 
-Not given the line: ``closer``, which has no tools, so its guard is skipped and the tool is never
-offered; and ``companies``, which is a CONTRIBUTION to a SECRETARY's guard and says it "speaks
-only for those records". The SECRETARY's base (``scheduler``) carries the line for her.
+Not given the line:
+* ``coordinator`` — a MEASURED prompt that already answers this request ALLOW 5/5 (the same clean
+  sentence with the pending request). A measured file is not changed for consistency without a
+  measurement that asks for it (Director, 2026-10-01);
+* ``closer`` — no tools, so its guard is skipped and the tool is never offered;
+* ``companies`` — a CONTRIBUTION to a SECRETARY's guard that "speaks only for those records". The
+  SECRETARY's base (``scheduler``) carries the line for her.
 
 ## What this file pins, and what it does not
 
 Assertions about the PROMPT only. Whether the guard obeys is measured outside this repo, against
 the served guard. Here:
 
-* the TWIN — each of the four carries the bullet once, in the part of the file that ALLOWS;
+* the TWIN — each of the three carries the bullet once, in the part of the file that ALLOWS;
 * the CONTROL — take the insertion out and each file is, byte for byte, the file at
   ``origin/main`` 5c57490 (digests pinned), and the new digests are pinned as well;
-* the NEIGHBOURS — ``closer`` and ``companies`` do not carry the line and did not move.
+* the NEIGHBOURS — ``coordinator``, ``closer`` and ``companies`` do not carry the line and did
+  not move.
 
 The pinned digests are a LANDING proof, made to age: a deliberate edit of one of those files is
 regenerated in the SAME PR that changed it, never edited to silence a red.
@@ -52,6 +57,8 @@ MUTATIONS:
       PRECONDITION (it refuses the file without the insertion, which IS main's file).
     move the scheduler's bullet into its ``OUT OF SCOPE (BLOCK):`` list
     → ``test_the_line_is_in_the_allow_part[scheduler]`` dies; the bullet is still in the file.
+    give the line to ``coordinator/prompts/scope.txt`` too
+    → ``test_the_neighbours_did_not_move[coordinator]`` dies.
 """
 
 from __future__ import annotations
@@ -79,14 +86,12 @@ LEAD = "Also allow:\n"
 INSERTS = {
     "scheduler": (BULLET + "\n", "\nOUT OF SCOPE (BLOCK):"),
     "bookkeeper": (LEAD + BULLET + "\n\n", "Block ONLY messages that are abusive"),
-    "coordinator": (LEAD + BULLET + "\n\n", "Block ONLY messages that are abusive"),
     "interviewer": (LEAD + BULLET + "\n\n", "BLOQUEIE apenas mensagens abusivas"),
 }
 
 #: ``sha256`` of each file at ``origin/main`` 5c57490, before the line.
 AT_MAIN = {
     "bookkeeper": "038237d093ebeba38af3fc3f5c777882c59bad5b6eddb6b9bf6c89f5483db063",
-    "coordinator": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
     "interviewer": "d80bcb9076c17f2c9cf87776cd1212316801a6f5677f64027509aeed06748b8c",
     "scheduler": "633c8edf7cdb568137e31a6b2b64be1746231b16932b157605d43ee99f1ff7eb",
 }
@@ -94,7 +99,6 @@ AT_MAIN = {
 #: ``sha256`` of each file WITH the line.
 NOW = {
     "bookkeeper": "ed4a8c112f11d2c2bf480c4e8be806f9d1f707e12c1bf638e541e5f17f3ee342",
-    "coordinator": "6baff6feab18bf5d8d4abf18bedb407372e7b7ec9ec409e0c1d23ac9f9d77b9d",
     "interviewer": "b25231522c0c48c4658bbf5e1824cf9bc3fc544ecf02b0d09a2b0df1e815a921",
     "scheduler": "b2f942c84374955d9aad03f951ce4082d4cc4d0c45638cad4d1c6b9f89b3448f",
 }
@@ -103,6 +107,7 @@ NOW = {
 NEIGHBOURS_AT_MAIN = {
     "closer": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
     "companies": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
+    "coordinator": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
 }
 
 
@@ -161,7 +166,7 @@ def test_the_rest_of_each_definition_is_byte_for_byte_main(vertical: str) -> Non
 
 # ── the neighbours ───────────────────────────────────────────────────────────────────────────
 def test_the_set_is_every_scope_on_disk() -> None:
-    """The denominator: the four given the line and the two not given it are every scope.txt on
+    """The denominator: the three given the line and the three not given it are every scope.txt on
     disk, so a new vertical has to be placed in one set or the other."""
     on_disk = {p.parent.parent.name for p in PKG.glob("*/prompts/scope.txt")}
     assert on_disk == set(INSERTS) | set(NEIGHBOURS_AT_MAIN)
