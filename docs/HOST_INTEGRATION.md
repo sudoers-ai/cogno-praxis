@@ -179,6 +179,19 @@ Concretely, when you add a tool that shadows a host builtin:
    `tests/unit/test_resolve_date_contract.py`, which asserts both directions and is the
    template to copy for a new tool.
 
+### 6.2 A footer a host READS BACK is a contract, not prose (2026-10-06, #160)
+
+The coordination tool's `NO SUCH DISCIPLINE` footer lists the disciplines the sheet knows. A host
+may read that list back, for example to ask the contact «Não encontrei X. Você quis dizer: A / B?»
+with names copied from it (cogno-host's VQD-2(a)). The footer is then a contract between the two
+repos, so it has ONE writer and ONE reader, both exported from `cogno_praxis.coordinator`:
+`footers.unmatched_discipline_line` writes every name as a JSON string literal, and
+`footers.parse_unmatched_discipline` is the only reader. A host imports the reader and never parses
+the footer text itself: a host-side regex is a second copy of the format, and the format has
+already changed once (the list was joined with `", "`, and a discipline whose name carries a comma
+came back as names that are on no sheet). `docs/COORDINATOR.md` has the rule;
+`tests/unit/test_footers.py` pins the round trip.
+
 ## 7. What stays yours
 
 Real domain data + adapters, RBAC (which identity may reach which vertical), persona

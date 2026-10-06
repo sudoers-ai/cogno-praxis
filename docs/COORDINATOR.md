@@ -69,6 +69,15 @@ question «what are my classes?». A caller that passes no `report` keeps the em
 unfiltered list nobody marks as unfiltered would be a wrong answer.
 `tests/unit/test_coordinator_unmatched_discipline.py`.
 
+**The list is a CLOSED alphabet, with one writer and one reader (2026-10-06, VQD-2(a)).** The host
+reads the footer back to ask the contact «Não encontrei X. Você quis dizer: A / B?» with names
+COPIED from it, so every name is written as a JSON string literal (`"Bancos NoSQL", "Redes"`) by
+`footers.unmatched_discipline_line` and read back only by `footers.parse_unmatched_discipline`
+(both exported from `cogno_praxis.coordinator`). The list used to be joined with `", "`, and a
+discipline whose own name carries a comma came back as several names that are on no sheet. For a
+plain name the asked value keeps its bytes; only the list gained its quotes.
+`tests/unit/test_footers.py`.
+
 ## A free slot written as a sentence that carries its label is still a free slot (2026-10-01)
 
 `FREE_SLOT_LABELS` (e.g. «Livre, Reposição») used to be compared against the WHOLE subject cell.
