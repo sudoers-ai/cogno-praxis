@@ -485,14 +485,44 @@ def _fuzzy_match_discipline(query: str, candidate: str,
 _KNOWN_DISCIPLINES_MAX = 30
 
 
-def _known_disciplines(entries: "list[ClassEntry]") -> tuple[str, ...]:
-    """The distinct subjects of ``entries`` — already scoped to what the caller may see — one
-    spelling per accent/case fold (the first met), sorted under the fold, free slots left out."""
+#: The STATUS notes a secretary appends to a discipline that this module names on its own, for
+#: the discipline LIST only (:func:`_known_disciplines`) — never for pay or for free slots. Matched
+#: against the WHOLE annotation (:func:`_annotation`) under the fold, so a name that merely
+#: contains one of these words is untouched. Two families, both written on real sheets:
+#:
+#: * the MAKE-UP note — ``"Redes - Reposição"``, ``"Redes - reposição do dia 22/09"``: the row IS
+#:   a class of Redes (see :meth:`CoordinatorService._is_free_by_word`), on the day it was given;
+#: * the CANCELLED note — ``"Redes - Cancelada"``. Deliberately NOT a ``POSTPONED_LABELS``
+#:   default (see :class:`CoordinatorConfig`: that list stops a class from being PAID, and the
+#:   word was never measured there). Here it decides only how a name is SPELLED in a footer.
+#:
+#: The POSTPONED family is not repeated here: it is the tenant's declared
+#: ``cfg.postponed_labels``, read through :meth:`CoordinatorService._is_postponed_note`, the same
+#: comparison :meth:`CoordinatorService._is_postponed` makes.
+_FOOTER_STATUS_NOTE = re.compile(
+    r"reposicao(?: do dia \d{1,2}(?:[/.-]\d{1,2}(?:[/.-]\d{2,4})?)?)?|(?:aula )?cancelad[ao]")
+
+
+def _known_disciplines(entries: "list[ClassEntry]",
+                       is_status_note: "Callable[[str], bool]") -> tuple[str, ...]:
+    """The distinct DISCIPLINES of ``entries`` — already scoped to what the caller may see — one
+    spelling per accent/case fold (the first met), sorted under the fold, free slots left out.
+
+    A subject whose annotation (:func:`_annotation`) is a STATUS note (``is_status_note``) is
+    listed by its BASE name (:func:`_discipline`): «Redes», «Redes - Aula adiada» and «Redes -
+    reposição do dia 22/09» are ONE discipline, and the footer that offers them as a closed list
+    («você quis dizer…?», ``cogno-host``) offered the same discipline three times. Any other
+    annotation is part of the name and stays («Laboratório - Redes» is a discipline of its own):
+    the cut is a closed list, never «everything after a spaced dash»."""
     seen: dict[str, str] = {}
     for e in entries:
         subject = (e.subject or "").strip()
-        if subject and not e.is_free_slot:
-            seen.setdefault(_norm(subject), subject)
+        if not subject or e.is_free_slot:
+            continue
+        note = _annotation(subject)
+        name = _discipline(subject) if note and is_status_note(note) else subject
+        if name:
+            seen.setdefault(_norm(name), name)
     return tuple(sorted(seen.values(), key=_norm))[:_KNOWN_DISCIPLINES_MAX]
 
 
@@ -878,9 +908,21 @@ class CoordinatorService:
         was scheduled, moved, and is paid on the day it was actually taught.
         """
         n = _norm(subject)
-        ann = _norm(_annotation(subject))
-        return any(n == _norm(lbl) or (bool(ann) and ann == _norm(lbl))
-                   for lbl in self.cfg.postponed_labels)
+        return (any(n == _norm(lbl) for lbl in self.cfg.postponed_labels)
+                or self._is_postponed_note(_annotation(subject)))
+
+    def _is_postponed_note(self, note: str) -> bool:
+        """Is ``note`` — an annotation, see :func:`_annotation` — one of the tenant's
+        ``POSTPONED_LABELS``? The half of :meth:`_is_postponed` that reads the suffix."""
+        ann = _norm(note)
+        return bool(ann) and any(ann == _norm(lbl) for lbl in self.cfg.postponed_labels)
+
+    def _is_status_note(self, note: str) -> bool:
+        """Is ``note`` a STATUS note on a discipline — postponed (the tenant's own labels,
+        :meth:`_is_postponed_note`), made up or cancelled (:data:`_FOOTER_STATUS_NOTE`) — rather
+        than part of its name? For the discipline LIST only (:func:`_known_disciplines`)."""
+        return (self._is_postponed_note(note)
+                or _FOOTER_STATUS_NOTE.fullmatch(" ".join(_norm(note).split())) is not None)
 
     # ── aggregation (the core read) ──────────────────────────────────────────────────
     def aggregate(self, *, include_skip: bool = False, include_free: bool = True,
@@ -1065,7 +1107,7 @@ class CoordinatorService:
         if (discipline.strip() and report is not None
                 and not any(_fuzzy_match_discipline(discipline, e.subject) for e in entries)):
             report.unmatched_discipline = discipline.strip()
-            report.known_disciplines = _known_disciplines(entries)
+            report.known_disciplines = _known_disciplines(entries, self._is_status_note)
             discipline = ""
         mspec = _resolve_month(month)
         if mspec:

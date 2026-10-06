@@ -191,6 +191,9 @@ the footer text itself: a host-side regex is a second copy of the format, and th
 already changed once (the list was joined with `", "`, and a discipline whose name carries a comma
 came back as names that are on no sheet). `docs/COORDINATOR.md` has the rule;
 `tests/unit/test_footers.py` pins the round trip.
+Each discipline appears once, by its base name: a status note the secretary appended («… - Aula
+adiada», «… - reposição do dia 22/09») is not a second discipline. A host that offers options
+from the list therefore needs no dedup of its own (`docs/COORDINATOR.md`).
 
 ## 7. What stays yours
 

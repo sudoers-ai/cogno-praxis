@@ -4,6 +4,19 @@
 
 ### Changed
 
+- **The `NO SUCH DISCIPLINE` footer lists each discipline once, by its base name.**
+  `_known_disciplines` cuts a status note from the end of a subject before it dedups. The notes
+  are a closed list: the tenant's `POSTPONED_LABELS`, read the way `_is_postponed` reads them, plus
+  «Reposição» / «reposição do dia DD/MM» and «Cancelada» / «Aula cancelada».
+  - Why: in a real trace, one discipline had three rows (the class, «… - Aula Adiada», «… -
+    reposição do dia 22/09»). The footer listed three names, and the host's «Você quis dizer:
+    A / B / C?» offered the same discipline three times.
+  - What does not change: a dash that is part of a name stays («Laboratório - Redes»). The list
+    is still sorted under the fold. The asked value and the rest of the line are unchanged, and
+    `parse_unmatched_discipline` reads the new list. Pay and free slots are unchanged
+    (`_is_postponed` was split, not changed).
+  - Tests: `tests/unit/test_known_disciplines_base_name.py` (twins red on `main` ad8df30, controls
+    green in both).
 - **The `NO SUCH DISCIPLINE` footer lists each discipline as a JSON string literal, and has a
   reader (VQD-2(a)).** `coordinator/footers.py` writes the line (`unmatched_discipline_line`) and
   reads it back (`parse_unmatched_discipline`), both exported from `cogno_praxis.coordinator`.
