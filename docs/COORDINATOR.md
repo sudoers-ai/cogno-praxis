@@ -78,6 +78,24 @@ discipline whose own name carries a comma came back as several names that are on
 plain name the asked value keeps its bytes; only the list gained its quotes.
 `tests/unit/test_footers.py`.
 
+**Each discipline is listed ONCE, by its base name (2026-10-06).** A secretary appends a status
+note to a discipline instead of replacing it, so one discipline can sit on the sheet as «Redes»,
+«Redes - Aula adiada» and «Redes - reposição do dia 22/09». The list held all three cells, and the
+host's «Você quis dizer» offered the same discipline three times. `_known_disciplines` now cuts the
+note (`service._discipline`, the last spaced dash) when the WHOLE note is a STATUS note
+(`CoordinatorService._is_status_note`), and keeps the first spelling per fold, sorted under the
+fold as before. The closed list of status notes:
+
+- the tenant's `POSTPONED_LABELS`, read by `_is_postponed_note`, the same comparison
+  `_is_postponed` makes for the pay;
+- the make-up note («Reposição», «reposição do dia 22/09») and the cancelled note («Cancelada»,
+  «Aula cancelada»), in `service._FOOTER_STATUS_NOTE`. They are used for the list only, and change
+  nothing for pay or for free slots.
+
+Any other dash is part of the name: «Laboratório - Redes» stays whole, and so does «Oficina -
+Reposição de Conteúdos». The asked value and the rest of the footer are unchanged.
+`tests/unit/test_known_disciplines_base_name.py`.
+
 ## A free slot written as a sentence that carries its label is still a free slot (2026-10-01)
 
 `FREE_SLOT_LABELS` (e.g. «Livre, Reposição») used to be compared against the WHOLE subject cell.
