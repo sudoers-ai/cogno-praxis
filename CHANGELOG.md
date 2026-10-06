@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### Added
+
+- **Templated e-mail fields (`cogno_praxis.email_fields`) and `CoordinatorService.email_context`
+  (E1).** The closed list of markers a tenant's e-mail template may use (`EMAIL_FIELDS`:
+  `[nome]`, `[email]`, `[empresa]`, `[mes]`, `[disciplinas]`, `[aulas]`, `[valor_por_aula]`,
+  `[valores_por_bonus]`, `[total]`, `[conteudo]`), the save-time validator (`validate_template`:
+  an unknown marker, a bare `[`, `[conteudo]` twice, a multi-line marker in the subject,
+  `[contrato]` before E3, `[cpf_cnpj]`, empty or oversized parts), the pure fill
+  (`fill_email_fields` → `(values, missing)`, never raises; the recipient's address always
+  required) and a one-pass render (`render_email`) with its digest (`email_digest`).
+  - Why: the owner's order of 2026-10-06 — e-mails sent on request from per-persona templates,
+    every value filled in code, the model writing only `[conteudo]`, a missing field stopping the
+    send with a question; the value given per bonus level, always per month; no CPF/CNPJ.
+  - `email_context` reads the schedule ONCE and returns the month's payable classes and the
+    `PayEstimate` of the same rows, so `[aulas]` and the pay figures cannot disagree (the listing
+    hides the month's past days; the estimate counts them). `estimate_professor_pay` now reads
+    through the same two helpers (`_named_pay_rows`, `_own_pay_rows`) — the same calls in the same
+    order; its tests are unchanged.
+  - `[valores_por_bonus]` lists «Sem bônus» and every DECLARED band (`est.tiers`), not the
+    hypotheses (empty once a result was read); a band is marked « ← apurado (IBOPE N%)» only when
+    the bonus is determined. `[total]` is stated only when it is determined, or when the rules
+    declare no band (then the base IS the total, as `FacultyPayEstimate.total_with_bonus` reads it).
+  - `[mes]` renders in Portuguese («outubro/2026»), not through `month_label`, which is English.
+  - Tests: `tests/unit/test_email_fields.py` (each refusal with its corrected twin; each `Missing`
+    with the complete control; the one-read pair M1, `len × hours × rate == base` with the
+    listing's shorter read beside it; the four bonus worlds; the owner's two template shapes
+    byte for byte, twice, one digest). Docs: README «Templated e-mail fields»,
+    `docs/COORDINATOR.md` «The e-mail context».
+
 ### Changed
 
 - **The BOOKKEEPER's factory text sends AI COST to `token_cost_analytics`, by cut, not to

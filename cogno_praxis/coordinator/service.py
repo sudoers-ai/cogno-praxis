@@ -18,10 +18,10 @@ import calendar
 import logging
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from difflib import SequenceMatcher
-from typing import Callable, Iterable, Optional
+from typing import TYPE_CHECKING, Callable, Iterable, Optional
 
 from cogno_praxis.coordinator.ics import (
     CalendarEvent,
@@ -55,6 +55,9 @@ from cogno_praxis.coordinator.types import (
     ReadReport,
     SheetReadError,
 )
+
+if TYPE_CHECKING:                                    # pragma: no cover — typing only
+    from cogno_praxis.email_fields import EmailContext
 
 _log = logging.getLogger(__name__)
 
@@ -1883,25 +1886,57 @@ class CoordinatorService:
             if not oversight:
                 raise CoordinatorAccessError(_OWN_PAY_ONLY)
             rate, hours_per_class = self._pay_config()
-            # ONE read of the schedule: the universe (to resolve the name) and the rows (the
-            # listing's own role filter, by the same folded substring) come off the same grid.
-            everything = self.aggregate(report=report)
-            group = self._resolve_professor(target, everything, report)
-            # The rows are the GROUP's, not the canonical spelling's: ``_visible`` matches a
-            # folded substring, and the short spelling of a name is not a substring of the long
-            # one, so filtering by the canonical would answer with the half of the classes that
-            # happen to be written out in full. The access check above is what ``_visible``
-            # would have contributed here, and it has already run.
-            rows = [e for e in everything if _norm(e.professor) in group.keys]
-            rows = self._filter_schedule(rows, month=period, turma=turma, include_past=True,
-                                         apply_horizon=False, report=report)
-            return self._pay_estimate(self._pay_window(rows, period), rate=rate,
+            rows, group, universe = self._named_pay_rows(target, period=period, turma=turma,
+                                                         report=report)
+            return self._pay_estimate(rows, rate=rate,
                                       hours_per_class=hours_per_class, period=period,
                                       professor=group.canonical, ibope_label=group.canonical,
                                       variants=group.variants, maybe_same=group.maybe_same,
-                                      report=report,
-                                      universe=tuple(e.professor for e in everything))
+                                      report=report, universe=universe)
         rate, hours_per_class = self._pay_config()
+        rows, universe = self._own_pay_rows(me, role=role, period=period, turma=turma,
+                                            report=report)
+        # ``professor=me`` on the RESULT too — the ownership header (2026-09-23, the owner's
+        # confirmation: «um valor sem dono é tão perigoso como um valor sem leitura»). Turns
+        # 111/112 handed a SUPERVISOR his own block under a header that did not say whose it
+        # was, and the reply called it the faculty's totals; the number was right and the
+        # reader was wrong about whom it belonged to. So every block says whose it is: the
+        # caller's own label here, the sheet's spelling on the two oversight doors.
+        return self._pay_estimate(rows, rate=rate,
+                                  hours_per_class=hours_per_class, period=period,
+                                  professor=me, ibope_label=me, report=report,
+                                  universe=universe)
+
+    def _named_pay_rows(self, target: str, *, period: str, turma: str,
+                        report: Optional[ReadReport]
+                        ) -> "tuple[list[ClassEntry], ProfessorGroup, tuple[str, ...]]":
+        """The rows ONE NAMED professor is paid for in ``period`` — the oversight door's read.
+
+        Returns ``(rows in the pay window, the resolved group, the schedule's whole cast)``. The
+        access check is the CALLER's and must already have run: this method only reads.
+        """
+        # ONE read of the schedule: the universe (to resolve the name) and the rows (the
+        # listing's own role filter, by the same folded substring) come off the same grid.
+        everything = self.aggregate(report=report)
+        group = self._resolve_professor(target, everything, report)
+        # The rows are the GROUP's, not the canonical spelling's: ``_visible`` matches a
+        # folded substring, and the short spelling of a name is not a substring of the long
+        # one, so filtering by the canonical would answer with the half of the classes that
+        # happen to be written out in full. The access check above is what ``_visible``
+        # would have contributed here, and it has already run.
+        rows = [e for e in everything if _norm(e.professor) in group.keys]
+        rows = self._filter_schedule(rows, month=period, turma=turma, include_past=True,
+                                     apply_horizon=False, report=report)
+        return self._pay_window(rows, period), group, tuple(e.professor for e in everything)
+
+    def _own_pay_rows(self, me: str, *, role: str, period: str, turma: str,
+                      report: Optional[ReadReport]
+                      ) -> "tuple[list[ClassEntry], tuple[str, ...]]":
+        """The rows the CALLER is paid for in ``period`` — the first door's read.
+
+        Returns ``(rows in the pay window, the schedule's whole cast)``; raises
+        :class:`CoordinatorAccessError` exactly where ``_visible`` refuses.
+        """
         # ``apply_horizon=False``, for the reason the calendar export already opts out: the
         # 30-day default exists so a professor READING a list does not have to scroll, and this
         # is not a list. An estimate silently cut at 30 days answers "quanto eu recebo" with
@@ -1933,16 +1968,89 @@ class CoordinatorService:
             raise CoordinatorAccessError(err)
         entries = self._filter_schedule(entries, month=period, turma=turma, include_past=True,
                                         apply_horizon=False, report=report)
-        # ``professor=me`` on the RESULT too — the ownership header (2026-09-23, the owner's
-        # confirmation: «um valor sem dono é tão perigoso como um valor sem leitura»). Turns
-        # 111/112 handed a SUPERVISOR his own block under a header that did not say whose it
-        # was, and the reply called it the faculty's totals; the number was right and the
-        # reader was wrong about whom it belonged to. So every block says whose it is: the
-        # caller's own label here, the sheet's spelling on the two oversight doors.
-        return self._pay_estimate(self._pay_window(entries, period), rate=rate,
-                                  hours_per_class=hours_per_class, period=period,
-                                  professor=me, ibope_label=me, report=report,
-                                  universe=tuple(e.professor for e in everything))
+        return self._pay_window(entries, period), tuple(e.professor for e in everything)
+
+    def email_context(self, *, professor: str = "", role: str = "", identity_label: str = "",
+                      period: str = "") -> "EmailContext":
+        """What a templated e-mail about ONE professor's month can be filled from — ONE read.
+
+        The classes (``[aulas]``/``[disciplinas]``) and the pay figures (``[valor_por_aula]``,
+        ``[valores_por_bonus]``, ``[total]``) come off the SAME rows of the SAME ``aggregate``:
+        the rows :meth:`estimate_professor_pay` would price, in the pay window (the month in
+        full, classes already given included — :meth:`_pay_window`), filtered by
+        :meth:`_payable`. Two reads could disagree, and the measured way they disagree is the
+        listing hiding the month's past days while the estimate counts them: an e-mail listing
+        three classes and paying five. So the listed classes are, by construction, the classes
+        the estimate counted — ``len(classes) × hours_per_class × rate == estimate.base``.
+
+        The doors are :meth:`estimate_professor_pay`'s, unchanged: an empty ``professor`` (or the
+        caller's own name) is the caller; another name is answered for an oversight role and
+        refused to everyone else. ``period`` must be ``YYYY-MM`` — an e-mail is always about one
+        month; anything else reads nothing and leaves the context empty, so the fill names
+        ``[mes]`` as missing.
+
+        **It raises only for a caller with no identity** (an empty ``identity_label`` is nobody —
+        the rule every door of this service keeps). Otherwise an access refusal or an unreadable
+        sheet becomes
+        :attr:`EmailContext.schedule_error`, an undeclared rate becomes
+        :attr:`EmailContext.pay_error` — the vertical's own sentence, not wrapped in another —
+        and the fill turns each into a named :class:`~cogno_praxis.email_fields.Missing`. A sheet
+        that failed to read stops every schedule-derived field: a partial read would send an
+        e-mail missing classes and say nothing (the read tools degrade to a partial answer and
+        SAY so; an e-mail cannot).
+
+        Read-only. The recipient's name and address and the tenant's name are not this
+        vertical's to know; the caller completes them with ``dataclasses.replace``.
+        """
+        from cogno_praxis.email_fields import EmailClass, EmailContext, is_email_month
+
+        me = identity_label.strip()
+        if not me:
+            # The ONE raise, and it is the house rule rather than a failed read: an empty label
+            # is nobody, and nobody is not a requester (``test_toda_porta_recusa_um_chamador_sem_
+            # identidade`` enumerates every door that takes ``identity_label``).
+            raise CoordinatorAccessError(
+                "This e-mail is about a professor's own classes, and this turn carries no "
+                "identified requester.")
+        ctx = EmailContext(month=period)
+        if not is_email_month(period):
+            return ctx
+        target = professor.strip()
+        report = ReadReport()
+        try:
+            if target == ALL_PROFESSORS:
+                raise CoordinatorError("an e-mail is about ONE professor, never every professor.")
+            named = bool(target) and _norm(target) != _norm(me)
+            if named:
+                if role.upper() not in _OVERSIGHT_ROLES:
+                    raise CoordinatorAccessError(_OWN_PAY_ONLY)
+                rows, group, universe = self._named_pay_rows(target, period=period, turma="",
+                                                             report=report)
+                whose, variants, maybe_same = group.canonical, group.variants, group.maybe_same
+            else:
+                rows, universe = self._own_pay_rows(me, role=role, period=period, turma="",
+                                                    report=report)
+                whose, variants, maybe_same = me, (), ()
+        except CoordinatorError as exc:
+            return replace(ctx, schedule_error=str(exc))
+        if report.errors:
+            unread = ", ".join(f"{e.sheet_key} ({e.message})" for e in report.errors)
+            return replace(ctx, professor=whose, schedule_error=(
+                f"{len(report.errors)} planilha(s) não puderam ser lidas ({unread}); "
+                f"um e-mail com parte das aulas não é enviado."))
+        payable = [e for e in rows if self._payable(e)]
+        classes = tuple(EmailClass(when=e.when, time=self.entry_time(e), subject=e.subject.strip(),
+                                   turma=e.sheet_key) for e in payable if e.when is not None)
+        ctx = replace(ctx, professor=whose, classes=classes)
+        try:
+            rate, hours_per_class = self._pay_config()
+        except CoordinatorError as exc:
+            return replace(ctx, pay_error=str(exc))
+        estimate = self._pay_estimate(rows, rate=rate, hours_per_class=hours_per_class,
+                                      period=period, professor=whose, ibope_label=whose,
+                                      variants=variants, maybe_same=maybe_same, report=report,
+                                      universe=universe)
+        return replace(ctx, estimate=estimate)
 
     def estimate_faculty_pay(self, *, role: str = "", identity_label: str = "",
                              period: str = "", turma: str = "",

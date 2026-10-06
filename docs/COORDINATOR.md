@@ -126,3 +126,22 @@ this way, and the footer says so («N of the open slots above are written on the
 sentence that carries the free-slot label…»). It is a count of rows ON the list — not of anything
 left out, which is why it is not a bit like the window lines — so the trace shows the rule working.
 `tests/unit/test_coordinator_free_slot_by_word.py`.
+
+## The e-mail context: the classes and the pay of one month, from ONE read (E1, 2026-10-06)
+
+`CoordinatorService.email_context(professor=…, role=…, identity_label=…, period="YYYY-MM")` is
+what a templated e-mail about one professor's month is filled from (`cogno_praxis.email_fields`,
+README «Templated e-mail fields»). It reads the schedule ONCE and returns the month's PAYABLE
+classes and the `PayEstimate` built from those same rows: the pay window (`_pay_window`, the month
+in full) filtered by `_payable`, the rows `estimate_professor_pay` prices. So the classes an e-mail
+lists are the classes it pays — `len(classes) × HOURS_PER_CLASS × rate == estimate.base` — and the
+past days of the month are in it. The listing (`get_professor_schedule`) hides them by default,
+and that is exactly the read an e-mail about a month must not use.
+
+The doors are `estimate_professor_pay`'s (the two now share `_named_pay_rows`/`_own_pay_rows`, the
+same three calls in the same order): an empty `professor` or the caller's own name is the caller,
+another name is answered for an oversight role and refused to everyone else. It raises only
+for a caller with no identity (the rule of every door); otherwise an access refusal or a sheet that failed becomes `schedule_error`, an undeclared rate `pay_error`,
+each in the vertical's own sentence — because a failed read must stop the e-mail by NAMING what
+is missing, never send one with part of the classes. Read-only.
+`tests/unit/test_email_fields.py`.

@@ -75,6 +75,39 @@ Zones: an hour travels with the tenant's `TZID` (`COGNO_COORDINATOR_TZ`, stamped
 from its own `tenant_tz`). No hour column, or no declared zone → an **all-day** event. Never a
 floating time, never raw UTC.
 
+### Templated e-mail fields (`cogno_praxis.email_fields`)
+
+A tenant writes an e-mail template — a subject and a body — with markers, and the host sends it
+when a request asks for it. This module is the **closed list of markers** and the pure code that
+fills them; the host owns the send, the confirmation and the audit. The model writes exactly one
+marker, `[conteudo]` (the free text of the request); every other value is filled in code:
+
+| marker | value |
+|---|---|
+| `[nome]`, `[email]` | the recipient's name and address, from the tenant's records (the address stops the send when empty, even if the body never quotes it) |
+| `[empresa]` | the tenant's name |
+| `[mes]` | the month of the request, `YYYY-MM` → «outubro/2026» |
+| `[aulas]`, `[disciplinas]` | the month's PAYABLE classes, one per line (`dd/mm hh:mm — discipline — class group`, never an invented hour), and their disciplines |
+| `[valor_por_aula]` | `HOURS_PER_CLASS × PAY_RATE_PER_HOUR` |
+| `[valores_por_bonus]` | «Sem bônus» and one line per DECLARED bonus band, always per month; the applied band is marked only when the bonus is determined |
+| `[total]` | only when the bonus is determined (or the rules declare no band) |
+| `[conteudo]` | the free text, at most once per template, never in the subject |
+
+`[cpf_cnpj]` was removed by the owner's decision (no personal data beyond the recipient's own
+name and address) and `[contrato]` arrives with the attachment in phase E3; a template using
+either is refused. So is any `[` that does not open a known marker — that is what catches
+`[nmoe]`.
+
+- `validate_template(subject, body)` → the refusals in words, `()` when valid.
+- `CoordinatorService.email_context(professor=…, role=…, identity_label=…, period="YYYY-MM")` →
+  the classes AND the pay estimate from ONE read of the schedule, so the classes listed are the
+  classes paid (past days of the month included). An access refusal or an unreadable sheet
+  becomes a sentence on the context; only a caller with no identity is refused by raising.
+- `fill_email_fields(fields, context)` → `(values, missing)`; a non-empty `missing` names each
+  field, its source and the reason, and the send asks instead of sending.
+- `render_email(subject, body, values)` → one-pass substitution (a marker inside a value stays
+  text); `email_digest(subject, body)` is what a proposal records and a confirmation compares.
+
 **Prompt-only personas.** Two personas ship here with **no tools of their own** — just the
 four prompt slots (`system`, `voice`, `scope`, `limits`) as package data, loaded by the host's
 `PersonaSpec`: **`closer/`** (a commercial diagnostic that runs the tenant's declared
