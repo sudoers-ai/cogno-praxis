@@ -62,8 +62,11 @@ caller's scoped read (judged BEFORE the month filter, so a discipline that exist
 is not a miss), `ReadReport.unmatched_discipline` records it, `ReadReport.known_disciplines` holds
 the subjects that read DOES contain (at most `_KNOWN_DISCIPLINES_MAX`, free slots left out, only
 what the caller may see), and the list is the upcoming classes WITHOUT the filter, under the
-default window. The tool's footer says `NO SUCH DISCIPLINE`, names the disciplines and tells the
-executor to call again with one of them. Unlike an unmatched `turma` (which returns nothing — a
+default window. The tool's text OPENS with a `NO SUCH DISCIPLINE` line (above the classes, not
+under them — 2026-10-06): it says the name matches no discipline, asks for that as the reply's
+first sentence, names the disciplines and tells the executor to call again with one of them. As a
+footer under the listing it was dropped from the reply 3 times in 5 on a real read
+(`tests/unit/test_the_miss_opens_the_listing.py`). Unlike an unmatched `turma` (which returns nothing — a
 guessed group sends a professor to the wrong room), a dropped discipline filter still answers the
 question «what are my classes?». A caller that passes no `report` keeps the empty list: an
 unfiltered list nobody marks as unfiltered would be a wrong answer.

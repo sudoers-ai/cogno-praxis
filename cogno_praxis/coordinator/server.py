@@ -88,7 +88,24 @@ UNCONFIRMED_SIMILAR_LINE = (
     "registered. Do not guess whose they are, and do not add them.)")
 
 
-def _fmt_report(report: ReadReport) -> str:
+def _fmt_head(report: Optional[ReadReport]) -> str:
+    """The line a read owes ABOVE its classes: the ``discipline`` it was asked for and could not
+    find (M6-c), or ``""``.
+
+    The only report line that is the ANSWER rather than a note about the list. It was the first
+    footer under the listing, and measured on a real read of this shape the reply listed the
+    classes and dropped the miss 3 times in 5 — the contact never learned the name matched
+    nothing. Written here, ahead of the list, it is the first thing the executor, the judge and
+    the voice read. Every other report line stays a footer, and so does the turma miss: its
+    list is EMPTY, so its "No classes found." already says it at the top."""
+    if report is None or not report.unmatched_discipline:
+        return ""
+    # One definition, written and read back in `footers` — the host's «você quis dizer»
+    # (VQD-2(a)) reads this list as a CLOSED alphabet, so every name is a JSON literal.
+    return unmatched_discipline_line(report.unmatched_discipline, report.known_disciplines)
+
+
+def _fmt_report(report: ReadReport, *, discipline: bool = True) -> str:
     """The footer lines a read owes the reader: what was HIDDEN, and what could not be READ.
 
     Both are conditional, and that is the whole design. A permanent "showing from today onward"
@@ -141,11 +158,10 @@ def _fmt_report(report: ReadReport) -> str:
             f"group. The groups are: {known}. If the request was not about a class group at all, "
             f"call again with `turma` empty — a word like \"de\" is usually a preposition, not a "
             f"group.")
-    if report.unmatched_discipline:
-        # One definition, written and read back in `footers` — the host's «você quis dizer»
-        # (VQD-2(a)) reads this list as a CLOSED alphabet, so every name is a JSON literal.
-        lines.append(unmatched_discipline_line(report.unmatched_discipline,
-                                               report.known_disciplines))
+    if discipline and report.unmatched_discipline:
+        # A caller that writes `_fmt_head` above its list passes `discipline=False`, so the
+        # line is said ONCE. Any other caller keeps it here rather than losing it.
+        lines.append(_fmt_head(report))
     if report.hidden_past:
         lines.append(
             "(This list covers today onward — this tool's default window. Earlier classes are "
@@ -375,7 +391,10 @@ def _fmt_list(entries: list[ClassEntry], *, empty: str,
                 current = key
             chunks.append(f"- {_fmt_line(e, defaults=defaults, status_column=status_column, professor=named, names=names)}")
         body = "\n".join(chunks)
-    footer = _fmt_report(report) if report else ""
+    head = _fmt_head(report)
+    if head:
+        body = f"{head}\n\n{body}"
+    footer = _fmt_report(report, discipline=False) if report else ""
     return f"{body}\n\n{footer}" if footer else body
 
 

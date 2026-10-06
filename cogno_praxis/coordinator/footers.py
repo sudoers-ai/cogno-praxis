@@ -1,7 +1,10 @@
-"""The ``NO SUCH DISCIPLINE`` footer — written here, and READ back here, in one definition.
+"""The ``NO SUCH DISCIPLINE`` line — written here, and READ back here, in one definition.
 
 ``get_professor_schedule`` drops a ``discipline`` that names nothing in the caller's schedule
-(M6-c) and says so in one footer line that also lists the disciplines the read DOES hold. Two
+(M6-c) and says so in one line that also lists the disciplines the read DOES hold. It was a
+FOOTER, under the whole listing; it now OPENS the listing (``server._fmt_list``), because the
+miss is the answer to what was asked and a reply built from the top of the text left it out
+(the module keeps its name: the other lines of the read report are still footers). Two
 readers use that line:
 
 * the EXECUTOR and the judge read it as prose, and that is why it is prose;
@@ -28,7 +31,8 @@ import json
 import re
 from typing import Optional, Sequence
 
-__all__ = ["NO_SUCH_DISCIPLINE", "unmatched_discipline_line", "parse_unmatched_discipline"]
+__all__ = ["NO_SUCH_DISCIPLINE", "SAY_THE_MISS_FIRST", "unmatched_discipline_line",
+           "parse_unmatched_discipline"]
 
 #: The marker that opens the line. Matched literally by :func:`parse_unmatched_discipline`.
 NO_SUCH_DISCIPLINE = "NO SUCH DISCIPLINE"
@@ -47,14 +51,30 @@ def _lit(text: str) -> str:
     return json.dumps(str(text), ensure_ascii=False)
 
 
+#: What the line asks of the reply, between the miss and the reason for the unfiltered list.
+#: A constant so a test can name it; the wording is the measured defect's (the voice listed the
+#: classes and never said the name matched nothing).
+SAY_THE_MISS_FIRST = (
+    "Tell the user exactly that, plainly, as the reply's FIRST sentence and before any class "
+    "— a reply that only lists the classes leaves them not knowing that the name they asked "
+    "for matched nothing.")
+
+
 def unmatched_discipline_line(asked: str, known: Sequence[str]) -> str:
-    """The footer line for a ``discipline`` that matched nothing. ``known`` in the order given."""
+    """The line for a ``discipline`` that matched nothing. ``known`` in the order given.
+
+    It OPENS the listing (``server._fmt_list`` writes it above the classes, never under them),
+    and it is worded to sit there: the miss first, as a sentence that reads as the answer, then
+    why the classes below it are unfiltered. Measured on a real read of this shape: with this
+    line as the LAST paragraph, after the whole listing, the reply listed the classes and left
+    the negative out 3 times in 5. Nothing in the wording points "above" or "below", so the
+    line stays true wherever a caller puts it."""
     names = ", ".join(_lit(k) for k in known) or NONE_IN_SCHEDULE
     return (f"{NO_SUCH_DISCIPLINE}: {_lit(asked)} does not match any discipline "
-            f"in this schedule — it may be the name of a programme or course, not of a "
-            f"discipline — so the list above is the upcoming classes WITHOUT that filter. The "
-            f"disciplines here are: {names}. If the user meant one of them, call again with "
-            f"`discipline` set to it.")
+            f"in this schedule. {SAY_THE_MISS_FIRST} It may be the name of a programme or "
+            f"course, not of a discipline, so the classes listed here are the upcoming classes "
+            f"WITHOUT that filter. The disciplines here are: {names}. If the user meant one of "
+            f"them, call again with `discipline` set to it.")
 
 
 def parse_unmatched_discipline(text: object) -> "Optional[tuple[str, tuple[str, ...]]]":

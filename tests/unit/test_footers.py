@@ -54,12 +54,29 @@ def test_gemeo_a_virgula_dentro_do_nome_partia_o_nome_em_tres():
         == (COMMA, "Bancos NoSQL")
 
 
+def _v160_line(asked: str, known: "list[str]") -> str:
+    """The rendering of praxis #160/#161 (JSON names, the line still a FOOTER), byte for byte."""
+    names = ", ".join(json.dumps(k, ensure_ascii=False) for k in known) or "(none in this schedule)"
+    return (f"{NO_SUCH_DISCIPLINE}: {json.dumps(asked, ensure_ascii=False)} does not match any "
+            f"discipline in this schedule — it may be the name of a programme or course, not of "
+            f"a discipline — so the list above is the upcoming classes WITHOUT that filter. The "
+            f"disciplines here are: {names}. If the user meant one of them, call again with "
+            f"`discipline` set to it.")
+
+
 def test_controlo_um_nome_simples_tem_os_mesmos_bytes_de_hoje_no_valor_pedido():
-    """The asked value and every plain name read as before — only the list gained its quotes."""
+    """The asked value and every plain name read as before; the line now says the miss as a
+    sentence of its own (it opens the listing — ``test_the_miss_opens_the_listing.py``)."""
     new = unmatched_discipline_line(PROGRAMA, ["Bancos NoSQL"])
-    old = _old_line(PROGRAMA, ["Bancos NoSQL"])
-    assert new == old.replace("are: Bancos NoSQL.", 'are: "Bancos NoSQL".')
-    assert f'{NO_SUCH_DISCIPLINE}: "{PROGRAMA}"' in new
+    assert new.startswith(f'{NO_SUCH_DISCIPLINE}: "{PROGRAMA}" does not match any discipline '
+                          f'in this schedule. ')
+    assert 'The disciplines here are: "Bancos NoSQL". If the user meant one of them' in new
+
+
+@pytest.mark.parametrize("known", [["Bancos NoSQL", "Spark Distribuído"], [COMMA], []])
+def test_o_leitor_ainda_le_a_forma_anterior_do_rodape(known):
+    """A trace persisted before the line moved still reads back — one reader for both."""
+    assert parse_unmatched_discipline(_v160_line(PROGRAMA, known)) == (PROGRAMA, tuple(known))
 
 
 def test_a_ferramenta_escreve_o_rodape_que_o_leitor_le():

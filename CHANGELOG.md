@@ -4,6 +4,21 @@
 
 ### Changed
 
+- **The `NO SUCH DISCIPLINE` line OPENS the listing, as the answer, instead of closing it.**
+  `server._fmt_head` writes it above the classes; `_fmt_report(…, discipline=False)` leaves it out
+  of the footers so it is said once (any other caller of `_fmt_report` still gets it there). The
+  line now says the miss as a sentence of its own, asks for it as the reply's first sentence
+  (`footers.SAY_THE_MISS_FIRST`) and no longer points "above" or "below".
+  - Why: on a real read of this shape (a discipline nobody's schedule holds, invented names in the
+    tests), the line was the last paragraph after the whole listing, worded as a note to the
+    executor. The reply listed the classes and left the negative out 3 times in 5, so the contact
+    never learned that the name matched nothing.
+  - What does not change: every read without a miss renders byte for byte as on `main` 6d46f598
+    (7 digests pinned, with a control that sees the one read that moved). The window notes stay
+    under the list. The asked value and the list keep their bytes, and
+    `parse_unmatched_discipline` reads both the new line and the old footer.
+  - Tests: `tests/unit/test_the_miss_opens_the_listing.py` (5 tests red on `main`, including the
+    position through the real anima voice prompt; 4 mutations killed).
 - **The `NO SUCH DISCIPLINE` footer lists each discipline once, by its base name.**
   `_known_disciplines` cuts a status note from the end of a subject before it dedups. The notes
   are a closed list: the tenant's `POSTPONED_LABELS`, read the way `_is_postponed` reads them, plus

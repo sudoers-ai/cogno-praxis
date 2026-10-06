@@ -190,7 +190,9 @@ repos, so it has ONE writer and ONE reader, both exported from `cogno_praxis.coo
 the footer text itself: a host-side regex is a second copy of the format, and the format has
 already changed once (the list was joined with `", "`, and a discipline whose name carries a comma
 came back as names that are on no sheet). `docs/COORDINATOR.md` has the rule;
-`tests/unit/test_footers.py` pins the round trip.
+`tests/unit/test_footers.py` pins the round trip. Since 2026-10-06 the line OPENS the listing
+instead of closing it, and its wording changed: the reader is position-free and reads both the new
+line and the old footer, which is what a host that never parses the text itself gets for free.
 Each discipline appears once, by its base name: a status note the secretary appended («… - Aula
 adiada», «… - reposição do dia 22/09») is not a second discipline. A host that offers options
 from the list therefore needs no dedup of its own (`docs/COORDINATOR.md`).
