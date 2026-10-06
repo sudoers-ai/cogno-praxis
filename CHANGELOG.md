@@ -4,6 +4,15 @@
 
 ### Changed
 
+- **The `NO SUCH DISCIPLINE` footer lists each discipline as a JSON string literal, and has a
+  reader (VQD-2(a)).** `coordinator/footers.py` writes the line (`unmatched_discipline_line`) and
+  reads it back (`parse_unmatched_discipline`), both exported from `cogno_praxis.coordinator`.
+  - Why: the host asks the contact «Não encontrei X. Você quis dizer: A / B?» with names COPIED
+    from this list, so the list is a closed alphabet. Joined with `", "`, a name with a comma of
+    its own («Ética, Política e Sociedade») came back as three names, two of them on no sheet.
+  - What changes for the executor and the judge: the names gain quotes. The asked value keeps its
+    bytes for a plain name. `tests/unit/test_footers.py` pins the round trip (commas, quotes,
+    backslashes, an empty list) and the old line, which the reader refuses.
 - **A message to the team, composed, rewritten or corrected, is IN SCOPE wherever `notify_user` is
   offered.** One line, word for word as measured, goes into the IN SCOPE part of three `scope.txt`:
   «Messages to the team: composing, rewriting or sending a message/notification to a staff member

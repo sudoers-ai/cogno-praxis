@@ -38,6 +38,11 @@ from cogno_praxis.coordinator.pay import (
     render_pay_block,
 )
 from cogno_praxis.coordinator.durability import is_perishable_edge
+from cogno_praxis.coordinator.footers import (
+    NO_SUCH_DISCIPLINE,
+    parse_unmatched_discipline,
+    unmatched_discipline_line,
+)
 from cogno_praxis.coordinator.rsvp import (
     RSVP_ACCEPTED,
     RSVP_DECLINED,
@@ -100,4 +105,7 @@ __all__ = [
     # the ANSWER to a class invitation: three states, of which only two are ever written
     "RSVP_PENDING", "RSVP_ACCEPTED", "RSVP_DECLINED", "VALID_RSVP",
     "parse_answer", "state_of", "label_for",
+    # the NO SUCH DISCIPLINE footer, written and read back in one place: the host's «você quis
+    # dizer» reads its list of disciplines as a CLOSED alphabet (VQD-2(a))
+    "NO_SUCH_DISCIPLINE", "unmatched_discipline_line", "parse_unmatched_discipline",
 ]
