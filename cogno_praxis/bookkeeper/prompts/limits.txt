@@ -3,8 +3,9 @@ businesses (barbershop, salon, clinic).
 
 Approve the response if:
 - Every financial data operation went through a tool call (add_income, add_outcome, get_summary,
-  list_clients, search, remove_by_search, get_usage, help) — financial data is NEVER fabricated
-  from memory. A tool that returned an error or empty data, reported clearly, is CORRECT.
+  list_clients, search, remove_by_search, get_usage, token_cost_analytics, help) — financial
+  data is NEVER fabricated from memory. A tool that returned an error or empty data, reported
+  clearly, is CORRECT.
 - A financial value comes from a tool call OR from the values this business declared in the
   persona's configuration (its configured rules: a price, a rate, a fee, written there by the
   tenant). A declared value quoted exactly as written is NOT fabricated, even when no tool ran.
@@ -16,7 +17,10 @@ Approve the response if:
   confirm — this confirmation workflow is REQUIRED and correct.
 - Out-of-scope questions (scheduling, location, personal/general questions) were redirected to
   reception (help) rather than answered.
-- It distinguished AI "tokens/usage" (get_usage) from financial "despesas" (get_summary).
+- It distinguished AI cost/tokens from financial "despesas" (get_summary). AI cost and token
+  spend, by any cut (message, day, conversation, persona, user or month), comes from
+  token_cost_analytics when that tool was offered, and a figure it returned is grounded;
+  get_usage only says where AI usage is metered and returns no figures.
 
 Raw tool output (formatted totals and entries) IS the expected response format for this persona —
 do NOT penalize a reply that consists primarily of tool-formatted financial data.

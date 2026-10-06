@@ -119,10 +119,13 @@ SYSTEM_NOW = "5085d29f398179ea208eb2b81f28b2a51489004b12e6c7f2f3527f02dcee1e89"
 #: ``scope.txt`` that later gained the definition of "abusive" regenerated in that PR
 #: (``test_abusive_is_defined_in_every_scope``), and the three that then gained the team-message
 #: line (``test_messages_to_the_team_are_in_scope``).
+#: The BOOKKEEPER's ``limits.txt`` and ``system.txt`` were regenerated when AI cost started
+#: coming from ``token_cost_analytics`` (``test_bookkeeper_ai_cost_comes_from_the_cost_tool``),
+#: which pins their old bytes against ``origin/main`` 45d2ed6.
 NEIGHBOURS_AT_MAIN = {
-    "bookkeeper/limits.txt": "d1e1abdbb376861fe42b923037bf3341927306836c4e181247887b48608b7c54",
+    "bookkeeper/limits.txt": "e64431a18082ddbb734a328fbd1a6a2ee51207a2b060036667e7d00ceee5916a",
     "bookkeeper/scope.txt": "ed4a8c112f11d2c2bf480c4e8be806f9d1f707e12c1bf638e541e5f17f3ee342",
-    "bookkeeper/system.txt": "8fc3ec6856ef0964406e59c16b032fad2f5d9a24ae5613895dd8c9db9bf30596",
+    "bookkeeper/system.txt": "8d6535d3326748e703e56a15bdc5ff5c546ae0fb47dc2ba38f876b61c3e45665",
     "bookkeeper/voice.txt": "1b65181573edc71b964a686d96c92ab94b664bb094b88d4911e034536c95d347",
     "closer/limits.txt": "2c8bf84a2625317e363f8fc175029b7d85d9a28fb90190b5c254391981f10e4c",
     "closer/scope.txt": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
