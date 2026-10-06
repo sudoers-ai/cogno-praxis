@@ -4,6 +4,25 @@
 
 ### Changed
 
+- **The BOOKKEEPER's factory text sends AI COST to `token_cost_analytics`, by cut, not to
+  `get_usage`.** `bookkeeper/prompts/system.txt` maps «AI cost / token spend, by message, day,
+  conversation, persona, user or month» to `token_cost_analytics(granularity?, period?)` when it
+  is among the turn's tools, and to `get_usage()` otherwise; the read-only list and the scope
+  line name it too. `bookkeeper/prompts/limits.txt` lists it among the tools a financial value
+  may come from and says a figure it returned is grounded; `get_usage` «only says where AI usage
+  is metered and returns no figures».
+  - Why: on a live rehearsal turn (invented data in the tests) a supervisor asked for the AI cost
+    per day; the executor read the host's cost tool, the total matched the ledger, and the judge
+    rejected the execution citing «AI token/usage → get_usage()». The persona had both tools and
+    the text knew only the one that returns no number.
+  - What does not change: `get_usage` stays (a deployment without the host's cost tool still has
+    it), and every other prompt of every vertical is byte for byte `main` 45d2ed6 (19 digests).
+    `test_coordinator_deadline_rules_read_the_documents.py` regenerates the two BOOKKEEPER
+    digests it pins, with the reason.
+  - Tests: `tests/unit/test_bookkeeper_ai_cost_comes_from_the_cost_tool.py` — the twin, the
+    reconstruction to main's bytes, the JUDGE prompt `SuperegoStage.evaluate` renders over the
+    old text (the claim is there) and the new one (it is gone, the cost tool is a source), and
+    the neighbour control.
 - **The `NO SUCH DISCIPLINE` line OPENS the listing, as the answer, instead of closing it.**
   `server._fmt_head` writes it above the classes; `_fmt_report(…, discipline=False)` leaves it out
   of the footers so it is said once (any other caller of `_fmt_report` still gets it there). The
