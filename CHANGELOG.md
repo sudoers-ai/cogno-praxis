@@ -4,6 +4,34 @@
 
 ### Changed
 
+- **A message to the team, composed, rewritten or corrected, is IN SCOPE wherever `notify_user` is
+  offered.** One line, word for word as measured, goes into the IN SCOPE part of three `scope.txt`:
+  «Messages to the team: composing, rewriting or sending a message/notification to a staff member
+  — including the user's corrections to a message just proposed or declined.»
+  - Where it goes: `scheduler` (a bullet at the end of `IN SCOPE (ALLOW):`), and `bookkeeper` and
+    `interviewer` (the same bullet under an `Also allow:` lead, right before the BLOCK paragraph).
+  - How they were chosen: the host's production surface puts `notify_user` on the table of the
+    SECRETARY, BOOKKEEPER, COORDINATOR and INTERVIEWER for staff.
+  - Why not the `coordinator`: it is a MEASURED prompt that already answers this request ALLOW
+    5/5, and a measured file is not changed for consistency without a measurement that asks for
+    it (Director). Its `scope.txt` is byte for byte `main`.
+  - The `closer` (no tools, guard skipped) and the `companies` contribution do not take the line
+    either.
+  - Why: on a SECRETARY turn, a staff member declined a proposed message to a colleague and asked
+    for a better one. The guard BLOCKED it 5/5, crude wording or clean, with the specific pending
+    request in the prompt (host #1145). The clean sentence on a COORDINATOR turn: ALLOW 5/5. The
+    cause was the SCOPE, not the tone. The "abusive" definition on the scheduler (#158) was
+    closed without landing because it had no effect.
+  - The table's own clause («a request that another capability offered on this turn serves is IN
+    SCOPE») did not carry «faça uma mensagem melhor» with `notify_user` on the table. The lever is
+    the DEFINITION, as in C3 (#153).
+  - Tests (`tests/unit/test_messages_to_the_team_are_in_scope.py`, prompt-only):
+    - the twin: the line is in the part that ALLOWS of each of the three;
+    - the control: without the insertion, each file is `main` 5c57490 byte for byte (digests
+      pinned, old and new);
+    - `coordinator`, `closer` and `companies` are unchanged, and the six are every scope on disk.
+  - The scope digests pinned by #153, #154 and #156's tests are regenerated or stripped before
+    measuring.
 - **`find_replacement_slot`: uma vaga escrita como FRASE que traz o rótulo conta como livre.**
   A planilha de um professor marca as vagas como «Espaço Reservado para Reposição (se
   necessário)», e o `_is_free` comparava a célula INTEIRA com `FREE_SLOT_LABELS`; a ferramenta

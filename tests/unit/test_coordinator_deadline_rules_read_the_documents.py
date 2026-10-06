@@ -117,10 +117,11 @@ SYSTEM_NOW = "5085d29f398179ea208eb2b81f28b2a51489004b12e6c7f2f3527f02dcee1e89"
 
 #: ``sha256`` of every OTHER prompt of every vertical at ``origin/main`` 6d1ca3a — the five
 #: ``scope.txt`` that later gained the definition of "abusive" regenerated in that PR
-#: (``test_abusive_is_defined_in_every_scope``).
+#: (``test_abusive_is_defined_in_every_scope``), and the three that then gained the team-message
+#: line (``test_messages_to_the_team_are_in_scope``).
 NEIGHBOURS_AT_MAIN = {
     "bookkeeper/limits.txt": "d1e1abdbb376861fe42b923037bf3341927306836c4e181247887b48608b7c54",
-    "bookkeeper/scope.txt": "038237d093ebeba38af3fc3f5c777882c59bad5b6eddb6b9bf6c89f5483db063",
+    "bookkeeper/scope.txt": "ed4a8c112f11d2c2bf480c4e8be806f9d1f707e12c1bf638e541e5f17f3ee342",
     "bookkeeper/system.txt": "8fc3ec6856ef0964406e59c16b032fad2f5d9a24ae5613895dd8c9db9bf30596",
     "bookkeeper/voice.txt": "1b65181573edc71b964a686d96c92ab94b664bb094b88d4911e034536c95d347",
     "closer/limits.txt": "2c8bf84a2625317e363f8fc175029b7d85d9a28fb90190b5c254391981f10e4c",
@@ -132,11 +133,11 @@ NEIGHBOURS_AT_MAIN = {
     "coordinator/scope.txt": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
     "coordinator/voice.txt": "21ca2bcf50fc42613687c6cb61f40ec6c0510b6384061a7c22bf8d45308b9ead",
     "interviewer/limits.txt": "02a8bc07cb85464f3ca8e0df28385329473429b0b479f92a29ec1b4dfad0f918",
-    "interviewer/scope.txt": "d80bcb9076c17f2c9cf87776cd1212316801a6f5677f64027509aeed06748b8c",
+    "interviewer/scope.txt": "b25231522c0c48c4658bbf5e1824cf9bc3fc544ecf02b0d09a2b0df1e815a921",
     "interviewer/system.txt": "640c76109c62a142f6304af1b8592b79e1c9808735a3daf067c24f3abc42be27",
     "interviewer/voice.txt": "0dfe458c1778ed53dfcb8cadbcfdc69993ecd8cc7233e7ca3dcc5de9a8b1887e",
     "scheduler/limits.txt": "92becaf1d23c56570833082fe1507e01c0afe3a52922ee8404ed671a53a6a2a4",
-    "scheduler/scope.txt": "633c8edf7cdb568137e31a6b2b64be1746231b16932b157605d43ee99f1ff7eb",
+    "scheduler/scope.txt": "b2f942c84374955d9aad03f951ce4082d4cc4d0c45638cad4d1c6b9f89b3448f",
     "scheduler/system.txt": "49d2c8ce3706642f1baeef66ea2717be061f2262ccd6fa83f132e08cd93d58b2",
     "scheduler/voice.txt": "68c17d7ea87916af677d8d03f532975de41c729b90e9e4b3587a5ddc5e68ae9b",
 }

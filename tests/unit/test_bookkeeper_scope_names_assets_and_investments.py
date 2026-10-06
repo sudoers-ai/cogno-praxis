@@ -68,6 +68,7 @@ from pathlib import Path
 import pytest
 
 from tests.unit.test_abusive_is_defined_in_every_scope import PARAGRAPH as ABUSIVE_PARAGRAPH
+from tests.unit.test_messages_to_the_team_are_in_scope import without_the_team_line
 
 #: The package the HOST reads the prompt from (``Path(cogno_praxis.__file__).parent /
 #: "bookkeeper" / "prompts"`` is its ``_bookkeeper_prompts_dir``) — the installed package, never a
@@ -97,13 +98,14 @@ BOOKKEEPER_NOW = "4f33eb5c6791691c32c7451d735a72bd4e1af2bd4d7809ba73b0ece076bf24
 LATER = (ABUSIVE_PARAGRAPH,)
 
 #: ``sha256`` of every OTHER vertical's ``scope.txt`` at ``origin/main`` 5ae6ce3 — regenerated for
-#: the four that later gained the definition of "abusive" (``test_abusive_is_defined_in_every_scope``).
+#: the four that later gained the definition of "abusive" (``test_abusive_is_defined_in_every_scope``),
+#: and for the two that then gained the team-message line (``test_messages_to_the_team_are_in_scope``).
 NEIGHBOURS_AT_MAIN = {
     "closer": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
     "companies": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
     "coordinator": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
-    "interviewer": "d80bcb9076c17f2c9cf87776cd1212316801a6f5677f64027509aeed06748b8c",
-    "scheduler": "633c8edf7cdb568137e31a6b2b64be1746231b16932b157605d43ee99f1ff7eb",
+    "interviewer": "b25231522c0c48c4658bbf5e1824cf9bc3fc544ecf02b0d09a2b0df1e815a921",
+    "scheduler": "b2f942c84374955d9aad03f951ce4082d4cc4d0c45638cad4d1c6b9f89b3448f",
 }
 
 
@@ -146,7 +148,7 @@ def test_the_sentence_sits_in_the_allow_paragraph() -> None:
 def test_the_rest_of_the_definition_is_byte_for_byte_main() -> None:
     """THE CONTROL. Take the sentence out and what is left is ``origin/main``'s file, byte for
     byte: the digest moved by the sentence and by nothing else — and the new digest is pinned."""
-    scope = _scope()
+    scope = without_the_team_line("bookkeeper", _scope())
     for later in LATER:
         assert scope.endswith(later), "a later paragraph this control strips is not where it was"
         scope = scope[: -len(later)]
