@@ -223,6 +223,19 @@ def test_there_is_exactly_one_pointer_per_slot(key):
     assert _text(*key).count(REF) == 0                     # control: main has none
 
 
+def test_the_marker_is_the_portuguese_literal():
+    """Pinned as a LITERAL, on purpose. The marker sits inside the spoken examples, which are
+    Portuguese (pt-BR, «contato»), and it is what a CONTACT reads if a model ever copies an
+    example without filling it: «Bom dia, <nome do contato>!» is a visible slip in the reader's
+    own language, «<contact name>» is a foreign string in the middle of a Portuguese greeting.
+    It is also the string a host counts in a reply, so changing it silently un-counts the leak."""
+    assert _cw().NAME_MARKER == "<nome do contato>"
+    # …and it is the same language as the examples it sits in
+    examples = [q for key in KEYS for q in _quoted(_swapped(*key)) if _cw().NAME_MARKER in q]
+    assert len(examples) == 4
+    assert all(re.search(r"\b(Bom dia|você|Prontinho|aulas)\b", q) for q in examples)
+
+
 def test_the_placeholder_names_are_the_exported_constants():
     cw = _cw()
     assert LABEL == "{" + cw.CONTACT_LABEL + "}" and REF == "{" + cw.CONTACT_REFERENCE + "}"

@@ -31,7 +31,7 @@
   - NOT measured here: what a model does with the new sentences (does the voice still greet by
     the right name; does it ever say the marker or «o contato»). That is a model measurement,
     made downstream in both wordings before any host turns it on.
-  - Tests: `tests/unit/test_contact_wording.py` (104). The 11 templates are pinned to their
+  - Tests: `tests/unit/test_contact_wording.py` (105). The 11 templates are pinned to their
     `sha256` at `origin/main` `423a755`; the occurrence table is derived by reading the files;
     each `today` is in its file exactly once; after the swap no `{identity_label}` is left and
     there is exactly one `{contact_reference}` per slot; putting each `today` back gives main's
@@ -42,6 +42,9 @@
     `PYTHONDONTWRITEBYTECODE=1`, the base re-run green at the end): 38/38 — one per sentence
     (its `by_reference` put back to `today`), fifteen on the swap and the rules, two on the
     templates themselves (one letter edited; a new sentence that names the contact).
+    A 39th survived review (the marker in another language, `<contact name>`): the literal is
+    now pinned, `NAME_MARKER == "<nome do contato>"`, with the reason beside it — it is what a
+    contact reads if an example is ever copied unfilled, and what a host counts in a reply.
 
 - **Templated e-mail fields (`cogno_praxis.email_fields`) and `CoordinatorService.email_context`
   (E1).** The closed list of markers a tenant's e-mail template may use (`EMAIL_FIELDS`:
