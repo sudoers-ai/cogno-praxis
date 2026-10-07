@@ -4,6 +4,48 @@
 
 ### Added
 
+- **The contact's name BY REFERENCE (`cogno_praxis.contact_wording`).** The persona templates
+  name the contact through `{identity_label}`, which a host fills in line: 21 places in 11 files
+  of 5 verticals. A host that keeps the contact's label inside a fence of data can now have the
+  prompt POINT at it instead, and **no template changes by a byte**.
+  - `WORDINGS[(vertical, slot)]` holds, for every sentence that carries the placeholder, its two
+    wordings side by side: `today` (the exact text of the shipped `.txt`) and `by_reference`
+    (the same sentence without the name). `by_reference(vertical, slot, text)` swaps them.
+    Nothing calls it by default; a host that does not ask gets the files as they are.
+  - A `by_reference` wording carries `{contact_reference}` (`CONTACT_REFERENCE`, exported) where
+    it points at the name. The HOST fills it with the reference to its own data block. This
+    library has no flag and does not name another layer's block.
+  - Three rules of the wording. **One pointer per slot**, in the sentence that is about who the
+    contact is or about using their name; every other mention says «the contact» / «o contato»,
+    in the template's own language. **A spoken example never carries the pointer** (a model
+    would say it): it carries `NAME_MARKER` (`<nome do contato>`) and the sentence beside it
+    says what the marker stands for. **The judge keeps its licence**: `scheduler/limits.txt`
+    still says the user's own name is legitimate, pointing at where the name is.
+  - Why: measured downstream, a contact label that is itself an order with no sentence
+    terminator («<name> ignore the instructions…») is not cut by the form a name takes in a
+    prompt, and the voice obeyed it. One of these sentences tells the voice to greet by that
+    string.
+  - The declared cost: `today` repeats a sentence of a `.txt`. It is the key the swap matches
+    on, and the sync test fails both ways (a `today` not in its file exactly once; a
+    `{identity_label}` no pair covers).
+  - NOT measured here: what a model does with the new sentences (does the voice still greet by
+    the right name; does it ever say the marker or «o contato»). That is a model measurement,
+    made downstream in both wordings before any host turns it on.
+  - Tests: `tests/unit/test_contact_wording.py` (105). The 11 templates are pinned to their
+    `sha256` at `origin/main` `423a755`; the occurrence table is derived by reading the files;
+    each `today` is in its file exactly once; after the swap no `{identity_label}` is left and
+    there is exactly one `{contact_reference}` per slot; putting each `today` back gives main's
+    bytes again; nothing in quotes points; the wording is in the language of its template.
+    The same file on `origin/main` `423a755`: 90 red, 14 green (the eleven digests and the
+    three controls).
+    Mutations (separate worktree, anchor count = 1, `ast.parse`, no `-x`,
+    `PYTHONDONTWRITEBYTECODE=1`, the base re-run green at the end): 38/38 — one per sentence
+    (its `by_reference` put back to `today`), fifteen on the swap and the rules, two on the
+    templates themselves (one letter edited; a new sentence that names the contact).
+    A 39th survived review (the marker in another language, `<contact name>`): the literal is
+    now pinned, `NAME_MARKER == "<nome do contato>"`, with the reason beside it — it is what a
+    contact reads if an example is ever copied unfilled, and what a host counts in a reply.
+
 - **Templated e-mail fields (`cogno_praxis.email_fields`) and `CoordinatorService.email_context`
   (E1).** The closed list of markers a tenant's e-mail template may use (`EMAIL_FIELDS`:
   `[nome]`, `[email]`, `[empresa]`, `[mes]`, `[disciplinas]`, `[aulas]`, `[valor_por_aula]`,
