@@ -47,6 +47,45 @@ The prompts carry host-injected placeholders kept literal in the files: `{secret
 `{{ROLE_CAPABILITIES}}` / `{{TENANT_PERSONAS}}`. The host fills them (RBAC, identity,
 departments) when it renders the persona — the vertical knows none of it.
 
+### The contact's name by reference (`cogno_praxis.contact_wording`)
+
+`{identity_label}` puts the contact's display name IN LINE, inside sentences of the persona's
+own prompt: 21 places in 11 files (every `system.txt` and `voice.txt` but the scopes, plus
+`scheduler/limits.txt`). A display name is text the contact controls. A host that already
+hands the turn's third-party data to the model inside a fence can keep the name there and
+have the prompt point at it:
+
+```python
+from cogno_praxis.contact_wording import CONTACT_REFERENCE, by_reference
+
+text = by_reference("scheduler", "voice", template_text)      # no {identity_label} left
+rendered = render(text, {CONTACT_REFERENCE: "«[CONTACT]»", "tenant_name": ..., ...})
+```
+
+- **It is opt-in and per call.** Without the call the template is the shipped file, byte for
+  byte. There is no flag in this library.
+- **`vertical` and `slot`** are the package directory and the file stem
+  (`cogno_praxis/<vertical>/prompts/<slot>.txt`). A template with no entry (every `scope.txt`)
+  comes back as the same object; so does a text none of the sentences are in.
+- **The reference is yours.** Each slot gets exactly ONE `{contact_reference}`; fill it with
+  the pointer to the block where you put the name. Fill it in the template you STORE as well:
+  it is a constant of your host, not contact data, and it is what tells the two wordings apart
+  in a prompt digest.
+- **Only swap when the name is really there.** A pointer with no entry behind it is a defect.
+  For a contact with no name, do not call `by_reference`: the shipped wording with your
+  placeholder label is the right one.
+- **Spoken examples carry a marker, never the pointer**: `NAME_MARKER` (`<nome do contato>`),
+  with a sentence saying it stands for the name. A reply that contains the marker or your
+  reference is a failure worth counting on your side; an instruction is not a guarantee.
+- **A `{identity_label}` of your own** (a fragment you compose, another template) is not in
+  this table and is not swapped. Decide what it renders to in this mode; failing closed
+  (the pointer instead of the name) is the conservative choice.
+
+What a model does with the by-reference sentences is not something this library measures.
+Measure it in both wordings before turning it on: the voice must still greet by the right name
+and never say «o contato», the marker or the reference in a greeting, and the judge must not
+start rejecting a greeting by name.
+
 ### `scope.txt` is ONE capability's scope — the host composes the persona's
 
 Each vertical ships a `scope.txt` that answers *"is this request mine?"* for **that capability

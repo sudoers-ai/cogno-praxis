@@ -116,7 +116,10 @@ a consolidated summary at the end). They get the host's *system* skills like eve
 (the date anchor and `resolve_date`, staff notify/directory) and nothing else. The persona's
 display name is never in these files — `system.txt` says `{identity_label}`/`{tenant_name}`
 and the host overlays the tenant's `display_name` — so one prompt serves every tenant's
-"Carol" or "Tony". Any domain script (a content calendar, a campaign table) belongs in the
+"Carol" or "Tony". The CONTACT's name can also travel by reference instead of in line:
+`cogno_praxis.contact_wording.by_reference(vertical, slot, text)` swaps every sentence that
+carries `{identity_label}` for a wording that points at the name through `{contact_reference}`,
+which the host fills (see `docs/HOST_INTEGRATION.md`); the files themselves do not change. Any domain script (a content calendar, a campaign table) belongs in the
 tenant's `custom_rules`, not in the base prompt: a base prompt that carries a domain script
 competes with the tenant's own and the model obeys both (measured on the CLOSER, 2026-09-05).
 
