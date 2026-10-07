@@ -36,9 +36,12 @@
     each `today` is in its file exactly once; after the swap no `{identity_label}` is left and
     there is exactly one `{contact_reference}` per slot; putting each `today` back gives main's
     bytes again; nothing in quotes points; the wording is in the language of its template.
-    The same file on `origin/main` `423a755`: P70_3_BASE.
+    The same file on `origin/main` `423a755`: 90 red, 14 green (the eleven digests and the
+    three controls).
     Mutations (separate worktree, anchor count = 1, `ast.parse`, no `-x`,
-    `PYTHONDONTWRITEBYTECODE=1`, the base re-run green at the end): P70_3_MUT.
+    `PYTHONDONTWRITEBYTECODE=1`, the base re-run green at the end): 38/38 — one per sentence
+    (its `by_reference` put back to `today`), fifteen on the swap and the rules, two on the
+    templates themselves (one letter edited; a new sentence that names the contact).
 
 - **Templated e-mail fields (`cogno_praxis.email_fields`) and `CoordinatorService.email_context`
   (E1).** The closed list of markers a tenant's e-mail template may use (`EMAIL_FIELDS`:
