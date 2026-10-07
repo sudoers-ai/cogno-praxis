@@ -80,31 +80,61 @@ floating time, never raw UTC.
 A tenant writes an e-mail template — a subject and a body — with markers, and the host sends it
 when a request asks for it. This module is the **closed list of markers** and the pure code that
 fills them; the host owns the send, the confirmation and the audit. The model writes exactly one
-marker, `[conteudo]` (the free text of the request); every other value is filled in code:
+marker, `[conteudo]` (the free text of the request); every other value is filled in code.
 
-| marker | value |
+**A template belongs to a persona, and the list has two halves.** `GENERIC_FIELDS` are the
+markers any persona's template may use — their values come from the tenant's records, the
+tenant, the request or the clock, so no persona has to read anything to fill them:
+
+| generic marker | value |
 |---|---|
 | `[nome]`, `[email]` | the recipient's name and address, from the tenant's records (the address stops the send when empty, even if the body never quotes it) |
 | `[empresa]` | the tenant's name |
 | `[mes]` | the month of the request, `YYYY-MM` → «outubro/2026» |
+| `[data]` | today in the tenant's zone, in words: «7 de outubro de 2026» |
+| `[assinatura]` | the display name of the persona that sends |
+| `[solicitante]` | the name of the person who asked for the e-mail |
+| `[conteudo]` | the free text, at most once per template, never in the subject |
+
+Every other marker is **specific to one persona** and is declared by that persona's
+`FieldProvider` in `FIELD_PROVIDERS` (by persona id). Today there is one, the `COORDINATOR`'s:
+
+| `COORDINATOR` marker | value |
+|---|---|
 | `[aulas]`, `[disciplinas]` | the month's PAYABLE classes, one per line (`dd/mm hh:mm — discipline — class group`, never an invented hour), and their disciplines |
 | `[valor_por_aula]` | `HOURS_PER_CLASS × PAY_RATE_PER_HOUR` |
 | `[valores_por_bonus]` | «Sem bônus» and one line per DECLARED bonus band, always per month; the applied band is marked only when the bonus is determined |
 | `[total]` | only when the bonus is determined (or the rules declare no band) |
-| `[conteudo]` | the free text, at most once per template, never in the subject |
+
+`EMAIL_FIELDS` is the union of the two, derived. A provider **declares** fields; it reads
+nothing, and this module imports no service — which service answers for a provider is the
+host's wiring. `provider_fields(fields)` tells the host which providers a template needs (`{}`
+for a template of generic markers alone: nothing persona-specific is read to compose it), and
+`template_needs_month(fields)` whether it needs the month at all (it says `[mes]`, or it uses a
+monthly figure) — a template that needs none must never make anybody invent one.
 
 `[cpf_cnpj]` was removed by the owner's decision (no personal data beyond the recipient's own
 name and address) and `[contrato]` arrives with the attachment in phase E3; a template using
-either is refused. So is any `[` that does not open a known marker — that is what catches
-`[nmoe]`.
+either is refused, for every persona. So is any `[` that does not open a known marker — that is
+what catches `[nmoe]`. There is no marker for the sender's mailbox: `[assinatura]` is the
+persona and `[solicitante]` the person who asked, and no marker quotes a third person's data.
 
-- `validate_template(subject, body)` → the refusals in words, `()` when valid.
+- `validate_template(subject, body, persona=…)` → the refusals in words, `()` when valid.
+  `persona=` is the persona the template is saved for: its markers are the generic ones and its
+  own provider's (`fields_for(persona)`), and a marker ANOTHER persona supplies is refused with
+  both named («[aulas] é um marcador da persona COORDINATOR (coordenação); a persona SECRETARY
+  não o tem»). The id is compared as written; a persona with no provider has the generic
+  markers. With no `persona` the validation is against every marker, as before E3 — a caller
+  that knows the persona passes it.
 - `CoordinatorService.email_context(professor=…, role=…, identity_label=…, period="YYYY-MM")` →
   the classes AND the pay estimate from ONE read of the schedule, so the classes listed are the
   classes paid (past days of the month included). An access refusal or an unreadable sheet
   becomes a sentence on the context; only a caller with no identity is refused by raising.
 - `fill_email_fields(fields, context)` → `(values, missing)`; a non-empty `missing` names each
-  field, its source and the reason, and the send asks instead of sending.
+  field, its source and the reason, and the send asks instead of sending. The generic markers
+  are filled from the host's half of `EmailContext` (`recipient_name`, `recipient_email`,
+  `tenant_name`, `month`, `conteudo`, `today`, `persona_name`, `requester_name`); a marker the
+  template does not use is never asked for.
 - `render_email(subject, body, values)` → one-pass substitution (a marker inside a value stays
   text); `email_digest(subject, body)` is what a proposal records and a confirmation compares.
 

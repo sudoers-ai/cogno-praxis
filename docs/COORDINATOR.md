@@ -145,3 +145,12 @@ for a caller with no identity (the rule of every door); otherwise an access refu
 each in the vertical's own sentence — because a failed read must stop the e-mail by NAMING what
 is missing, never send one with part of the classes. Read-only.
 `tests/unit/test_email_fields.py`.
+
+**Which markers this read answers for (E3).** The five markers filled from this context —
+`[disciplinas]`, `[aulas]`, `[valor_por_aula]`, `[valores_por_bonus]`, `[total]` — are the
+coordinator's own: `cogno_praxis.email_fields.FIELD_PROVIDERS["COORDINATOR"]` declares them, and
+a template saved for another persona that uses one is refused by `validate_template(…,
+persona=…)`. The declaration reads nothing; a host calls `email_context` only when
+`provider_fields(template_fields(…))` names `coordinator`, so a template of generic markers
+(`[nome]`, `[empresa]`, `[data]`, …) is composed without this read, in any persona.
+`tests/unit/test_email_field_providers.py`.
