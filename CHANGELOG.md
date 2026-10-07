@@ -4,6 +4,41 @@
 
 ### Added
 
+- **Generic e-mail markers and per-persona field providers (`cogno_praxis.email_fields`, E3).**
+  The marker list is no longer one constant. `GENERIC_FIELDS` are the markers ANY persona's
+  template may use (`[nome]`, `[email]`, `[empresa]`, `[mes]`, `[conteudo]`, and three new ones:
+  `[data]` — today in the tenant's zone, «7 de outubro de 2026»; `[assinatura]` — the display
+  name of the persona that sends; `[solicitante]` — the name of the person who asked).
+  `FIELD_PROVIDERS` declares, by persona id, the markers only that persona supplies: today the
+  `COORDINATOR`'s `[disciplinas]`, `[aulas]`, `[valor_por_aula]`, `[valores_por_bonus]`,
+  `[total]`. `EMAIL_FIELDS` is the union, derived; a registry in which a marker or a persona
+  appears twice is refused when it is built.
+  - Why: the owner's order of 2026-10-07 — the templates carried markers specific to the
+    COORDINATOR persona, and a template must work in any persona. Before this, a template with
+    `[aulas]` SAVED for the front desk and then asked the requester, at every send, for classes
+    no front desk reads.
+  - `validate_template(subject, body, persona=…)`: a marker another persona supplies is refused
+    with both personas named. The id is compared as written (surrounding blanks aside); a
+    persona with no provider has the generic markers. **With no `persona` the validation is
+    against every marker, exactly as before** — kept for a caller that predates E3; a caller
+    that knows the persona passes it. `[cpf_cnpj]` and `[contrato]` stay refused for every
+    persona, and no marker for the sender's mailbox was created.
+  - New: `fields_for(persona)`, `known_markers(persona)`, `provider_for(persona)`,
+    `provider_of(field)`, `provider_fields(fields)` (which providers a template needs — `{}`
+    for a template of generic markers alone), `template_needs_month(fields)` (the month is
+    needed only when the template says `[mes]` or uses a monthly figure), `date_words(day)`,
+    and three `EmailContext` fields with defaults (`today`, `persona_name`, `requester_name`).
+  - A provider DECLARES fields and reads nothing: this module imports no service, and which
+    service answers for a provider is the host's wiring.
+  - Unchanged: the fill and the render of every marker that existed — the three template shapes
+    in use render byte for byte (`tests/unit/test_email_fields.py`, untouched, and the generic
+    notice in the new file).
+  - Tests: `tests/unit/test_email_field_providers.py` (one test per marker in use before E3, in
+    the persona it was used in; the refusal with its twin in the persona that supplies the
+    marker; the removed and the unknown marker in every persona; each new marker with its named
+    `Missing` and the complete control; the near-miss spellings and persona ids; the registry's
+    refusals with the accepted control). Docs: README «Templated e-mail fields».
+
 - **The contact's name BY REFERENCE (`cogno_praxis.contact_wording`).** The persona templates
   name the contact through `{identity_label}`, which a host fills in line: 21 places in 11 files
   of 5 verticals. A host that keeps the contact's label inside a fence of data can now have the
