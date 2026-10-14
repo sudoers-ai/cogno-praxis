@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Changed — the bookkeeper CALLS the write and lets the system ask (2026-10-14)
+
+- **The double confirmation, at its prompt.** `bookkeeper/prompts/system.txt` said "present a
+  summary, ask the user to confirm, and call add_income/add_outcome ONLY after an explicit
+  affirmative", and the two tool descriptions said "Confirm the summary with the user BEFORE
+  calling this". A host that holds every write until the user agrees then asked TWICE: a prose
+  question that held nothing, then — after the "sim" — the held call. Measured on a reference
+  bench: the first turn of `record_income`/`record_outcome` held the write in 4 of 15 runs. The
+  section is now the scheduler's convention, with its header word for word: **"Confirmation is
+  the SYSTEM's job — CALL the tool, never negotiate it in prose"**, and the two descriptions say
+  "The system holds the call and asks the user to confirm."
+- **Three things the convention must not turn into a call**, written as cases BEFORE the text
+  changed (`tests/unit/test_the_bookkeeper_calls_the_write.py`): a QUESTION about an entry
+  ("quanto ficaria se eu lançasse…?", "posso lançar depois?") is answered and calls no write
+  tool; an entry with the amount or its purpose MISSING asks for that detail; a polite request
+  ("será que dá para lançar…?") may be held and is never committed — the hold is the system's.
+  The unit suite pins that the text states each rule; what a model does with it is a bench run.
+- **The presupposition, written down.** `add_income`/`add_outcome` are mutating and not
+  destructive, so this library does not hold them: the prompt presumes a host that holds every
+  write (the reference host does). A host without that gate must add its own confirmation
+  instruction — `docs/BOOKKEEPER.md`, `docs/HOST_INTEGRATION.md` §5.
+- **Not changed, on purpose.** The `remove_by_search` paragraph (its first call already runs and
+  gate C holds it; its double question has another cause). The coordinator's `confirm_swap`
+  section: a host's confirmation of a held swap names the professor and two dates but not the
+  swap, so its prose proposal is still the only place the contact reads what will change.
+
 ### Fixed — no log line carries a name, an id or somebody else's text (2026-10-14)
 
 - **The coordinator's WARNING with two professors' names is a count.** When two rows of the

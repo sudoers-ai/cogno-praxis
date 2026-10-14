@@ -25,8 +25,8 @@ opaque strings the host resolves/authorizes.
 
 | Tool | Annotation | Notes |
 |---|---|---|
-| `add_income` | mutating | Record revenue (optional client). Prompt asks for confirmation first. |
-| `add_outcome` | mutating | Record an expense. Prompt asks for confirmation first. |
+| `add_income` | mutating | Record revenue (optional client). The executor CALLS it; the host holds it and asks the user (see below). |
+| `add_outcome` | mutating | Record an expense. The executor CALLS it; the host holds it and asks the user (see below). |
 | `get_summary` | read-only | Totals + breakdown by period (day/week/month or date range). |
 | `list_clients` | read-only | Known clients with revenue totals. |
 | `search` | read-only | Keyword/date search across transactions. |
@@ -36,8 +36,14 @@ opaque strings the host resolves/authorizes.
 | `help` | read-only | Scope guardrail: what the bookkeeper does / redirect off-topic. |
 
 Mutation/destructiveness travels as MCP `ToolAnnotations` → the host EGO's read-only mask +
-confirmation gate. Recording (`add_*`) is *mutating but not destructive*: confirmation is
-**prompt-driven** (like `book_appointment`), not the core Gate-B. `remove_by_search` uses neither:
+confirmation gate. Recording (`add_*`) is *mutating but not destructive*, so this library does
+not hold it; the prompt tells the executor to CALL it (the scheduler's convention, "CALL the tool,
+never negotiate it in prose") and **presumes a host that holds every write** until the user agrees
+— the reference host does, for every mutating tool nobody exempted. Asking in prose first and
+calling only after the "sim" made such a host ask twice. A host WITHOUT that gate must add its own
+confirmation instruction: a model told to call a write nobody holds records without asking. A
+question about an entry, or an entry with a detail missing, is answered or asked about and calls
+nothing (`tests/unit/test_the_bookkeeper_calls_the_write.py`). `remove_by_search` uses neither:
 it raises **Gate-C** from inside the call, which is why it must NOT declare `destructiveHint` —
 the two gates cannot both hold, because B stops the call before C could speak.
 
