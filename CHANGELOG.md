@@ -28,6 +28,15 @@
   section: a host's confirmation of a held swap names the professor and two dates but not the
   swap, so its prose proposal is still the only place the contact reads what will change.
 
+### Fixed — the holiday calendar's line carries digests, not the tenant's configuration (2026-10-14)
+
+- `holidays_unavailable` printed `country=` and `state=` in clear — the tenant's configuration,
+  raw and unbounded (whatever was typed arrives there as "the country"). They are now
+  `country_sha` and `state_sha` (`cogno_praxis.logsafe.id_sha`; `state_sha=-` when no state is
+  configured), beside `error` (the class), as before. The `name` class of `LOGGING.md` — "the one
+  class the library does not close" — had no other key and is gone: every value a line carries is
+  now a count, a closed word, a class name or a digest.
+
 ### Fixed — no log line carries a name, an id or somebody else's text (2026-10-14)
 
 - **The coordinator's WARNING with two professors' names is a count.** When two rows of the

@@ -18,6 +18,8 @@ import logging
 from datetime import date, datetime, time, timedelta
 from typing import Iterable, Optional
 
+from cogno_praxis.logsafe import id_sha
+
 log = logging.getLogger(__name__)
 
 
@@ -212,8 +214,11 @@ def _load_holiday_set(country: Optional[str], state: Optional[str]) -> dict[date
         hols = hol_lib.country_holidays(country, years=[year, year + 1], **kwargs)
         return {d: name for d, name in hols.items()}
     except Exception as exc:  # unsupported country/state, etc.
-        log.warning("stage=scheduler event=holidays_unavailable country=%s state=%s error=%s "
-                    "— holiday filtering is off", country, state or "-", type(exc).__name__)
+        # Digests, never the codes: they are the tenant's configuration, unbounded and raw — a
+        # typo, a pasted sentence, an address all arrive here as "the country".
+        log.warning("stage=scheduler event=holidays_unavailable country_sha=%s state_sha=%s "
+                    "error=%s — holiday filtering is off", id_sha(country), id_sha(state) or "-",
+                    type(exc).__name__)
         return {}
 
 

@@ -235,12 +235,15 @@ def test_a_holiday_calendar_that_fails_logs_the_class_of_the_error(log, monkeypa
         raise NotImplementedError(f"no calendar for {args} {SENTINEL}")
 
     monkeypatch.setattr(holidays, "country_holidays", boom)
-    assert engine._load_holiday_set("BR", "SP") == {}
-    assert engine._load_holiday_set("BR", None) == {}
-    log.clean(SENTINEL, "no calendar")
+    # what a tenant's configuration can be: anything — here a sentence with a street in it
+    country, state = f"Brasil, {SENTINEL} 12", f"Rua {SENTINEL}, 7"
+    assert engine._load_holiday_set(country, state) == {}
+    assert engine._load_holiday_set(country, None) == {}
+    log.clean(SENTINEL, "no calendar", "Brasil", "Rua")
     assert log.of("holidays_unavailable") == [
-        f"stage=scheduler event=holidays_unavailable country=BR state={state} "
-        "error=NotImplementedError — holiday filtering is off" for state in ("SP", "-")]
+        f"stage=scheduler event=holidays_unavailable country_sha={sha(country)} "
+        f"state_sha={state_sha} error=NotImplementedError — holiday filtering is off"
+        for state_sha in (sha(state), "-")]
 
 
 def test_an_index_that_cannot_be_built_logs_the_sqlstate_and_the_class(log):
