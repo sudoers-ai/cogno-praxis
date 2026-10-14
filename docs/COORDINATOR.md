@@ -137,8 +137,10 @@ professor?» about their own class. `professor` now defaults to `""` and the des
 is the caller; `original_date` and `new_date` stay required (keyword-only, so `professor` keeps
 its place as the first property). `tests/unit/test_confirm_swap_professor_is_optional.py`.
 
-Not changed here, and worth knowing: for an OVERSIGHT caller an empty `professor` means the whole
-master schedule, and the swap takes the FIRST class found on `original_date`, whoever teaches it.
+For the COORDINATION an empty `professor` is refused, recoverably («Which professor's class?
+Nothing was swapped…»): an oversight caller (`_OVERSIGHT_ROLES`, the predicate `_visible` reads)
+sees the whole master schedule, and the swap used to take the FIRST class found on
+`original_date`, whoever taught it. Naming the professor swaps that class, as before.
 
 ## The e-mail context: the classes and the pay of one month, from ONE read (E1, 2026-10-06)
 
