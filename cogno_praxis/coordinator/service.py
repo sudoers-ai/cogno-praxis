@@ -2537,6 +2537,15 @@ class CoordinatorService:
                                  identity_label=identity_label)
         if err:
             raise CoordinatorAccessError(err)
+        # An EMPTY professor is the caller's own class — for a caller pinned to their own name.
+        # For the coordination (the same predicate `_visible` reads) it is the whole master
+        # schedule, and `src_matches[0]` below would move whichever class comes first on that
+        # date, whoever teaches it. So the coordination must name the professor.
+        if role.upper() in _OVERSIGHT_ROLES and not professor.strip():
+            raise CoordinatorError(
+                f"Which professor's class? Nothing was swapped: you see every professor's classes, "
+                f"so a swap with no professor cannot tell whose class on {original_date} to move. "
+                f"ASK the user whose class it is, then call again with professor set.")
         src_matches = [e for e in vis if _date_matches(e.when, e.date_str, original_date)]
         if not src_matches:
             raise CoordinatorError(f"No class found for that professor on {original_date}.")

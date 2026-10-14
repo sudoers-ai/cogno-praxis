@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Fixed — `confirm_swap`'s `professor` is optional: empty is the caller (2026-10-14)
+
+- **The schema said what the service does not.** `professor: str` had no default, so the published
+  schema listed it in `required`; the service has always accepted `""` and pinned it to the
+  caller's own classes (`CoordinatorService._visible`). A host that reads `required` to decide
+  whether a held write is a complete proposal asked a professor «which professor?» about their own
+  class. Now `professor: str = ""`, the description says empty is the caller, and the two dates stay
+  required (keyword-only, so the property order does not move).
+- `tests/unit/test_confirm_swap_professor_is_optional.py` pins the schema, the control (the dates
+  stay required) and the swap through the tool with no `professor` (the caller's class moves, a
+  colleague's on the same date does not). No prompt moved.
+- **The coordination must name the professor.** For an oversight caller (`_OVERSIGHT_ROLES`, the
+  predicate the read scoping already uses) an empty `professor` is the whole master schedule, and
+  the swap took the FIRST class on that date, whoever taught it. That call is now refused,
+  recoverably («Which professor's class? Nothing was swapped… ASK the user whose class it is»);
+  nothing moves. With the professor named the swap happens as before; a professor with none still
+  moves their own class (`docs/COORDINATOR.md`).
+
 ### Changed — the bookkeeper CALLS the write and lets the system ask (2026-10-14)
 
 - **The double confirmation, at its prompt.** `bookkeeper/prompts/system.txt` said "present a
