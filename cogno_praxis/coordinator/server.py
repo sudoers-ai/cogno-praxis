@@ -876,11 +876,12 @@ def build_server(service: Optional[CoordinatorService] = None, *,
                 + (f"\n\n{detail}" if detail else ""))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
-    def confirm_swap(professor: str, original_date: str, new_date: str, reason: str = "",
-                     identity_label: str = "", role: str = "") -> str:
+    def confirm_swap(professor: str = "", *, original_date: str, new_date: str,
+                     reason: str = "", identity_label: str = "", role: str = "") -> str:
         """Move a professor's class (on ``original_date``) into a free slot (on ``new_date``):
         swaps the content columns, leaving dates fixed. Destructive — confirm with the user
-        BEFORE calling. Both dates are DD/MM/YYYY."""
+        BEFORE calling. Both dates are DD/MM/YYYY. Leave ``professor`` empty for the caller's
+        OWN class: the system resolves it to the caller, as the schedule reads do."""
         # NOT ``_guard``, and that is the whole point of this call site. ``_guard`` RETURNS a
         # sentence, which is right for the six READ tools above it — a read is stamped
         # ``side_effect=False`` whatever it answers. This tool is MUTATING, so a returned

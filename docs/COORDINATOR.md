@@ -127,6 +127,19 @@ sentence that carries the free-slot label…»). It is a count of rows ON the li
 left out, which is why it is not a bit like the window lines — so the trace shows the rule working.
 `tests/unit/test_coordinator_free_slot_by_word.py`.
 
+## `confirm_swap`: an empty `professor` is the caller (2026-10-14)
+
+The service has always read `professor=""` as the caller's own classes for anyone who is not the
+coordination (`CoordinatorService._visible`), like the schedule reads. The signature did not say
+so: `professor: str` had no default, so the published schema put it in `required`. A host that
+decides from `required` whether a held write is a complete proposal would ask a professor «which
+professor?» about their own class. `professor` now defaults to `""` and the description says empty
+is the caller; `original_date` and `new_date` stay required (keyword-only, so `professor` keeps
+its place as the first property). `tests/unit/test_confirm_swap_professor_is_optional.py`.
+
+Not changed here, and worth knowing: for an OVERSIGHT caller an empty `professor` means the whole
+master schedule, and the swap takes the FIRST class found on `original_date`, whoever teaches it.
+
 ## The e-mail context: the classes and the pay of one month, from ONE read (E1, 2026-10-06)
 
 `CoordinatorService.email_context(professor=…, role=…, identity_label=…, period="YYYY-MM")` is
