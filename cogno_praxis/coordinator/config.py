@@ -71,6 +71,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from cogno_praxis.coordinator.pay import BonusTier, parse_bonus_tiers, parse_money
+from cogno_praxis.logsafe import id_sha
 
 _log = logging.getLogger(__name__)
 
@@ -330,13 +331,18 @@ class CoordinatorConfig:
             key = re.sub(r"\s+", " ", pair.group("key").strip())
             value = pair.group("value")
             if not re.fullmatch(_ID_TOKEN, value):
-                _log.warning("coordinator: SPREADSHEETS entry %r does not look like a spreadsheet "
-                             "id (%d chars) — skipped", key, len(value))
+                # The digest of the KEY (the tenant's own name for the sheet) and the LENGTH
+                # of the value: an operator holding the key finds the line, and neither the
+                # name nor the id is in it.
+                _log.warning("stage=coordinator event=spreadsheet_entry_skipped "
+                             "reason=not_an_id sheet_sha=%s value_len=%d", id_sha(key),
+                             len(value))
                 continue
             out[key] = value
         if not out:
-            _log.warning("coordinator: a SPREADSHEETS: header was declared but no usable "
-                         "'KEY = ID' line followed it — no spreadsheet is configured")
+            _log.warning("stage=coordinator event=spreadsheets_header_without_entries — a "
+                         "SPREADSHEETS: header was declared but no usable 'KEY = ID' line "
+                         "followed it; no spreadsheet is configured")
         return out
 
     @property
@@ -412,8 +418,8 @@ _PROSE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         r"(?i)respondid[oa]\s+por\s+(?:pelo\s+menos|no\s+m[íi]nimo|ao\s+menos)?\s*"
         r"\d+(?:[.,]\d+)?\s*%")),
 )
-#: How much of a matched sentence travels into the message and the log. The patterns already
-#: bound it; this is the belt to their braces.
+#: How much of a matched sentence travels into the refusal message. The patterns already
+#: bound it; this is the belt to their braces. (The log carries the keys and a count.)
 _EXCERPT_MAX = 60
 
 
@@ -458,10 +464,14 @@ def _warn_prose_once(hints: tuple[ProseHint, ...]) -> None:
     if not hints or hints in _PROSE_WARNED:
         return
     _PROSE_WARNED.add(hints)
-    _log.warning("coordinator: the persona rules describe pay figures in PROSE that this config "
-                 "does not read — %s. Only 'KEY: value' lines are read; the estimate refuses "
-                 "and names these until they are declared that way.",
-                 "; ".join(h.sentence() for h in hints))
+    # WHICH keys were found in prose and HOW MANY sentences, never the sentences: they are
+    # the tenant's own text, pay figures included. The refusal the estimate answers with
+    # (`pay_refusal`) quotes them, to the person who wrote them.
+    _log.warning("stage=coordinator event=pay_figures_in_prose keys=%s excerpts=%d — the "
+                 "persona rules describe pay figures in PROSE that this config does not read. "
+                 "Only 'KEY: value' lines are read; the estimate refuses and names them until "
+                 "they are declared that way.",
+                 ",".join(h.key for h in hints), sum(len(h.excerpts) for h in hints))
 
 
 def pay_refusal(missing: tuple[str, ...], prose: tuple[ProseHint, ...]) -> str:

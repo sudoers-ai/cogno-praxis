@@ -89,7 +89,7 @@ class SmtpCalendarSender:
         result = await send(self._smtp, [to], subject, body, ics, filename)
         ok = bool(result.get("sent")) if isinstance(result, dict) else bool(result)
         if not ok:
-            _log.warning("coordinator: the calendar mail was not accepted by the server")
+            _log.warning("stage=coordinator event=calendar_mail_not_accepted")
         return ok
 
 
@@ -137,7 +137,8 @@ def sender_for_tenant(tenant_config: "Optional[dict]", *,
     try:
         from cogno_herald import resolve_smtp_config
     except Exception:                          # noqa: BLE001 — optional extra, absent is normal
-        _log.info("coordinator: cogno-herald is not installed — no calendar mail is configured")
+        _log.info("stage=coordinator event=herald_not_installed — no calendar mail is "
+                  "configured")
         return None
     # Reached only with a declaration in hand, and herald returns its TENANT branch on exactly
     # this predicate — so the ``SMTP_*`` branch below it is unreachable from here, by
@@ -175,9 +176,11 @@ def _tenant_smtp_from_env() -> "Optional[dict]":
     try:
         parsed = json.loads(raw)
     except Exception:                          # noqa: BLE001 — a typo must not kill the server
-        _log.warning("coordinator: %s is not valid JSON — ignored", TENANT_SMTP_ENV)
+        _log.warning("stage=coordinator event=smtp_env_ignored reason=not_json var=%s",
+                     TENANT_SMTP_ENV)
         return None
     if not isinstance(parsed, dict):
-        _log.warning("coordinator: %s is not a JSON object — ignored", TENANT_SMTP_ENV)
+        _log.warning("stage=coordinator event=smtp_env_ignored reason=not_an_object var=%s",
+                     TENANT_SMTP_ENV)
         return None
     return {"schedule_config": {"smtp": parsed}}

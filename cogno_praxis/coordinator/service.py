@@ -47,6 +47,7 @@ from cogno_praxis.coordinator.rsvp import (
     state_of,
 )
 from cogno_praxis.coordinator.store import SpreadsheetStore
+from cogno_praxis.logsafe import id_sha
 from cogno_praxis.coordinator.types import (
     ClassEntry,
     ColumnLayout,
@@ -635,11 +636,32 @@ def _read_error(sheet_key: str, sheet_id: str, exc: BaseException) -> SheetReadE
     """One failed spreadsheet read, described TERSELY. The message reaches the model and from
     there the contact, so it carries the status and nothing else: the raw exception text of an
     HTTP client embeds the request URL (and with it the spreadsheet id) into what a person ends
-    up reading. The operator still gets the full exception, on the log."""
+    up reading. The log line says the same two things and no more (:func:`_log_unreadable`)."""
     response = getattr(exc, "response", None)
     status = getattr(response, "status_code", None)
     return SheetReadError(sheet_key=sheet_key, sheet_id=sheet_id,
                           message=f"HTTP {status}" if status else type(exc).__name__)
+
+
+def _http_status(exc: BaseException) -> int:
+    """The HTTP status an adapter's exception carries, as a NUMBER for the log — ``0`` when it
+    carries none, or carries something that is not an integer."""
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    return status if isinstance(status, int) and not isinstance(status, bool) else 0
+
+
+def _log_unreadable(tab: str, sheet_key: str, exc: BaseException) -> None:
+    """One WARNING for a tab that could not be read — which tab, which sheet, what kind of
+    failure.
+
+    ``tab`` is one of four words of this module (``schedule``, ``hours``, ``ibope``,
+    ``professors``), never the name the tenant gave the tab. The sheet is the digest of its
+    KEY: lines about the same sheet match, an operator holding the key can find them, and the
+    spreadsheet's id — which opens the document — is not on the line. The failure is the class
+    of the exception and its HTTP status: an HTTP client's message embeds the request URL, and
+    with it that id."""
+    _log.warning("stage=coordinator event=sheet_unreadable tab=%s sheet_sha=%s error=%s "
+                 "status=%d", tab, id_sha(sheet_key), type(exc).__name__, _http_status(exc))
 
 
 def _parse_date(raw: str) -> Optional[date]:
@@ -944,8 +966,7 @@ class CoordinatorService:
             try:
                 rows = self.store.read_range(sid, self.cfg.tab_schedule, self.cfg.range_schedule)
             except Exception as exc:                   # noqa: BLE001 — the store is a PORT: any
-                _log.warning("coordinator: spreadsheet %r (%s) could not be read: %r",
-                             key, sid, exc)            # adapter may raise anything at all
+                _log_unreadable("schedule", key, exc)  # adapter may raise anything at all
                 if report is not None:
                     report.errors.append(_read_error(key, sid, exc))
                 continue
@@ -1293,8 +1314,7 @@ class CoordinatorService:
         try:
             rows = self.store.read_range(sheet_id, self.cfg.tab_hours, self.cfg.range_hours)
         except Exception as exc:                       # noqa: BLE001 — the store is a PORT
-            _log.warning("coordinator: hours tab of %r (%s) could not be read: %r",
-                         sheet_key, sheet_id, exc)
+            _log_unreadable("hours", sheet_key, exc)
             if report is not None:
                 report.errors.append(_read_error(sheet_key, sheet_id, exc))
             return None
@@ -1309,20 +1329,23 @@ class CoordinatorService:
             # Declared in the rules, absent on the sheet: CONTEXT the tenant cannot have, and
             # nothing else. Logged so an operator can see the name does not match; never raised,
             # never reported as a read error — the estimate does not depend on this column.
-            _log.warning("coordinator: hours tab %r of %r has no %r/%r column — the workload "
-                         "context is skipped, the estimate is unaffected",
-                         self.cfg.tab_hours, sheet_key, self.cfg.column_hours,
-                         self.cfg.column_subject)
+            # WHICH of the two columns is missing, never what the tenant named it or the tab.
+            _log.warning("stage=coordinator event=hours_columns_missing sheet_sha=%s "
+                         "missing=%s — the workload context is skipped, the estimate is "
+                         "unaffected", id_sha(sheet_key),
+                         ",".join(name for name, idx in (("hours", h_idx), ("subject", s_idx))
+                                  if idx is None))
             return None
         out: dict[str, float] = {}
-        for row in rows[1:]:
+        for number, row in enumerate(rows[1:], start=2):
             subject = self._cell(row, s_idx)
             hours = parse_money(self._cell(row, h_idx))
             if subject and hours is not None and hours > 0:
                 out.setdefault(_norm(subject), hours)
             elif subject:
-                _log.debug("coordinator: %r on %r carries no readable hour total", subject,
-                           sheet_key)
+                # The ROW of the tab, not the discipline written on it.
+                _log.debug("stage=coordinator event=hours_unreadable sheet_sha=%s row=%d",
+                           id_sha(sheet_key), number)
         return out
 
     def _ibope_result(self, *, identity_label: str, report: Optional[ReadReport],
@@ -1361,8 +1384,7 @@ class CoordinatorService:
             try:
                 rows = self.store.read_range(sid, tab, self.cfg.range_ibope)
             except Exception as exc:                   # noqa: BLE001 — the store is a PORT
-                _log.warning("coordinator: IBOPE tab of %r (%s) could not be read: %r",
-                             key, sid, exc)
+                _log_unreadable("ibope", key, exc)
                 if report is not None:
                     report.errors.append(_read_error(key, sid, exc))
                 continue
@@ -1558,8 +1580,8 @@ class CoordinatorService:
 
         A shared address that the names do not corroborate joins NOTHING and is said out loud
         instead — both rows keep their block and each names the other
-        (:attr:`ProfessorGroup.maybe_same`), and the refusal is logged with the two spellings
-        and never the address. Measured on the tenant this was written for: 16 spellings, 15
+        (:attr:`ProfessorGroup.maybe_same`), and the refusal is logged as a COUNT of pairs:
+        no spelling and no address. Measured on the tenant this was written for: 16 spellings, 15
         people, ONE join (same first name, one name contained in the other), ZERO refusals.
         This branch changes no figure today; it is a condition for the day the tab says
         something else, which is the only day it could cost anybody anything.
@@ -1595,14 +1617,17 @@ class CoordinatorService:
                     continue
                 ta, tb = _name_tokens(a), _name_tokens(b)
                 if not (_is_abbreviation_of(ta, tb) or _is_abbreviation_of(tb, ta)):
-                    _log.warning("coordinator: %r and %r share an e-mail address, but neither "
-                                 "name is the other written out — NOT joined; check the "
-                                 "professors tab", a, b)
                     unsettled.append((a, b))
                     continue
                 ra, rb = root(a), root(b)
                 if ra != rb:
                     parent[rb] = ra
+        if unsettled:
+            # HOW MANY pairs, never who: the two names are two people's names. The pairs are
+            # not lost — each block the caller renders names the other (`unsettled`, below).
+            _log.warning("stage=coordinator event=faculty_names_not_joined pairs=%d — they "
+                         "share an e-mail address and neither name is the other written out; "
+                         "check the professors tab", len(unsettled))
         grouped: dict[str, list[str]] = {}
         for name in names:
             grouped.setdefault(root(name), []).append(name)
@@ -2194,8 +2219,8 @@ class CoordinatorService:
                 rows = self.store.read_range(sid, self.cfg.tab_professors,
                                              self.cfg.range_professors)
             except Exception as exc:                   # noqa: BLE001 — same port contract as
-                _log.warning("coordinator: professors tab of %r (%s) could not be read: %r",
-                             key, sid, exc)            # aggregate(): one sheet, not the request
+                _log_unreadable("professors", key, exc)  # aggregate(): one sheet, not the
+                #                                          request
                 if report is not None:
                     report.errors.append(_read_error(key, sid, exc))
                 continue
