@@ -139,10 +139,17 @@ in-memory. For production inject a real adapter (Postgres/Redis/your DB) impleme
 the Protocol — the server logic is unchanged. Appointments are structured domain data;
 keep them out of `cogno-engram` (which is conversation/episodic memory).
 
-**Where the DB connection lives.** The only seam is `build_server(service)`. The
-module-level `cogno_praxis.scheduler.server:mcp` is an in-memory **demo**; for real data
-the host writes a tiny entrypoint that builds the service over its adapter and runs it
-(see `examples/run_with_db.py`):
+**Where the DB connection lives.** There are two ways in, and both end in
+`build_server(service)`:
+
+- **The shipped entry point reads the environment.** `python -m cogno_praxis.scheduler.server`
+  builds its service in `_seeded_service()`: with `COGNO_SCHEDULER_DSN` set it persists in
+  Postgres (`PgAppointmentStore`, scoped by `COGNO_SCHEDULER_SCOPE`); without it, it is the
+  in-memory demo with three demo professionals. The scheduler has NO module-level `mcp`: the
+  server is built only under `__main__`, because building it on import opened two connections
+  per subprocess. §8 lists every variable.
+- **Or the host writes its own entry point** that builds the service over its adapter and runs
+  it (see `examples/run_with_db.py`):
 
 ```python
 store = MyPostgresAppointmentStore(dsn=os.environ["SCHEDULER_DSN"])  # connection born here
@@ -172,7 +179,7 @@ Each tool's `annotations` drive the EGO via cogno-mcp:
 
 Mirror `scheduler/`: `store.py` (types + a store Protocol + in-memory default),
 `service.py` (pure domain logic), `server.py` (`build_server(service)` → FastMCP with
-annotated tools + a seeded module-level demo `mcp` for stdio), `prompts/` (the bundled
+annotated tools + a `python -m` entry that builds the service from the environment), `prompts/` (the bundled
 default persona slots). Keep domain logic in `service.py` (testable without MCP); keep
 `server.py` thin.
 
@@ -241,3 +248,36 @@ from the list therefore needs no dedup of its own (`docs/COORDINATOR.md`).
 Real domain data + adapters, RBAC (which identity may reach which vertical), persona
 selection, metering, the deploy topology (how/where servers run), auth between host
 and server. cogno-praxis is the domain server; you bring the data and the orchestration.
+
+## 8. The environment each server reads
+
+A vertical run as `python -m cogno_praxis.<vertical>.server` is configured through the
+environment of that process — which, over stdio, is the environment the host gives the child it
+spawns. Nothing here is read by the library when a host calls `build_server(service)` with a
+service of its own, except the three marked *at call time*.
+
+| variable | read by | default | what |
+| --- | --- | --- | --- |
+| `COGNO_SCHEDULER_DSN` | scheduler | unset = in-memory store | Postgres for appointments and the professionals catalogue |
+| `COGNO_SCHEDULER_SCOPE` | scheduler | `default` | the scope of that store — the tenant |
+| `COGNO_SCHEDULER_HOSTS` | scheduler | unset = the three demo professionals | the bookable professionals, as JSON `[{host_id, name, role, auto_confirm?}]`. Set — even to `[]` — it is AUTHORITATIVE: with a DSN the persisted catalogue is reconciled to it, except that an empty list never deletes the professionals already there (`event=sync_hosts_empty_refused`) |
+| `COGNO_SCHEDULER_CONFIG` | scheduler | unset = the default rules | the schedule configuration as JSON (hours, lunch, weekends, slot) |
+| `COGNO_SCHEDULER_COUNTRY` / `COGNO_SCHEDULER_STATE` | scheduler | unset = no holiday calendar | the location the holiday calendar is loaded for (needs the `holidays` extra) |
+| `COGNO_SCHEDULER_TODAY` | scheduler | unset = the real date | a fixed ISO date, so the child agrees with the day the host anchored in the prompt |
+| `COGNO_SCHEDULER_LANG` | scheduler, *at call time* | `pt` | the language a date is spoken in (`resolve_date`, the listings) |
+| `COGNO_SCHEDULER_SEED` | scheduler | unset | a JSON list of appointments to pre-load, with explicit ids — for a deterministic harness, never production |
+| `COGNO_BOOKKEEPER_DSN` | bookkeeper | falls back to `COGNO_PG_DSN`; neither = in-memory | Postgres for the ledger |
+| `COGNO_BOOKKEEPER_SCOPE` | bookkeeper | `default` | the scope of that store |
+| `COGNO_BOOKKEEPER_TODAY` | bookkeeper | unset = the real date | a fixed ISO date |
+| `COGNO_COMPANY_DSN` | companies | falls back to `COGNO_PG_DSN`; neither = in-memory | Postgres for the companies AND for the removal confirmations, which must follow the same store |
+| `COGNO_COMPANY_SCOPE` | companies | `default` | the scope of that store |
+| `COGNO_COORDINATOR_RULES` | coordinator | empty | the persona's rules, parsed as the coordinator's configuration (`KEY: value` lines) |
+| `COGNO_COORDINATOR_GOOGLE_TOKEN` | coordinator | unset = an empty in-memory spreadsheet store | a Google OAuth access token; with it the store is the Google Sheets adapter. The host mints and refreshes it and injects it per turn |
+| `COGNO_COORDINATOR_TODAY` | coordinator | unset = the real date | a fixed ISO date |
+| `COGNO_COORDINATOR_TZ` | coordinator | empty = all-day events | the zone an hour travels with in the calendar export |
+| `COGNO_COORDINATOR_SMTP` | coordinator, *at call time* | unset = no sender | ONE tenant's mailbox for the calendar export, as a JSON object; invalid JSON is ignored with a WARNING and the tool refuses |
+| `COGNO_RENDER_CHANNEL` | `cogno_praxis.render`, *at call time* | unset = WhatsApp | which channel's bold delimiter a listing uses when the caller names none; an unrecognised name falls to plain text |
+| `COGNO_PG_DSN` | bookkeeper, companies | — | the shared DSN the two fall back to |
+
+The integration tests read two more, never the library: `COGNO_TEST_PG_DSN` and the libpq
+variables (`PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`) — see the README, «Development».

@@ -32,6 +32,7 @@ opaque strings the host resolves/authorizes.
 | `search` | read-only | Keyword/date search across transactions. |
 | `remove_by_search` | mutating, **asks by itself** | **Two calls.** The first READS and answers with the exact entry it would remove (date, description, amount, id) plus the siblings the same query matched — nothing is deleted, and the reply carries the gate-C flag so the EGO holds the turn there. The second, carrying `confirm_tx_id`, deletes that one row. It carries **no `destructiveHint`**: Gate-B would hold it by name *before* it ran, and the grounded question would never be asked. |
 | `get_usage` | read-only | AI token/usage — **delegated to the host's metering** (see decision #4). It returns no figure, only where usage is metered. AI COST by cut (message, day, conversation, persona, user, month) is the host's `token_cost_analytics`: the persona text (`prompts/system.txt`, `prompts/limits.txt`) sends cost there whenever it is among the turn's tools, and the judge counts its figures as grounded; `get_usage` is the fallback when it is not offered. |
+| `math` | read-only | Exact arithmetic over numbers the user gave (`+ - * / **` and parentheses; decimals with `.`): a readjustment, a markup, a split. It does NOT read the books — totals and balances come from `get_summary`/`search`. A malformed expression answers `ERROR: …` with what to send instead. |
 | `help` | read-only | Scope guardrail: what the bookkeeper does / redirect off-topic. |
 
 Mutation/destructiveness travels as MCP `ToolAnnotations` → the host EGO's read-only mask +

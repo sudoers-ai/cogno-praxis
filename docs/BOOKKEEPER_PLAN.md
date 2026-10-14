@@ -1,5 +1,11 @@
 # Port plan — BOOKKEEPER persona → functional (the `bookkeeper` vertical)
 
+> **Status: HISTORICAL.** This is the plan as it was approved, kept as a record. Phase 1 is
+> built — `cogno_praxis/bookkeeper/`, described as it is in [`BOOKKEEPER.md`](BOOKKEEPER.md).
+> The files named under phases 2 and 3 belong to other repositories (the host and the cognitive
+> benchmark) and are not in this one, and the vertical registers nine tools today, not eight
+> (`math` came later).
+
 Approved plan. Ports the parent SaaS `cogno/mcp/modules/bookkeeper/` (ANALYST persona) into a
 cogno-praxis vertical, mirroring `scheduler`. Decisions locked: **no session pool** (DB-backed,
 per-turn is enough), **prompt-driven confirmation** for `add_*` (not core Gate-B), **shared
