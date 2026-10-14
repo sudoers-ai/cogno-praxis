@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Docs
+
+- **Docs sweep: every sentence checked against the code (docs only, 2026-10-14).** No code,
+  test or prompt changes.
+  - **False sentences corrected.** `LOGGING.md` said every line the library emits comes from
+    the scheduler's Postgres store, that there is one DEBUG line and no INFO, and that no
+    domain data is logged: the coordinator logs too (12 WARNINGs, 1 INFO, 1 DEBUG across
+    `config`, `service` and `mailer`), the scheduler's engine logs one, and one coordinator
+    WARNING carries two professors' names. `docs/HOST_INTEGRATION.md` §4 called
+    `cogno_praxis.scheduler.server:mcp` a module-level in-memory demo: the scheduler has no
+    module-level `mcp`, and its entry point persists in Postgres when `COGNO_SCHEDULER_DSN` is
+    set. `README.md` listed 7 of the scheduler's 13 tools, 8 of the bookkeeper's 9 (`math`) and
+    11 of the coordinator's 12 (`record_class_response`); its lint line left out `examples`,
+    which CI checks. `docs/BOOKKEEPER.md` had no row for `math`.
+  - **`docs/HOST_INTEGRATION.md` §8 — the environment each server reads.** One row per
+    variable, with the default the code gives it. The code reads 21 `COGNO_*` variables; the
+    docs named 6 of them.
+  - **`README.md`** indexes every `.md`, and names the `NO SUCH DISCIPLINE` line and where AI
+    cost by cut is answered. `docs/BOOKKEEPER_PLAN.md` is marked historical.
+
 ### Added
 
 - **Generic e-mail markers and per-persona field providers (`cogno_praxis.email_fields`, E3).**

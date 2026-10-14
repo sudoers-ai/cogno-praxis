@@ -22,10 +22,25 @@ Two layers of "business rules" stay separate: **orchestration** rules live in th
 
 | Vertical | What it is | Tools |
 |---|---|---|
-| **scheduler** | the agenda capability — ships the **SECRETARY** persona, the universal reception/scheduling front door for any client | `list_schedulable_hosts`, `check_availability`, `book_appointment`, `list_appointments`, `confirm_appointment`, `complete_appointment`, `cancel_appointment` |
-| **bookkeeper** | the financial capability — ships the **BOOKKEEPER** persona (parent SaaS ANALYST): records income/expenses, tracks clients, produces summaries. See [`docs/BOOKKEEPER.md`](docs/BOOKKEEPER.md) | `add_income`, `add_outcome`, `get_summary`, `list_clients`, `search`, `remove_by_search`, `get_usage`, `help` |
-| **coordinator** | the academic capability — ships the **COORDINATOR** persona: reads class schedules across a tenant's course spreadsheets, checks grade/attendance deadlines, estimates a professor's OWN pay from tenant-declared figures (a coordinator/supervisor: any professor's, or every professor's one block each), finds open slots, swaps a class, and mails a professor their classes as a calendar. See [`docs/COORDINATOR.md`](docs/COORDINATOR.md) | `get_professor_schedule`, `get_professor_info`, `check_deadlines`, `get_weekly_briefing`, `check_ibope_status`, `daily_checks`, `estimate_professor_pay`, `find_replacement_slot`, `confirm_swap`, `preview_schedule_to_calendar`, `send_schedule_to_calendar` |
+| **scheduler** | the agenda capability — ships the **SECRETARY** persona, the universal reception/scheduling front door for any client | `list_schedulable_hosts`, `resolve_date`, `check_availability`, `book_appointment`, `block_schedule`, `list_appointments`, `reschedule_appointment`, `confirm_appointment`, `complete_appointment`, `cancel_appointment`, `get_schedule_settings`, `set_schedule_settings`, `set_auto_confirm` |
+| **bookkeeper** | the financial capability — ships the **BOOKKEEPER** persona (parent SaaS ANALYST): records income/expenses, tracks clients, produces summaries. See [`docs/BOOKKEEPER.md`](docs/BOOKKEEPER.md) | `add_income`, `add_outcome`, `get_summary`, `list_clients`, `search`, `remove_by_search`, `get_usage`, `math`, `help` |
+| **coordinator** | the academic capability — ships the **COORDINATOR** persona: reads class schedules across a tenant's course spreadsheets, checks grade/attendance deadlines, estimates a professor's OWN pay from tenant-declared figures (a coordinator/supervisor: any professor's, or every professor's one block each), finds open slots, swaps a class, and mails a professor their classes as a calendar. See [`docs/COORDINATOR.md`](docs/COORDINATOR.md) | `get_professor_schedule`, `get_professor_info`, `check_deadlines`, `get_weekly_briefing`, `check_ibope_status`, `daily_checks`, `estimate_professor_pay`, `find_replacement_slot`, `confirm_swap`, `preview_schedule_to_calendar`, `send_schedule_to_calendar`, `record_class_response` |
 | **companies** | the brand-registration capability — **transversal**: it belongs to no persona's domain, and a front-desk persona carries it beside its own vertical. Rows are keyed by the accent-folded company name (a frozen key fold, deliberately not the ecosystem's `casefold`: changing it needs a key migration), so registering one again UPDATES it — and a field a registration or an update is not given is left exactly as it was. Scoped by identity: staff see the business's companies, anyone else sees the ones they registered | `company_registration`, `company_search`, `list_companies`, `company_update`, `company_delete` |
+
+The tool lists are the `@mcp.tool` functions of each vertical's `server.py`, in the order the
+server registers them; a host's RBAC decides which of them a given reader is offered.
+
+Two behaviours worth knowing before reading further, each written up in its own document:
+
+- **A discipline that names nothing is said, not guessed.** `get_professor_schedule` asked for a
+  `discipline` that matches no subject answers with the unfiltered upcoming classes and OPENS
+  with a `NO SUCH DISCIPLINE` line naming the disciplines the sheet knows — a line a host may
+  read back ([`docs/COORDINATOR.md`](docs/COORDINATOR.md),
+  [`docs/HOST_INTEGRATION.md` §6.2](docs/HOST_INTEGRATION.md)).
+- **AI cost is not a ledger figure.** The BOOKKEEPER's `get_usage` returns no number: it says
+  where AI usage is metered. Its prompts send a question about AI cost by cut (message, day,
+  conversation, persona, user, month) to the host's `token_cost_analytics` when that tool is on
+  the table ([`docs/BOOKKEEPER.md`](docs/BOOKKEEPER.md)).
 
 More verticals (restaurant, veterinary, …) follow the same shape.
 
@@ -206,7 +221,7 @@ approved, and the voice explained — all on a free 8B local model.
 ## Run a vertical
 
 ```bash
-pip install cogno-praxis            # pulls the mcp SDK
+pip install -e .                    # from a clone of this repo; pulls the mcp SDK
 python -m cogno_praxis.scheduler.server      # serves the demo over stdio
 ```
 
@@ -277,8 +292,29 @@ pytest tests/integration -q     # scheduler server over stdio via cogno-mcp (the
                                 # database NAME is never taken from any of them: it is always
                                 # `cogno_praxis_test`. COGNO_TEST_PG_DSN overrides, and a name
                                 # without "test" in it is refused at collection.
-ruff check cogno_praxis tests && mypy cogno_praxis
+ruff check cogno_praxis tests examples && mypy cogno_praxis      # as CI runs them
 python examples/host_min.py     # spawn the server + run a reception flow
 ```
+
+CI runs the two suites together under a coverage gate
+(`pytest tests -q --cov=cogno_praxis --cov-fail-under=90`).
+
+## Documentation
+
+Every `.md` of this repository.
+
+- [`docs/HOST_INTEGRATION.md`](docs/HOST_INTEGRATION.md) — how a host connects a vertical: the
+  boundary, connect + bind, the personas and their prompt slots, persistence, the tool policy the
+  EGO's gates read, adding a vertical, and §8, the environment each vertical's server reads.
+- [`docs/BOOKKEEPER.md`](docs/BOOKKEEPER.md) — the financial vertical: its tools, why
+  `remove_by_search` asks a second question, and what counts as a source for a figure.
+- [`docs/COORDINATOR.md`](docs/COORDINATOR.md) — the academic vertical: deadlines, the discipline
+  that names nothing, the free slot, the e-mail context.
+- [`docs/BOOKKEEPER_PLAN.md`](docs/BOOKKEEPER_PLAN.md) — **historical.** The approved plan that
+  ported the bookkeeper, in three phases across this repository and the host. It names files in
+  other repositories and a count of tools that has since grown; `docs/BOOKKEEPER.md` is the
+  vertical as built.
+- [`LOGGING.md`](LOGGING.md) — what the library logs, at which level, and what a line carries.
+- [`CHANGELOG.md`](CHANGELOG.md) — every change, newest first.
 
 Apache-2.0.
