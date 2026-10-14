@@ -44,7 +44,9 @@ REF = "{contact_reference}"
 #: change must not move one of them. A later, deliberate edit of a template regenerates its
 #: line here AND its pair in ``contact_wording.WORDINGS`` — the sync tests say which.
 AT_MAIN = {
-    ("bookkeeper", "system"): "8d6535d3326748e703e56a15bdc5ff5c546ae0fb47dc2ba38f876b61c3e45665",
+    # regenerated 2026-10-14, deliberately: the CALL convention rewrote its confirmation section
+    # (test_the_bookkeeper_calls_the_write.py); the contact's sentence did not move.
+    ("bookkeeper", "system"): "a6db743904c3ebbe812d4a39d781f06724e1248f48240c73b4f1fa59376c4ab8",
     ("bookkeeper", "voice"): "1b65181573edc71b964a686d96c92ab94b664bb094b88d4911e034536c95d347",
     ("closer", "system"): "c5b30b8faf18562ec7936965e16fe59a8570d4bc9d67654c3156f9c170cf623d",
     ("closer", "voice"): "ecf7b265950d2b9797fb2329c430fad558988c07e0e4652228ec81e0a7bb73c1",
