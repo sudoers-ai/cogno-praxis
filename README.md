@@ -314,7 +314,7 @@ Every `.md` of this repository.
   ported the bookkeeper, in three phases across this repository and the host. It names files in
   other repositories and a count of tools that has since grown; `docs/BOOKKEEPER.md` is the
   vertical as built.
-- [`LOGGING.md`](LOGGING.md) — what the library logs, at which level, and what a line carries.
+- [`LOGGING.md`](LOGGING.md) — every log event the library emits, the class of every value a line carries, and what is never logged (no name, no id, no text of the tenant's).
 - [`CHANGELOG.md`](CHANGELOG.md) — every change, newest first.
 
 Apache-2.0.

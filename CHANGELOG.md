@@ -2,6 +2,67 @@
 
 ## Unreleased
 
+### Fixed — no log line carries a name, an id or somebody else's text (2026-10-14)
+
+- **The coordinator's WARNING with two professors' names is a count.** When two rows of the
+  professors tab share an e-mail address and neither name is the other written out, the line
+  named both people. It is now `event=faculty_names_not_joined pairs=<how many>`, once per
+  read. The tool's own output still names them, to the reader allowed to see them.
+- **The same class, swept by AST over every log call of the package.** 12 of the 19 calls
+  formatted a person's name, an identifier or somebody's text:
+
+  | what was on the line | the lines | what they log now |
+  |---|---|---|
+  | two people's names | the shared-address refusal | `pairs` |
+  | a spreadsheet's id, the name the tenant gave it, and the `repr` of the store's exception (an HTTP client's message embeds the request URL, and the id again) | the four read failures: schedule, hours, IBOPE, professors | one event, `sheet_unreadable`: `tab` (one of four words), `sheet_sha` (the digest of the KEY), `error` (the class), `status` (the HTTP status, `0` when there is none) |
+  | the names the tenant gave a tab and two columns, and a spreadsheet | the hours tab with no hours/discipline column | `sheet_sha`, `missing=hours\|subject` |
+  | a discipline, and a spreadsheet's name | the DEBUG line for an unreadable hour total | `sheet_sha`, `row` |
+  | a spreadsheet's name | a `SPREADSHEETS` entry that is not an id | `sheet_sha`, `value_len` |
+  | sentences of the persona's rules, pay figures included | pay figures found in prose | `keys` (which pay keys), `excerpts` (how many sentences) |
+  | an exception's message | the holiday calendar that failed to load; the double-booking index that could not be built (a Postgres message quotes the row it tripped on) | `error` (the class); the SQLSTATE stays in `reason` |
+  | a scope — a tenant's id and a contact's channel id | `sync_hosts_empty_refused` | `scope_sha` |
+
+- **`cogno_praxis.logsafe.id_sha`** is the digest: the first 12 hex characters of the SHA-256
+  of the value. It is the same function the reference host uses for a scope in a log line, not
+  a second algorithm, so one digest finds the lines of both. It is de-identification of the log
+  stream, not encryption.
+
+### Changed
+
+- **Every log message is in one grammar**: `[stage=<word> ]event=<name>( <key>=<value>)*[ — <prose>]`,
+  every placeholder directly behind its `key=`. The 15 calls that had no event name have one
+  (`spreadsheet_entry_skipped`, `spreadsheets_header_without_entries`, `pay_figures_in_prose`,
+  `sheet_unreadable`, `hours_columns_missing`, `hours_unreadable`, `faculty_names_not_joined`,
+  `calendar_mail_not_accepted`, `smtp_env_ignored`, `herald_not_installed`,
+  `holidays_unavailable`), and the `coordinator:` prefix is `stage=coordinator`. The package
+  makes 16 log calls where it made 19: the four read failures share one helper, and the
+  shared-address line is once per read instead of once per pair. Logger names and levels did
+  not move. **A reader that matched the old text needs the table in `LOGGING.md`.**
+- **`LOGGING.md` is the code's list.** It was a reading of `grep` "on the day it was written".
+  It now has a row for every event (logger, event, level, fields, traceback), the modules that
+  log nothing, how many calls each level has, and the class of every field: `count`, `closed`,
+  `type`, `digest`, `name`, `constant`. There is no class for text. The one class the library
+  does not close is `name`: the country and state codes of a holiday calendar, as the host
+  configured them.
+
+### Tests
+
+- **`tests/unit/_log_calls.py`** reads every log call by AST. It finds a call by the logger it
+  is made ON, not by the variable's name (the package uses `_log`, `log` and `logger`), and
+  refuses a message outside the grammar.
+- **`test_logging_md_lists_what_the_code_emits.py`**: the events table against the code, both
+  directions, with controls.
+- **`test_logs_carry_no_third_party_text.py`**: every value has a class, no class is text, and
+  the expression each key is given is pinned. `pairs=%d` given the two names fails; so do a new
+  key, an exception passed as `error=`, an id passed as its digest. The four callers of the
+  read-failure helper pass one of four literals. `id_sha` is pinned to its definition. A pin
+  is compared as the running interpreter writes it: `ast.unparse` spells one expression
+  differently on 3.10 and on 3.11.
+- **`test_log_lines_carry_no_name_and_no_id.py`**: each line at run time, driven with the name,
+  the id or the text it used to print.
+- `test_the_warning_is_logged_ONCE_per_configuration_and_carries_only_the_excerpts` asserted
+  the excerpt in the log. It was turned around and renamed.
+
 ### Docs
 
 - **Docs sweep: every sentence checked against the code (docs only, 2026-10-14).** No code,

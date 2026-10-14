@@ -177,8 +177,12 @@ def test_the_refusal_reaches_the_model_as_NOT_CONFIGURED_with_the_prose_named():
     assert "ERROR" not in out
 
 
-def test_the_warning_is_logged_ONCE_per_configuration_and_carries_only_the_excerpts(
+def test_the_warning_is_logged_ONCE_per_configuration_and_carries_the_KEYS_never_the_sentences(
         caplog, monkeypatch):
+    """The log names WHICH keys were found in prose and how many sentences. The sentences are
+    the tenant's own text, pay figures included: they are in the refusal the tool answers with
+    (the test above), and not in the log — this test asserted the excerpt there until it was
+    turned around."""
     monkeypatch.setattr(config_module, "_PROSE_WARNED", set())
     with caplog.at_level(logging.WARNING, logger="cogno_praxis.coordinator.config"):
         CoordinatorConfig(_BASE + TENANT_RULES_IN_PROSE)
@@ -188,7 +192,8 @@ def test_the_warning_is_logged_ONCE_per_configuration_and_carries_only_the_excer
     records = [r for r in caplog.records if "PROSE" in r.getMessage()]
     assert len(records) == 2, [r.getMessage() for r in records]
     first = records[0].getMessage()
-    assert "R$ 120,00 por hora" in first and "PAY_RATE_PER_HOUR" in first
+    assert "event=pay_figures_in_prose keys=PAY_RATE_PER_HOUR," in first
+    assert "R$" not in first and "120,00" not in first and "por hora" not in first
     assert "NF e remuneração" not in first                   # the heading's free text stays out
     assert "Workshop de Abertura" not in first
     assert "PAY_RATE_PER_HOUR" not in records[1].getMessage()  # the declared key is not warned

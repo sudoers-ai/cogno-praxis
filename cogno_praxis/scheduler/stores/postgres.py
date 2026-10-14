@@ -15,6 +15,7 @@ from typing import Optional
 
 import psycopg
 
+from cogno_praxis.logsafe import id_sha
 from cogno_praxis.scheduler.store import ACTIVE_STATUS, Appointment, Host, SlotTakenError
 
 logger = logging.getLogger(__name__)
@@ -109,8 +110,9 @@ def _ensure_slot_uniqueness(conn: "psycopg.Connection") -> None:
         # A sibling process won the race and built it; the index exists, which is all we wanted.
         logger.debug("stage=scheduler event=slot_uniqueness_built_concurrently")
     except psycopg.Error as exc:
+        # The SQLSTATE and the class: a Postgres message quotes the row it tripped on.
         logger.warning("stage=scheduler event=slot_uniqueness_unavailable reason=%s error=%s",
-                       getattr(exc, "sqlstate", "unknown"), exc)
+                       getattr(exc, "sqlstate", None) or "unknown", type(exc).__name__)
 
 
 def _slot_taken(exc: "psycopg.errors.UniqueViolation", a: Appointment) -> Exception:
@@ -216,11 +218,11 @@ class PgAppointmentStore:
                 # professionals would otherwise warn on every start, and a warning that fires
                 # for the normal case is one nobody reads on the day it means something.
                 logger.warning(
-                    "stage=scheduler event=sync_hosts_empty_refused scope=%s kept=%d — an "
-                    "empty catalog cannot be told apart from a catalog nobody sent, so the "
-                    "%d persisted professional(s) were KEPT rather than deleted. Remove them "
-                    "one by one (a non-empty list still shrinks) or delete the identity.",
-                    self._scope, kept, kept)
+                    "stage=scheduler event=sync_hosts_empty_refused scope_sha=%s kept=%d — "
+                    "an empty catalog cannot be told apart from a catalog nobody sent, so the "
+                    "persisted professionals were KEPT rather than deleted. Remove them one by "
+                    "one (a non-empty list still shrinks) or delete the identity.",
+                    id_sha(self._scope), kept)
             return
         for h in hosts:
             self.add_host(h)

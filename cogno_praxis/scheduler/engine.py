@@ -212,7 +212,8 @@ def _load_holiday_set(country: Optional[str], state: Optional[str]) -> dict[date
         hols = hol_lib.country_holidays(country, years=[year, year + 1], **kwargs)
         return {d: name for d, name in hols.items()}
     except Exception as exc:  # unsupported country/state, etc.
-        log.warning("failed to load holidays for %s/%s: %s", country, state, exc)
+        log.warning("stage=scheduler event=holidays_unavailable country=%s state=%s error=%s "
+                    "— holiday filtering is off", country, state or "-", type(exc).__name__)
         return {}
 
 
