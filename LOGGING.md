@@ -56,7 +56,7 @@ the logger, the event, the level, the `key=` fields and whether the line carries
 | `cogno_praxis.coordinator.mailer` | `calendar_mail_not_accepted` | WARNING | the calendar mail was not accepted by the server |
 | `cogno_praxis.coordinator.mailer` | `smtp_env_ignored` (`reason=not_json\|not_an_object`, `var`) | WARNING | the mailbox variable is not valid JSON, or is JSON and not an object: ignored |
 | `cogno_praxis.coordinator.mailer` | `herald_not_installed` | INFO | `cogno-herald` is not installed, so no calendar mail is configured |
-| `cogno_praxis.scheduler.engine` | `holidays_unavailable` (`country`, `state`, `error`) | WARNING | the holiday calendar of a country/state could not be loaded: holiday filtering is off |
+| `cogno_praxis.scheduler.engine` | `holidays_unavailable` (`country_sha`, `state_sha`, `error`) | WARNING | the holiday calendar of a country/state could not be loaded: holiday filtering is off |
 | `cogno_praxis.scheduler.stores.postgres` | `slot_uniqueness_unavailable` (`reason=duplicate_active_rows`, `action`) | WARNING | the double-booking index could not be built because duplicate rows exist; `action` is the query that finds them |
 | `cogno_praxis.scheduler.stores.postgres` | `slot_uniqueness_unavailable` (`reason`, `error`) | WARNING | the index could not be built for any other reason; `reason` is the SQLSTATE. The service-level pre-check remains the guard |
 | `cogno_praxis.scheduler.stores.postgres` | `slot_uniqueness_built_concurrently` | DEBUG | a sibling process built that index first — nothing to do |
@@ -135,8 +135,6 @@ The classes:
   digest finds the lines of both. Two lines about the same sheet or scope match, and someone
   holding the key or the scope can compute it. It is de-identification of the log stream, not
   encryption: an identifier is low-entropy and can be enumerated.
-- **name** — a code the HOST declared: the country and the state of a holiday calendar. The one
-  class the library does not close.
 - **constant** — the key only ever appears with a literal value in the message.
 
 There is no class for text.
@@ -144,7 +142,7 @@ There is no class for text.
 | Field | Class | What the value is |
 |---|---|---|
 | `action` | closed | the fixed query that lists the duplicate rows |
-| `country` | name | the holiday calendar's country code, as the host configured it |
+| `country_sha` | digest | the holiday calendar's country, as the host configured it — the tenant's configuration, unbounded, so never in clear |
 | `error` | type | the class of the exception |
 | `excerpts` | count | how many sentences of the rules were recognised |
 | `keys` | closed | the pay keys found in prose (`PAY_RATE_PER_HOUR`, `HOURS_PER_CLASS`, `IBOPE_BONUS`, `IBOPE_MIN_RESPONSE_PCT`), comma-joined |
@@ -155,7 +153,7 @@ There is no class for text.
 | `row` | count | the row within the range read, the header being row 1 |
 | `scope_sha` | digest | the scheduler scope |
 | `sheet_sha` | digest | the KEY the tenant gave the spreadsheet — never its id |
-| `state` | name | the holiday calendar's state code, or `-` |
+| `state_sha` | digest | the holiday calendar's state, or `-` when none is configured |
 | `status` | count | the HTTP status the store's exception carried, or `0` |
 | `tab` | closed | `schedule`, `hours`, `ibope` or `professors` — never the name the tenant gave the tab |
 | `value_len` | count | the length of the value that is not an id |

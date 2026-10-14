@@ -17,7 +17,7 @@ log calls formatted somebody's text or an identifier:
 
 Every value a log call formats is named by the ``key=`` in front of its placeholder
 (``tests/unit/_log_calls.py`` refuses a message where one is not). ``LOGGING.md`` gives every
-key ONE class — count, closed, type, digest, name, constant; there is no class for text — and
+key ONE class — count, closed, type, digest, constant; there is no class for text — and
 :data:`EXPRESSIONS` pins the expression each key is given. A new key, or a new expression under
 an old key, fails here until somebody classifies it.
 
@@ -41,7 +41,7 @@ DOC = PACKAGE.parent / "LOGGING.md"
 CALLS, STRANGERS = reader.package_calls(PACKAGE)
 
 #: The classes a value may have. ``constant`` is for a key that only ever has a literal.
-VALUE_CLASSES = ("count", "closed", "type", "digest", "name")
+VALUE_CLASSES = ("count", "closed", "type", "digest")
 CLASSES = VALUE_CLASSES + ("constant",)
 
 #: What each key is GIVEN — the source of the argument, as ``ast.unparse`` writes it. A class
@@ -67,11 +67,10 @@ _PINNED: "dict[str, set[str]]" = {
     # ── type ──  (the shape is held below: `type(<name>).__name__`)
     "error": {"type(exc).__name__"},
     # ── digest ──  (the shape is held below: `id_sha(<anything>)`)
+    "country_sha": {"id_sha(country)"},
     "scope_sha": {"id_sha(self._scope)"},
     "sheet_sha": {"id_sha(key)", "id_sha(sheet_key)"},
-    # ── name ──  (what the HOST declared)
-    "country": {"country"},
-    "state": {"state or '-'"},
+    "state_sha": {"id_sha(state) or '-'"},
 }
 
 
@@ -127,7 +126,7 @@ def unclassified(calls: "list[reader.LogCall]", classes: "dict[str, str]",
                 out.append(f"{where}: {key}= is given {source!r}, which nobody classified")
             if cls == "type" and not re.fullmatch(r"type\(\w+\)\.__name__", source):
                 out.append(f"{where}: {key}= is classed type and is given {source!r}")
-            if cls == "digest" and not re.fullmatch(r"id_sha\([\w.]+\)", source):
+            if cls == "digest" and not re.fullmatch(r"id_sha\([\w.]+\)( or '-')?", source):
                 out.append(f"{where}: {key}= is classed digest and is given {source!r}")
         for key, _ in call.literals:
             if _key(call, key, classes) not in classes:
