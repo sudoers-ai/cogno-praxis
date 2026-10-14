@@ -64,12 +64,17 @@ CASES: "list[tuple[str, str]]" = [
     ("será que dá para lançar 150 do Otávio Quelme?", REQUEST),
 ]
 
-#: The sentence of the prompt that decides each class. A class with no rule is a case the new
-#: convention would turn into a call by default.
+#: The rule of the prompt that decides each class — its CONDITION and its CONSEQUENCE, both: a
+#: consequence whose condition was reworded away ("the user is talking about an entry") is a
+#: rule that no longer says WHEN, and the first cut of this table pinned only the second half
+#: (a mutation of the condition survived). A class with no rule is a case the new convention
+#: would turn into a call by default.
 _RULE_FOR = {
-    QUESTION: "answer the question; call no write tool",
-    MISSING: "ask for THAT detail and call nothing yet",
-    REQUEST: "The SYSTEM holds the call",
+    QUESTION: ("The user is ASKING about an entry, not making one",
+               "answer the question; call no write tool"),
+    MISSING: ("The amount, or what the entry was for, is missing",
+              "ask for THAT detail and call nothing yet"),
+    REQUEST: ("The SYSTEM holds the call", "asks them to confirm"),
 }
 
 
@@ -105,7 +110,8 @@ def test_the_convention_names_the_two_writes_and_forbids_the_prose_question():
                          ids=[f"{k}-{i}" for i, (_, k) in enumerate(CASES)])
 def test_each_case_has_its_rule(message, klass):
     rule = _flat(_section(_SYSTEM, _CONVENTION))
-    assert _RULE_FOR[klass] in rule, f"{klass!r} ({message!r}) has no rule in the convention"
+    missing = [part for part in _RULE_FOR[klass] if part not in rule]
+    assert not missing, f"{klass!r} ({message!r}): the convention lacks {missing}"
 
 
 def test_the_instruction_that_asked_twice_is_gone():
