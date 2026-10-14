@@ -47,7 +47,7 @@ CLASSES = VALUE_CLASSES + ("constant",)
 #: What each key is GIVEN — the source of the argument, as ``ast.unparse`` writes it. A class
 #: is a judgement about an expression, so the judgement is pinned to the expression it was
 #: about.
-EXPRESSIONS: "dict[str, set[str]]" = {
+_PINNED: "dict[str, set[str]]" = {
     # ── count ──
     "excerpts": {"sum((len(h.excerpts) for h in hints))"},
     "kept": {"kept"},
@@ -73,6 +73,19 @@ EXPRESSIONS: "dict[str, set[str]]" = {
     "country": {"country"},
     "state": {"state or '-'"},
 }
+
+
+def _as_this_python_writes_it(source: str) -> str:
+    """``ast.unparse`` does not write an expression the same way on every Python: 3.10 gives
+    ``for (s, v) in present.items()`` where 3.11 gives ``for s, v in present.items()``. A pin
+    is the EXPRESSION, not one interpreter's spelling of it, so each is parsed and written back
+    by the interpreter that is running — the same one that wrote the reader's side."""
+    return ast.unparse(ast.parse(source, mode="eval"))
+
+
+EXPRESSIONS: "dict[str, set[str]]" = {
+    key: {_as_this_python_writes_it(source) for source in sources}
+    for key, sources in _PINNED.items()}
 
 
 def field_classes(text: str) -> "dict[str, str]":

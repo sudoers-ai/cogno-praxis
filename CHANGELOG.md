@@ -55,7 +55,9 @@
 - **`test_logs_carry_no_third_party_text.py`**: every value has a class, no class is text, and
   the expression each key is given is pinned. `pairs=%d` given the two names fails; so do a new
   key, an exception passed as `error=`, an id passed as its digest. The four callers of the
-  read-failure helper pass one of four literals. `id_sha` is pinned to its definition.
+  read-failure helper pass one of four literals. `id_sha` is pinned to its definition. A pin
+  is compared as the running interpreter writes it: `ast.unparse` spells one expression
+  differently on 3.10 and on 3.11.
 - **`test_log_lines_carry_no_name_and_no_id.py`**: each line at run time, driven with the name,
   the id or the text it used to print.
 - `test_the_warning_is_logged_ONCE_per_configuration_and_carries_only_the_excerpts` asserted
