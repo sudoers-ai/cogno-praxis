@@ -170,7 +170,7 @@ def build_server(service: Optional[BookkeeperService] = None, *,
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     def add_income(description: str, amount: str, identity_id: str = "",
                    client: str = "", date: str = "") -> str:
-        """Record an income (entrada). Confirm the summary with the user BEFORE calling this."""
+        """Record an income (entrada). The system holds the call and asks the user to confirm."""
         # The refusal RAISES rather than returning "ERROR: ..." — see _REFUSALS_RAISE.
         tx = svc.add_income(description, amount, identity_id, client_name=client, tx_date=date)
         who = f" ({tx.client_name})" if tx.client_name else ""
@@ -178,7 +178,7 @@ def build_server(service: Optional[BookkeeperService] = None, *,
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     def add_outcome(description: str, amount: str, identity_id: str = "", date: str = "") -> str:
-        """Record an expense (saída). Confirm the summary with the user BEFORE calling this."""
+        """Record an expense (saída). The system holds the call and asks the user to confirm."""
         # The refusal RAISES rather than returning "ERROR: ..." — see _REFUSALS_RAISE.
         tx = svc.add_outcome(description, amount, identity_id, tx_date=date)
         return f"Expense recorded: {tx.description} = {_brl(tx.amount)} on {tx.tx_date}."

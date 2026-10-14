@@ -67,6 +67,30 @@ OLD_SCOPE = 'Distinguish AI "tokens/usage" (get_usage)\nfrom financial "despesas
 NEW_SCOPE = ('Distinguish AI cost/tokens\n(token_cost_analytics, or get_usage when it is not offered) '
              'from financial "despesas"\n(get_summary/add_outcome).')
 
+#: ``system.txt``: the confirmation section as 37b07df left it, and as the CALL convention
+#: rewrote it (2026-10-14, ``test_the_bookkeeper_calls_the_write.py``). It swallowed the head of
+#: ``NEW_READONLY``, so the reconstruction undoes that LATER edit first, and the twin below reads
+#: the read-only list flattened.
+ASKED_SECTION = (    '## Confirmation Before Recording\n'
+    'Before recording an income or expense, present a brief summary (description, amount, client if\n'
+    'any) and ask the user to confirm; call add_income/add_outcome ONLY after an explicit affirmative\n'
+    '("sim", "pode registrar", "confirma", "ok", 👍). Read-only tools (get_summary, list_clients,\n'
+    'search, get_usage, token_cost_analytics, help) run immediately — no confirmation.\n')
+CALL_SECTION = (    "## Confirmation is the SYSTEM's job — CALL the tool, never negotiate it in prose\n"
+    'To record an income or expense, CALL add_income/add_outcome with what the user gave you. The\n'
+    'SYSTEM holds the call, shows the user what will be recorded and asks them to confirm — so do NOT\n'
+    'write "posso registrar?", "confirma?" or any other confirmation question in your reply. Asking in\n'
+    'prose WITHOUT calling the tool leaves nothing for the system to confirm, and the user has to say\n'
+    'yes twice.\n'
+    '- The user told you of an entry or asked you to record one, amount included → call the tool now.\n'
+    '- The amount, or what the entry was for, is missing → ask for THAT detail and call nothing yet.\n'
+    '- The user is ASKING about an entry, not making one ("quanto ficaria se eu lançasse…?", "posso\n'
+    '  lançar depois?") → answer the question; call no write tool.\n'
+    '- The user replied "sim" / "pode registrar" / "isso" to an entry you were about to record → that\n'
+    '  reply IS the go-ahead: call the tool now, never answer it with another question.\n'
+    'Read-only tools (get_summary, list_clients, search, get_usage, token_cost_analytics, help) run\n'
+    'immediately — no confirmation.\n')
+
 #: ``limits.txt``: the two approve lines, old and new.
 OLD_TOOLS = ("- Every financial data operation went through a tool call (add_income, add_outcome, get_summary,\n"
              "  list_clients, search, remove_by_search, get_usage, help) — financial data is NEVER fabricated\n"
@@ -129,8 +153,10 @@ def test_the_executor_text_maps_ai_cost_to_the_cost_tool():
     """THE TWIN, executor half: the mapping, the read-only list and the scope line name the cost
     tool, once each, and the old mapping is gone under any column."""
     system = _read("system.txt")
-    for new in (NEW_MAPPING, NEW_READONLY, NEW_SCOPE):
+    for new in (NEW_MAPPING, NEW_SCOPE):
         assert system.count(new) == 1, new
+    assert ("Read-only tools (get_summary, list_clients, search, get_usage, token_cost_analytics, "
+            "help) run immediately") in _flat(system)
     assert _flat(OLD_MAPPING) not in _flat(system)
     for claim in OLD_CLAIMS:
         assert _flat(claim) not in _flat(system), claim
@@ -159,6 +185,8 @@ def test_get_usage_keeps_the_job_it_still_serves():
 # ── the reconstruction: nothing else moved ───────────────────────────────────────────────────
 def test_putting_the_old_lines_back_gives_main_byte_for_byte():
     system = _read("system.txt")
+    assert system.count(CALL_SECTION) == 1
+    system = system.replace(CALL_SECTION, ASKED_SECTION, 1)
     for old, new in ((OLD_MAPPING, NEW_MAPPING), (OLD_READONLY, NEW_READONLY),
                      (OLD_SCOPE, NEW_SCOPE)):
         system = system.replace(new, old, 1)

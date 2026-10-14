@@ -165,7 +165,11 @@ process/DSN per tenant), not a column the scheduler filters — it stays tenant-
 
 Each tool's `annotations` drive the EGO via cogno-mcp:
 - `readOnlyHint=True` (reads) → never masked, never gated.
-- writes (`book_appointment`) → `is_mutating` true → masked under `ego_readonly`.
+- writes (`book_appointment`) → `is_mutating` true → masked under `ego_readonly`. Not held by
+  the core: the scheduler's and the bookkeeper's prompts tell the executor to CALL the write
+  (`book_appointment`, `add_income`, `add_outcome`) and let the system ask, so they presume a
+  host that holds every mutating tool until the user agrees. A host without that gate adds its
+  own confirmation instruction.
 - `destructiveHint=True` (`cancel_appointment`) → `requires_confirmation` → the EGO
   holds the call until the host confirms (gate B — by NAME, **before** it runs).
 - no `destructiveHint`, but the reply carries `_meta["cogno-mcp/needs_confirmation"]`

@@ -44,7 +44,7 @@ async def test_bookkeeper_loop_over_mcp():
         # after reading. See tests/integration/test_o_portao_C_dispara_sobre_a_cadeia.py.
         assert disp.is_mutating("remove_by_search") is True
         assert disp.requires_confirmation("remove_by_search") is False
-        assert disp.requires_confirmation("add_income") is False        # prompt-driven confirm
+        assert disp.requires_confirmation("add_income") is False        # the HOST holds it
 
         # record → ToolResult(ok=True, side_effect=True)
         rec = await disp.execute("add_income", {
