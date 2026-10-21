@@ -253,6 +253,14 @@ Real domain data + adapters, RBAC (which identity may reach which vertical), per
 selection, metering, the deploy topology (how/where servers run), auth between host
 and server. cogno-praxis is the domain server; you bring the data and the orchestration.
 
+The e-mail templates (`cogno_praxis.email_fields`) split the same way: the module decides which
+markers exist, refuses a bad template or a bad company tag in words, and fills every value in
+code; storing the templates and the tenant's company tags, the admin API, the send, the
+confirmation and the audit are yours (README, «Templated e-mail fields»). A host passes the
+tenant's tags to `validate_template(…, custom_tags=…)` when a template is SAVED, adds
+`any_company_tag=True` when the turn reads the stored ones, and hands the same tags to
+`EmailContext.custom_tags` when it composes.
+
 ## 8. The environment each server reads
 
 A vertical run as `python -m cogno_praxis.<vertical>.server` is configured through the

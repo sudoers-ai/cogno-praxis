@@ -285,3 +285,16 @@ def test_the_tenants_tags_change_no_verdict_across_personas():
 def test_EmailContext_keeps_building_without_tags():
     ctx = EmailContext(month="2026-10")
     assert dict(ctx.custom_tags) == {}
+
+
+def test_the_readme_documents_the_company_tags():
+    import pathlib
+    root = pathlib.Path(ef.__file__).resolve().parents[1]
+    readme = (root / "README.md").read_text(encoding="utf-8").split(
+        "### Templated e-mail fields", 1)[1].split("\n**Prompt-only personas.**", 1)[0]
+    for name in ("custom_tags=", "any_company_tag", "normalise_custom_tags", "parse_custom_tags",
+                 "custom_tag_problems", "CUSTOM_TAG_NAME", "MAX_CUSTOM_TAG_CHARS",
+                 "MAX_CUSTOM_TAGS", "EmailContext.custom_tags", ef.CUSTOM_TAG_REMOVED,
+                 ef.CUSTOM_TAG_SOURCE):
+        assert name in readme, name
+    assert f"({ef.MAX_CUSTOM_TAG_CHARS})" in readme and f"({ef.MAX_CUSTOM_TAGS})" in readme

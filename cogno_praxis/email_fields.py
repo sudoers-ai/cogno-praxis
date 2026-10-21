@@ -33,6 +33,22 @@ A provider DECLARES fields; it does not read them. Which service answers for a p
 fields is the host's wiring (:func:`provider_fields` tells it which providers a template needs,
 and a template of generic markers alone needs none). This module imports no service.
 
+**The tenant's own markers — company tags with a FIXED value (2026-10-21).** Beside the
+thirteen, a tenant may declare tags of its own: ``{name: value}``, valid in EVERY persona's
+template (the owner's rule: the tags are standard for everything). The name is
+:data:`CUSTOM_TAG_NAME` (``[a-z][a-z0-9_]{1,30}``) and is never a marker of
+:data:`EMAIL_FIELDS` nor a name of :data:`REFUSED_FIELDS`; the value is plain text, one line or
+several, at most :data:`MAX_CUSTOM_TAG_CHARS` characters — the business's DATA, never an
+instruction. :func:`normalise_custom_tags` is the SAVE door (every refusal named) and
+:func:`parse_custom_tags` the TURN's (tolerant: it drops what the save would refuse). The value
+is filled deterministically by :func:`fill_email_fields`, from ``EmailContext.custom_tags``,
+before any provider and in any persona: a value is the tenant's, not a persona's read.
+:func:`validate_template` accepts the tenant's tag names (``custom_tags=``); a template whose tag
+was removed after it was saved is refused by the save and kept by the turn
+(``any_company_tag=True``), and the fill returns it as a :class:`Missing` —
+«tag personalizada removida» — so the send asks the requester instead of sending. Tags filled by
+data (a provider, code), tags of one persona only and HTML are not here.
+
 **A field with no value STOPS the send.** :func:`fill_email_fields` returns ``(values, missing)``
 and never raises; each :class:`Missing` names the field, where it should have come from and why
 it is not there, in the vertical's own words. The host turns a non-empty ``missing`` into a
@@ -57,7 +73,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from types import MappingProxyType
 from typing import Iterable, Mapping, Optional, Sequence
@@ -166,7 +182,11 @@ SUBJECT_FORBIDDEN: "frozenset[str]" = frozenset({"conteudo", "aulas", "disciplin
 MAX_BODY_CHARS = 10_000
 MAX_CONTEUDO_CHARS = 1_000
 
-_MARKER = re.compile(r"\[([a-z_]+)\]")
+#: A marker: ``[`` + a lowercase name + ``]``. A strict superset of the grammar before company
+#: tags (``[a-z_]+``): the first character is the same, and digits may follow it, because a
+#: company tag's name may carry them (``[sala2]``). A bracketed number (``[2026]``) still opens no
+#: marker.
+_MARKER = re.compile(r"\[([a-z_][a-z0-9_]*)\]")
 _MONTH = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])$")
 _PT_MONTHS = ("", "janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto",
               "setembro", "outubro", "novembro", "dezembro")
@@ -244,6 +264,110 @@ def markers_cited(text: str) -> "tuple[str, ...]":
     return tuple(seen)
 
 
+# ── the tenant's own markers: company tags with a FIXED value ─────────────────────────────────
+
+#: A company tag's NAME: a lowercase letter, then 1 to 30 lowercase letters, digits or ``_``.
+#: No accent, no space, no capital: it is an identifier the tenant types into a template.
+CUSTOM_TAG_NAME = re.compile(r"[a-z][a-z0-9_]{1,30}")
+#: The longest VALUE a company tag may hold, counted after it is normalised.
+MAX_CUSTOM_TAG_CHARS = 500
+#: How many tags one tenant may declare. A runaway guard, not a product limit.
+MAX_CUSTOM_TAGS = 50
+#: Where a company tag's value comes from — the ``source`` of its :class:`Missing`.
+CUSTOM_TAG_SOURCE = "as tags personalizadas da empresa"
+#: The reason a template's company tag has no value: the tenant removed it after the template
+#: was saved (a name the save door did not know is never saved, so an unknown one IS removed).
+CUSTOM_TAG_REMOVED = "tag personalizada removida"
+#: Control characters a plain-text value may carry: the line break and the tab.
+_ALLOWED_CONTROLS = frozenset("\n\t")
+
+
+def is_custom_tag_name(name: object) -> bool:
+    """Whether ``name`` can be a company tag: the grammar, and not a standard or reserved name.
+
+    A name that collides is never a tag, wherever it is handed over — so a tag can neither
+    unlock a reserved marker nor override a standard one."""
+    return (isinstance(name, str) and CUSTOM_TAG_NAME.fullmatch(name) is not None
+            and name not in EMAIL_FIELDS and name not in REFUSED_FIELDS)
+
+
+def _custom_value(value: str) -> str:
+    """The value as it is stored and filled: line endings as ``\\n``, outer blanks off."""
+    return value.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def custom_tag_problems(name: object, value: object) -> "tuple[str, ...]":
+    """Every reason the company tag ``name`` → ``value`` cannot be saved, in words — ``()`` when
+    it can. Never raises. Each sentence names the tag, so a list of them needs no index."""
+    if not isinstance(name, str) or CUSTOM_TAG_NAME.fullmatch(name) is None:
+        shown = name[:40] if isinstance(name, str) else type(name).__name__
+        return (f"«{shown}» não serve como nome de tag: só letras minúsculas sem acento, "
+                "algarismos e «_», a começar por uma letra, de 2 a 31 caracteres",)
+    if name in EMAIL_FIELDS:
+        return (f"[{name}] já é um marcador padrão ({EMAIL_FIELDS[name].source}); "
+                "escolha outro nome",)
+    if name in REFUSED_FIELDS:
+        return (f"[{name}] é um nome reservado: {REFUSED_FIELDS[name]}",)
+    if not isinstance(value, str):
+        return (f"o valor de [{name}] tem de ser texto",)
+    text = _custom_value(value)
+    if any((ord(c) < 32 or ord(c) == 127) and c not in _ALLOWED_CONTROLS for c in text):
+        return (f"o valor de [{name}] tem um caractere de controle; só texto simples "
+                "(com quebras de linha e tabulações)",)
+    if not text:
+        return (f"o valor de [{name}] está vazio",)
+    if len(text) > MAX_CUSTOM_TAG_CHARS:
+        return (f"o valor de [{name}] tem {len(text)} caracteres; o máximo é "
+                f"{MAX_CUSTOM_TAG_CHARS}",)
+    return ()
+
+
+def normalise_custom_tags(raw: object) -> "tuple[dict[str, str], tuple[str, ...]]":
+    """The SAVE door for a tenant's company tags: ``(stored, refusals)``.
+
+    ``stored`` is the map as it is kept (each value normalised: line endings as ``\\n``, outer
+    blanks off) and is ``{}`` whenever ``refusals`` is not empty — nothing is stored on any
+    refusal. Never raises."""
+    if not isinstance(raw, Mapping):
+        return {}, ("as tags personalizadas são um objeto {nome: valor}",)
+    if len(raw) > MAX_CUSTOM_TAGS:
+        return {}, (f"{len(raw)} tags personalizadas; o máximo é {MAX_CUSTOM_TAGS}",)
+    refusals: list[str] = []
+    stored: dict[str, str] = {}
+    for name, value in raw.items():
+        why = custom_tag_problems(name, value)
+        if why:
+            refusals += why
+        elif isinstance(name, str) and isinstance(value, str):  # what the rule just accepted
+            stored[name] = _custom_value(value)
+    return ({}, tuple(refusals)) if refusals else (stored, ())
+
+
+def parse_custom_tags(raw: object) -> "dict[str, str]":
+    """The TURN door: the tags of ``raw`` the save would keep, normalised — every other entry
+    dropped, never a refusal. A malformed map costs the tenant its tags, never the contact a
+    reply; the fill then asks for each one the template uses."""
+    if not isinstance(raw, Mapping):
+        return {}
+    return {name: _custom_value(value) for name, value in raw.items()
+            if isinstance(name, str) and isinstance(value, str)
+            and not custom_tag_problems(name, value)}
+
+
+def _company_tags(raw: "Mapping[str, str] | Iterable[str]") -> "dict[str, Optional[str]]":
+    """``custom_tags=`` as ``{name: value or None}``: a mapping keeps its values (so a subject
+    can be checked), an iterable of names has none. Whatever cannot be a tag is dropped."""
+    if isinstance(raw, Mapping):
+        return {k: (v if isinstance(v, str) else None) for k, v in raw.items()
+                if is_custom_tag_name(k)}
+    if isinstance(raw, str):
+        return {raw: None} if is_custom_tag_name(raw) else {}
+    try:
+        return {k: None for k in raw if is_custom_tag_name(k)}
+    except TypeError:          # not iterable: a caller that handed over something else
+        return {}
+
+
 # ── the template ─────────────────────────────────────────────────────────────────────────────
 
 def template_fields(subject: str, body: str) -> "tuple[str, ...]":
@@ -251,11 +375,17 @@ def template_fields(subject: str, body: str) -> "tuple[str, ...]":
     return tuple(dict.fromkeys(markers_cited(subject or "") + markers_cited(body or "")))
 
 
-def _bracket_problems(text: str, where: str, phase: str) -> "list[str]":
-    """Every ``[`` in ``text`` that does not open a marker of :data:`EMAIL_FIELDS` — named,
-    with its position, listing every marker that exists."""
+def _bracket_problems(text: str, where: str, phase: str,
+                      tags: "Optional[Mapping[str, Optional[str]]]" = None,
+                      any_company_tag: bool = False) -> "list[str]":
+    """Every ``[`` in ``text`` that does not open a marker of :data:`EMAIL_FIELDS` nor one of
+    the tenant's company ``tags`` — named, with its position, listing every marker that exists.
+    ``any_company_tag`` accepts every name a company tag CAN have (:func:`is_custom_tag_name`),
+    declared or not."""
     out: list[str] = []
-    allowed = ", ".join(known_markers())
+    tags = tags or {}
+    allowed = ", ".join(known_markers()) + (
+        "; e os da empresa: " + ", ".join(f"[{n}]" for n in tags) if tags else "")
     for i, ch in enumerate(text):
         if ch != "[":
             continue
@@ -268,6 +398,8 @@ def _bracket_problems(text: str, where: str, phase: str) -> "list[str]":
         name = m.group(1)
         if name in EMAIL_FIELDS:
             continue
+        if name in tags or (any_company_tag and is_custom_tag_name(name)):
+            continue
         if name in REFUSED_FIELDS:
             since = _FIELD_PHASE.get(name)
             if since is not None and _PHASES.index(phase) >= _PHASES.index(since):
@@ -279,7 +411,9 @@ def _bracket_problems(text: str, where: str, phase: str) -> "list[str]":
 
 
 def validate_template(subject: str, body: str, *, phase: str = "E1",
-                      persona: "Optional[str]" = None) -> "tuple[str, ...]":
+                      persona: "Optional[str]" = None,
+                      custom_tags: "Mapping[str, str] | Iterable[str]" = (),
+                      any_company_tag: bool = False) -> "tuple[str, ...]":
     """Every reason this template cannot be saved, in words — ``()`` when it is valid.
 
     Never raises. Each reason is a sentence the tenant's admin reads (the host answers 400 with
@@ -289,6 +423,17 @@ def validate_template(subject: str, body: str, *, phase: str = "E1",
     list for every persona (the owner's rule, 2026-10-21), and a marker this persona cannot fill
     is the send's question, not the save's refusal (:func:`fields_for`, :class:`Missing`). It is
     still accepted so that a caller written when it narrowed the list keeps working.
+
+    ``custom_tags`` — the tenant's company tags: a mapping ``{name: value}`` or just the names.
+    Each is a marker of this template beside the thirteen, in any persona; a name that cannot be
+    a tag (:func:`is_custom_tag_name`) is ignored, so it unlocks nothing. With the VALUES, a tag
+    whose value spans lines is refused in the subject. ``()`` — no company tag: the verdict of
+    before, byte for byte.
+
+    ``any_company_tag`` — the TURN's reading: every name a company tag can have is accepted,
+    declared or not, because a template whose tag was removed after it was saved still exists —
+    the fill says the tag is missing and the send asks (:data:`CUSTOM_TAG_REMOVED`). The SAVE
+    passes the tenant's tags and leaves this ``False``.
     """
     if phase not in _PHASES:
         raise ValueError(f"phase must be one of {_PHASES}, not {phase!r}")
@@ -303,11 +448,15 @@ def validate_template(subject: str, body: str, *, phase: str = "E1",
         out.append("o corpo está vazio")
     elif len(body) > MAX_BODY_CHARS:
         out.append(f"o corpo tem {len(body)} caracteres; o máximo é {MAX_BODY_CHARS}")
-    out += _bracket_problems(subject, "assunto", phase)
-    out += _bracket_problems(body, "corpo", phase)
+    tags = _company_tags(custom_tags)
+    out += _bracket_problems(subject, "assunto", phase, tags, any_company_tag)
+    out += _bracket_problems(body, "corpo", phase, tags, any_company_tag)
     for name in markers_cited(subject):
         if name in SUBJECT_FORBIDDEN:
             out.append(f"[{name}] não pode ir no assunto (tem várias linhas ou é texto livre)")
+        elif "\n" in _custom_value(tags.get(name) or ""):
+            out.append(f"[{name}] não pode ir no assunto (o valor dessa tag da empresa tem "
+                       "várias linhas)")
     uses = len([m for m in _MARKER.finditer(subject + "\n" + body) if m.group(1) == "conteudo"])
     if uses > 1:
         out.append(f"[conteudo] aparece {uses} vezes; só pode aparecer uma")
@@ -338,6 +487,9 @@ class EmailContext:
     that failed): every schedule-derived field is missing, with this sentence. ``pay_error`` —
     the rules do not declare the pay: the pay fields are missing, with this sentence. Both are the
     vertical's own words and are never wrapped in another.
+
+    ``custom_tags`` — the tenant's company tags, ``{name: value}`` (:func:`parse_custom_tags`),
+    from the host: a FIXED value of the tenant, the same for every persona and every recipient.
     """
     recipient_name: str = ""
     recipient_email: str = ""
@@ -352,6 +504,7 @@ class EmailContext:
     today: Optional[date] = None
     persona_name: str = ""
     requester_name: str = ""
+    custom_tags: "Mapping[str, str]" = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -432,21 +585,39 @@ def fill_email_fields(fields: "Iterable[str]", context: EmailContext, *,
     (:func:`fields_for`: another persona's provider reads it) is a ``Missing`` that names the
     marker and WHO reads it, and is never taken from ``context`` — a value there was not this
     persona's to read. ``None`` fills every marker from the context, exactly as before.
+
+    A field that is not one of the thirteen and has a company tag's name
+    (:func:`is_custom_tag_name`) is a company tag: filled from ``context.custom_tags`` FIRST and
+    in ANY persona, because its value is the tenant's, not a persona's read. One the context does
+    not carry was removed after the template was saved — a ``Missing`` with
+    :data:`CUSTOM_TAG_REMOVED`; one whose stored value the save would refuse is a ``Missing``
+    with that refusal. Neither is ever rendered blank.
     """
-    wanted = tuple(dict.fromkeys(f for f in fields if f in EMAIL_FIELDS))
+    wanted = tuple(dict.fromkeys(f for f in fields
+                                 if f in EMAIL_FIELDS or is_custom_tag_name(f)))
     values: dict[str, str] = {}
     missing: list[Missing] = []
     mine = fields_for(persona)
+    tags = context.custom_tags if isinstance(context.custom_tags, Mapping) else {}
 
     def miss(name: str, reason: str) -> None:
-        missing.append(Missing(name, EMAIL_FIELDS[name].source, reason))
+        source = EMAIL_FIELDS[name].source if name in EMAIL_FIELDS else CUSTOM_TAG_SOURCE
+        missing.append(Missing(name, source, reason))
 
     who = context.recipient_name.strip() or context.professor.strip() or "o destinatário"
     month_num = _month_numeric(context.month)
     if not context.recipient_email.strip():
         miss("email", f"{who} não tem e-mail no cadastro")
     for name in wanted:
-        if name not in mine:
+        if name not in EMAIL_FIELDS:
+            # A company tag: the tenant's fixed value, before any provider, in any persona.
+            if name not in tags:
+                miss(name, CUSTOM_TAG_REMOVED)
+            elif custom_tag_problems(name, tags[name]):
+                miss(name, "; ".join(custom_tag_problems(name, tags[name])))
+            else:
+                values[name] = _custom_value(tags[name])
+        elif name not in mine:
             owner = provider_of(name)
             miss(name, f"o template usa [{name}], que esta persona não consegue preencher"
                        + (f": só a {owner.label} ({owner.persona}) o lê" if owner else ""))
@@ -580,5 +751,7 @@ __all__ = [
     "fields_for", "provider_for", "provider_of", "provider_fields", "template_needs_month",
     "markers_cited", "template_fields", "validate_template", "fill_email_fields",
     "render_email", "email_digest", "missing_question", "is_email_month", "month_words",
-    "date_words",
+    "date_words", "CUSTOM_TAG_NAME", "MAX_CUSTOM_TAG_CHARS", "MAX_CUSTOM_TAGS",
+    "CUSTOM_TAG_SOURCE", "CUSTOM_TAG_REMOVED", "is_custom_tag_name", "custom_tag_problems",
+    "normalise_custom_tags", "parse_custom_tags",
 ]
