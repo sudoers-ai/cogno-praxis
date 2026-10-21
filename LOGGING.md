@@ -26,14 +26,15 @@ This library follows the Cogno house rule: **libraries emit, the host configures
   (`SchedulerError`, `BookkeeperError`, `CompanyError`, `CoordinatorError`), which the FastMCP
   layer surfaces as a tool error (`isError=True`) → cogno-mcp maps it to `ToolResult(ok=False)`
   and the EGO self-corrects. The host decides how to surface real failures.
-- **WARNING** — 13 calls. A degradation or a refusal the operator has to know about, where
+- **WARNING** — 18 calls. A degradation or a refusal the operator has to know about, where
   raising would be worse than continuing: a sheet that could not be read, a configuration line
   that was skipped, a mailbox variable that is not valid JSON, an index that could not be
-  built.
-- **INFO** — 1 call: the coordinator saying that `cogno-herald` is not installed, so no
-  calendar mail is configured.
-- **DEBUG** — 2 calls: a race in the scheduler's store that resolved itself, and a row of the
-  hours tab whose total could not be read.
+  built, a seed file that could not be read whole.
+- **INFO** — 2 calls: the coordinator saying that `cogno-herald` is not installed, so no
+  calendar mail is configured; and a rehearsal seed of classes that was applied.
+- **DEBUG** — 5 calls: a race in the scheduler's store that resolved itself, a row of the
+  hours tab whose total could not be read, and a seed file that was NOT applied to this turn's
+  tenant (the guard doing its job).
 
 The `mcp` SDK does its own logging under the `mcp` namespace (FastMCP's stdio server prints
 request lines); configure or redirect it separately.
@@ -56,6 +57,9 @@ the logger, the event, the level, the `key=` fields and whether the line carries
 | `cogno_praxis.coordinator.mailer` | `calendar_mail_not_accepted` | WARNING | the calendar mail was not accepted by the server |
 | `cogno_praxis.coordinator.mailer` | `smtp_env_ignored` (`reason=not_json\|not_an_object`, `var`) | WARNING | the mailbox variable is not valid JSON, or is JSON and not an object: ignored |
 | `cogno_praxis.coordinator.mailer` | `herald_not_installed` | INFO | `cogno-herald` is not installed, so no calendar mail is configured |
+| `cogno_praxis.coordinator.seed` | `seed_applied` (`sheets`, `rows`) | INFO | the seed FILE (`COGNO_COORDINATOR_SEED_FILE`) belongs to the tenant the host named for this turn (`COGNO_COORDINATOR_TENANT`) and its grids went into the in-memory store: how many spreadsheets and rows. Never the tenant, an id, a tab or a cell |
+| `cogno_praxis.coordinator.seed` | `seed_skipped` (`reason=no_tenant\|other_tenant\|no_sheet_for_rules`) | DEBUG | a seed file is set and was NOT applied: the host named no tenant, the file is another tenant's, or it seeds no spreadsheet this tenant's rules name. The store is the empty one |
+| `cogno_praxis.coordinator.seed` | `seed_unreadable` (`reason=missing\|not_json\|not_the_shape`) | WARNING | the seed file could not be read whole — it is used whole or not at all, and the store is the empty one. Never the path nor the content |
 | `cogno_praxis.scheduler.engine` | `holidays_unavailable` (`country_sha`, `state_sha`, `error`) | WARNING | the holiday calendar of a country/state could not be loaded: holiday filtering is off |
 | `cogno_praxis.scheduler.stores.postgres` | `slot_uniqueness_unavailable` (`reason=duplicate_active_rows`, `action`) | WARNING | the double-booking index could not be built because duplicate rows exist; `action` is the query that finds them |
 | `cogno_praxis.scheduler.stores.postgres` | `slot_uniqueness_unavailable` (`reason`, `error`) | WARNING | the index could not be built for any other reason; `reason` is the SQLSTATE. The service-level pre-check remains the guard |
@@ -63,7 +67,8 @@ the logger, the event, the level, the `key=` fields and whether the line carries
 | `cogno_praxis.scheduler.stores.postgres` | `sync_hosts_empty_refused` (`scope_sha`, `kept`) | WARNING | an empty catalog was ignored rather than deleting the scope's professionals (`kept` says how many stayed). An operator who meant to empty the catalog learns here that it was not emptied |
 
 `sheet_unreadable` is ONE call, in a helper the four reads share, and `smtp_env_ignored` is two
-calls with the same fields: one row each. A line of the coordinator
+calls with the same fields: one row each. So are `seed_unreadable` (five calls) and
+`seed_skipped` (three), told apart by a literal `reason=`. A line of the coordinator
 opens with `stage=coordinator`; a line of the scheduler with `stage=scheduler`.
 
 ## Modules that log nothing
@@ -151,8 +156,10 @@ There is no class for text.
 | `pairs` | count | how many pairs of rows were not joined |
 | `reason` | closed | the SQLSTATE of the Postgres error, or `unknown`; otherwise a literal |
 | `row` | count | the row within the range read, the header being row 1 |
+| `rows` | count | how many rows a seed file put into the store, all tabs |
 | `scope_sha` | digest | the scheduler scope |
 | `sheet_sha` | digest | the KEY the tenant gave the spreadsheet — never its id |
+| `sheets` | count | how many spreadsheets a seed file seeded |
 | `state_sha` | digest | the holiday calendar's state, or `-` when none is configured |
 | `status` | count | the HTTP status the store's exception carried, or `0` |
 | `tab` | closed | `schedule`, `hours`, `ibope` or `professors` — never the name the tenant gave the tab |

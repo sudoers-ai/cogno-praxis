@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Added — a seed of classes for the coordinator, read from a FILE, for ONE tenant (2026-10-21)
+
+- **Why.** Without a Google token the coordinator's subprocess serves an EMPTY in-memory store,
+  so a rehearsal tenant (no Google grant) had no classes and nothing on that path could be
+  rehearsed. The scheduler has had `COGNO_SCHEDULER_SEED` for its harnesses.
+- **What.** `COGNO_COORDINATOR_SEED_FILE` names a JSON file — `{"tenant": …, "sheets":
+  {<spreadsheet id>: {<tab>: [[row 1], …]}}}` — whose grids `coordinator/seed.py` puts into the
+  in-memory store (`server._demo_service`). **The guard is the tenant:** the subprocess inherits
+  the box's environment, so the file is applied only when `COGNO_COORDINATOR_TENANT` (the tenant
+  the host names for the turn) is EXACTLY the file's own; absent, blank or another tenant, the
+  store is the empty one of today. Never over a Google token, only the spreadsheet ids the
+  tenant's rules name, and a file is used whole or not at all.
+- **Inert until a host passes `COGNO_COORDINATOR_TENANT`** — no host does today; the host's PR
+  comes after a pin of this.
+- **Logs** (`LOGGING.md`): `seed_applied` (INFO, how many spreadsheets and rows), `seed_skipped`
+  (DEBUG, a closed reason), `seed_unreadable` (WARNING, a closed reason) — never the tenant, an
+  id, a tab, the path or a cell.
+- **Tests.** `tests/unit/test_coordinator_seed_file.py` (20; 9 red on `911efd7` — the two twins
+  and the seven unreadable files that must warn): the tenant's file is its spreadsheet, the
+  applied line, the guard (no tenant, blank, another, another case, a file with no tenant), never
+  over a token, only the sheets the rules name, seven unreadable shapes and a missing file; two
+  controls green in both worlds (no variable → today's service; a hand-placed grid is read the same
+  way). The logging sync tests hold the three rows and the two new count fields.
+- **Docs.** `docs/HOST_INTEGRATION.md` (the two variables), `docs/COORDINATOR.md`, `LOGGING.md`.
+
 ### Fixed — `confirm_swap`'s `professor` is optional: empty is the caller (2026-10-14)
 
 - **The schema said what the service does not.** `professor: str` had no default, so the published

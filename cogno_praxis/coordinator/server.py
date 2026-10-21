@@ -27,6 +27,7 @@ from cogno_praxis.coordinator.ics import CalendarEvent, CalendarSender
 from cogno_praxis.coordinator.config import CoordinatorConfig
 from cogno_praxis.coordinator.footers import unmatched_discipline_line
 from cogno_praxis.coordinator.pay import render_faculty_pay_block, render_pay_block
+from cogno_praxis.coordinator.seed import apply_seed
 from cogno_praxis.coordinator.service import (
     ALL_PROFESSORS,
     _OVERSIGHT_ROLES,
@@ -946,8 +947,10 @@ def build_server(service: Optional[CoordinatorService] = None, *,
 
 def _demo_service() -> CoordinatorService:
     """Standalone/subprocess: config from COGNO_COORDINATOR_RULES; the store is the Google
-    adapter when the host passes an OAuth token (COGNO_COORDINATOR_GOOGLE_TOKEN), else an empty
-    in-memory fake (dev/demo). The host mints/refreshes the token and injects it per turn."""
+    adapter when the host passes an OAuth token (COGNO_COORDINATOR_GOOGLE_TOKEN), else an
+    in-memory fake (dev/demo) — empty, unless a seed FILE belongs to the tenant the host names
+    for this turn (``seed``: COGNO_COORDINATOR_SEED_FILE + COGNO_COORDINATOR_TENANT). The host
+    mints/refreshes the token and injects it per turn."""
     cfg = CoordinatorConfig(os.environ.get("COGNO_COORDINATOR_RULES", ""))
     # WHERE "today" COMES FROM. Not the process clock: this server runs as a stdio subprocess of
     # the host, and the host's container boots in UTC on purpose — so between 21:00 and midnight
@@ -966,6 +969,9 @@ def _demo_service() -> CoordinatorService:
     store = InMemorySpreadsheetStore()
     for _, sid in cfg.spreadsheets.items():
         store.put(sid, cfg.tab_schedule, [["Data", "Dia", "Professor", "Disciplina", "Sala"]])
+    # A rehearsal tenant's classes, from a FILE, when the file is THIS tenant's — never over a
+    # Google token (above), and only for the spreadsheets these rules name (`seed`).
+    apply_seed(store, cfg.spreadsheets.values())
     return CoordinatorService(store, cfg, today=clock)
 
 
