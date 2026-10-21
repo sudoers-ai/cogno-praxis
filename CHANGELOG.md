@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Fixed — «Feriado - <nome>» is a holiday, not a class: the skip reads the base name (2026-10-21)
+
+- **Why.** `CoordinatorService._is_skip` compared the WHOLE subject cell with `SKIP_LABELS`. A
+  holiday written with its name («Feriado - Independência do Brasil») was therefore a class in
+  five places: the professor's agenda, the «você quis dizer» discipline list, the pay estimate
+  (one class, `PayLine.classes=1`), the supervisor's faculty-pay block («Sem professor na agenda:
+  1 aula» when the row has no professor) and the swap refusal («already has a class scheduled»). On a
+  real export of a coordinator's schedule replies (31 distinct cells, 414 lines) the shape is 2
+  cells and 10 lines. Both are «Feriado - <nome>», and the pay replies of the same export had none.
+- **What.** The skip is the whole cell OR its base name (`service._discipline`, the reader the
+  discipline list's status notes already use). The labels still decide: «Feriado» alone is skipped
+  as before; «Laboratório - Redes», «Redes - Feriado», «Feriado-Ponte» and «Feriados Escolares» are
+  classes. «Feriado Nacional - …» is skipped where the labels hold «Feriado Nacional» (the defaults
+  do) and is a class where they do not. On that export the fix moves exactly those 2 cells, under
+  the defaults, under «Feriado» alone and under the rules template's «Recesso, Feriado, Férias»,
+  and no other cell.
+- **Tests.** `tests/unit/test_coordinator_skip_reads_the_base_name.py` (14; 8 red on `1efa214`):
+  the twin in the four places, the bare label as the control, the cases that stay classes,
+  «Feriado Nacional» under both label lists, `include_skip=True` still returning the row, and the
+  one reader. Two pins of `tests/unit/test_oversight_pay_by_professor.py` DEFENDED the defect: the
+  faculty-pay block's «1 aula» with no professor was the holiday row, and the master listing held
+  it as a class (the line turn 115 recorded). They now say what the holiday is. A new control keeps
+  a real class with an empty professor column counted, because the holiday was the only row that
+  reached that line. 11 red on `1efa214` across the two files.
+- **Docs.** `docs/COORDINATOR.md`.
+
 ### Added — a seed of classes for the coordinator, read from a FILE, for ONE tenant (2026-10-21)
 
 - **Why.** Without a Google token the coordinator's subprocess serves an EMPTY in-memory store,

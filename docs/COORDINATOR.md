@@ -127,6 +127,33 @@ sentence that carries the free-slot label…»). It is a count of rows ON the li
 left out, which is why it is not a bit like the window lines — so the trace shows the rule working.
 `tests/unit/test_coordinator_free_slot_by_word.py`.
 
+## A holiday written with its name is skipped, by its base name (2026-10-21)
+
+`SKIP_LABELS` marks the rows that are not classes («Recesso», «Feriado», «Férias»…). The comparison
+read the WHOLE subject cell. A secretary writes a holiday the way she writes every exception: she
+appends its name to the label, «Feriado - Independência do Brasil». That whole cell is no label, so
+the row was a class named after the holiday. It showed up in five places:
+- in the professor's agenda;
+- in the discipline list of the «você quis dizer…?» footer;
+- in the pay estimate, as one class (`PayLine.classes=1`);
+- in the supervisor's faculty-pay block, as «1 aula» with no professor, when the row has none;
+- in the swap refusal, which said the date «already has a class scheduled».
+
+`CoordinatorService._is_skip` now skips a row when the whole cell is a label, or its BASE name is.
+The base name is `service._discipline` (the text before the last spaced dash), the same reader the
+status notes of the discipline list use above.
+
+The labels still decide what a holiday is:
+- «Feriado» alone is skipped, as before.
+- «Laboratório - Redes» and «Redes - Feriado» are classes. Their base names are «Laboratório» and
+  «Redes», and a label word after the dash is not the base name.
+- «Feriado-Ponte» is a class, because a dash with no spaces is one word.
+- «Feriado Nacional - Tiradentes» has the base name «Feriado Nacional». It is skipped where the
+  labels hold «Feriado Nacional» (the defaults do) and stays a class where they do not, for example
+  a tenant that declares only «Feriado». Adding the label is the tenant's decision.
+
+`aggregate(include_skip=True)` still returns the row. `tests/unit/test_coordinator_skip_reads_the_base_name.py`.
+
 ## `confirm_swap`: an empty `professor` is the caller (2026-10-14)
 
 The service has always read `professor=""` as the caller's own classes for anyone who is not the

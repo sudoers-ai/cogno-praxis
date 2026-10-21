@@ -844,8 +844,19 @@ class CoordinatorService:
         return row[idx].strip() if idx is not None and idx < len(row) else ""
 
     def _is_skip(self, subject: str) -> bool:
-        n = _norm(subject)
-        return any(n == _norm(lbl) for lbl in self.cfg.skip_labels)
+        """Is this row NOT a class — the whole cell is a ``SKIP_LABELS`` label, or its BASE name
+        (:func:`_discipline`, the text before the last spaced dash) is?
+
+        A secretary writes a holiday the way she writes every exception: she appends its name to
+        the label, «Feriado - Independência do Brasil». Compared WHOLE, that cell was a class
+        named after the holiday, in the agenda, in the discipline list and in the pay estimate.
+        The base name is read with the SAME reader the discipline list's status notes use, so
+        the two can never disagree about where a cell splits. The labels still decide: «Redes -
+        Feriado» is a class of Redes, and «Feriado Nacional - …» is skipped only where the
+        tenant's labels (or the defaults) hold «Feriado Nacional».
+        """
+        labels = {_norm(lbl) for lbl in self.cfg.skip_labels}
+        return _norm(subject) in labels or _norm(_discipline(subject)) in labels
 
     def _is_free_label(self, subject: str) -> bool:
         """The WHOLE cell is a free-slot label — the comparison every label here started with.
