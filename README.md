@@ -152,8 +152,9 @@ any other text of the tenant.
 - `validate_template(…, custom_tags=…)` accepts the tenant's tags (a mapping, or just the names)
   beside the thirteen, in any persona; with the values, a tag that spans lines is refused in the
   subject. A name that cannot be a tag is ignored, so it unlocks nothing. With no `custom_tags`
-  the verdict is the one of before, byte for byte. `any_company_tag=True` is the turn's
-  reading: a template whose tag was removed after it was saved still exists.
+  the verdict is the one of before, byte for byte. `removed_tags=` is the turn's reading: the
+  names of tags the tenant REMOVED, so a template whose tag was removed after it was saved still
+  exists; a name never declared (a typo) is refused at both doors.
 - `fill_email_fields` fills a company tag from `EmailContext.custom_tags`, before any provider and
   in any persona — the value is the tenant's, not a persona's read. A tag the context no longer
   carries is `missing` with «tag personalizada removida» (its source:

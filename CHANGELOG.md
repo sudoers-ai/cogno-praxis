@@ -18,8 +18,11 @@
   thirteen, in any persona; with the values, a tag whose value spans lines is refused in the
   subject. A name that cannot be a tag is ignored, so a tag never unlocks a reserved marker nor
   overrides a standard one. With no `custom_tags` the verdict is the one of before, byte for
-  byte. `any_company_tag=True` is the turn's reading: a template whose tag was removed after it
-  was saved still exists.
+  byte. `removed_tags=` is the turn's reading: the names of the tags the tenant REMOVED (the host
+  keeps them), so a template whose tag was removed after it was saved still exists, and a name
+  never declared (a typo) is refused at both doors, as any unknown marker always was. (A first
+  cut accepted at the turn every name a tag CAN have; it kept a typo template offered and broke
+  two E3 pins of the host — measured, and narrowed.)
 - **The fill.** `EmailContext.custom_tags` carries the tenant's tags, and `fill_email_fields`
   fills a company tag from it FIRST and in ANY persona — the value is the tenant's, not a
   persona's read. A tag the context no longer carries is a `Missing` with «tag personalizada

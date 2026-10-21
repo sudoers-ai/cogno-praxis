@@ -258,7 +258,8 @@ markers exist, refuses a bad template or a bad company tag in words, and fills e
 code; storing the templates and the tenant's company tags, the admin API, the send, the
 confirmation and the audit are yours (README, «Templated e-mail fields»). A host passes the
 tenant's tags to `validate_template(…, custom_tags=…)` when a template is SAVED, adds
-`any_company_tag=True` when the turn reads the stored ones, and hands the same tags to
+the names of the tags the tenant removed (`removed_tags=`) when the turn reads the stored
+ones — so a template whose tag was removed is kept and its send asks — and hands the same tags to
 `EmailContext.custom_tags` when it composes.
 
 ## 8. The environment each server reads

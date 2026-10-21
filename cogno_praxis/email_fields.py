@@ -44,10 +44,11 @@ instruction. :func:`normalise_custom_tags` is the SAVE door (every refusal named
 is filled deterministically by :func:`fill_email_fields`, from ``EmailContext.custom_tags``,
 before any provider and in any persona: a value is the tenant's, not a persona's read.
 :func:`validate_template` accepts the tenant's tag names (``custom_tags=``); a template whose tag
-was removed after it was saved is refused by the save and kept by the turn
-(``any_company_tag=True``), and the fill returns it as a :class:`Missing` —
-«tag personalizada removida» — so the send asks the requester instead of sending. Tags filled by
-data (a provider, code), tags of one persona only and HTML are not here.
+was removed after it was saved is refused by the save and kept by the turn, which is handed the
+names the tenant REMOVED (``removed_tags=``), and the fill returns it as a :class:`Missing` —
+«tag personalizada removida» — so the send asks the requester instead of sending. A name the
+tenant never declared (a typo) is refused at both doors, as any unknown marker always was. Tags
+filled by data (a provider, code), tags of one persona only and HTML are not here.
 
 **A field with no value STOPS the send.** :func:`fill_email_fields` returns ``(values, missing)``
 and never raises; each :class:`Missing` names the field, where it should have come from and why
@@ -377,11 +378,10 @@ def template_fields(subject: str, body: str) -> "tuple[str, ...]":
 
 def _bracket_problems(text: str, where: str, phase: str,
                       tags: "Optional[Mapping[str, Optional[str]]]" = None,
-                      any_company_tag: bool = False) -> "list[str]":
+                      removed: "frozenset[str]" = frozenset()) -> "list[str]":
     """Every ``[`` in ``text`` that does not open a marker of :data:`EMAIL_FIELDS` nor one of
     the tenant's company ``tags`` — named, with its position, listing every marker that exists.
-    ``any_company_tag`` accepts every name a company tag CAN have (:func:`is_custom_tag_name`),
-    declared or not."""
+    A name in ``removed`` (a tag the tenant removed) is accepted too, and is not listed."""
     out: list[str] = []
     tags = tags or {}
     allowed = ", ".join(known_markers()) + (
@@ -398,7 +398,7 @@ def _bracket_problems(text: str, where: str, phase: str,
         name = m.group(1)
         if name in EMAIL_FIELDS:
             continue
-        if name in tags or (any_company_tag and is_custom_tag_name(name)):
+        if name in tags or name in removed:
             continue
         if name in REFUSED_FIELDS:
             since = _FIELD_PHASE.get(name)
@@ -413,7 +413,7 @@ def _bracket_problems(text: str, where: str, phase: str,
 def validate_template(subject: str, body: str, *, phase: str = "E1",
                       persona: "Optional[str]" = None,
                       custom_tags: "Mapping[str, str] | Iterable[str]" = (),
-                      any_company_tag: bool = False) -> "tuple[str, ...]":
+                      removed_tags: "Iterable[str]" = ()) -> "tuple[str, ...]":
     """Every reason this template cannot be saved, in words — ``()`` when it is valid.
 
     Never raises. Each reason is a sentence the tenant's admin reads (the host answers 400 with
@@ -430,10 +430,11 @@ def validate_template(subject: str, body: str, *, phase: str = "E1",
     whose value spans lines is refused in the subject. ``()`` — no company tag: the verdict of
     before, byte for byte.
 
-    ``any_company_tag`` — the TURN's reading: every name a company tag can have is accepted,
-    declared or not, because a template whose tag was removed after it was saved still exists —
-    the fill says the tag is missing and the send asks (:data:`CUSTOM_TAG_REMOVED`). The SAVE
-    passes the tenant's tags and leaves this ``False``.
+    ``removed_tags`` — the TURN's reading: the names of company tags the tenant REMOVED. A
+    template that cites one still exists — the fill says the tag is missing and the send asks
+    (:data:`CUSTOM_TAG_REMOVED`) — so it is accepted here; a name never declared (a typo) is not
+    one, and is refused as at the save. A name that cannot be a tag is ignored. The SAVE passes
+    the tenant's tags and no removed ones.
     """
     if phase not in _PHASES:
         raise ValueError(f"phase must be one of {_PHASES}, not {phase!r}")
@@ -449,8 +450,9 @@ def validate_template(subject: str, body: str, *, phase: str = "E1",
     elif len(body) > MAX_BODY_CHARS:
         out.append(f"o corpo tem {len(body)} caracteres; o máximo é {MAX_BODY_CHARS}")
     tags = _company_tags(custom_tags)
-    out += _bracket_problems(subject, "assunto", phase, tags, any_company_tag)
-    out += _bracket_problems(body, "corpo", phase, tags, any_company_tag)
+    removed = frozenset(n for n in _company_tags(removed_tags) if n not in tags)
+    out += _bracket_problems(subject, "assunto", phase, tags, removed)
+    out += _bracket_problems(body, "corpo", phase, tags, removed)
     for name in markers_cited(subject):
         if name in SUBJECT_FORBIDDEN:
             out.append(f"[{name}] não pode ir no assunto (tem várias linhas ou é texto livre)")
