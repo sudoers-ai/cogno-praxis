@@ -236,7 +236,11 @@ def test_ALL_PROFESSORS_answers_the_supervisor_with_one_block_per_professor_and_
     assert (by[B].hours, by[B].base) == (32, 3840.0)      # 4 Python + 5 Spark, ONE of them adiada
     assert (by[C].hours, by[C].base) == (20, 2400.0)      # 3 Microservices + 3 Spark, one adiada
     assert (fac.hours, fac.base) == (64, 7680.0)          # was 72 h / R$ 8.640,00 — R$ 960,00 less
-    assert fac.unassigned_classes == 1                    # the holiday row: dated, no professor
+    # The holiday row («Feriado - Independência do Brasil», no professor) used to count here as
+    # ONE class nobody teaches, and the block told the supervisor so. It is a holiday: the skip
+    # reads the cell's base name (``test_coordinator_skip_reads_the_base_name.py``). A real class
+    # with an empty professor column still counts — ``test_a_class_with_no_professor_is_still_…``.
+    assert fac.unassigned_classes == 0
 
     block = render_faculty_pay_block(fac)
     assert block.startswith("*Remuneração estimada — todos os professores — September 2026*\n")
@@ -250,9 +254,23 @@ def test_ALL_PROFESSORS_answers_the_supervisor_with_one_block_per_professor_and_
     assert "*Total (3 professores)*\nBase: 64 h · R$ 7.680,00" in block
     # the bonus is OPEN for all three (no IBOPE result), so no total with bonus is invented
     assert f"Com bônus: não somado — o bônus de {A}, {B}, {C} está em aberto" in block
-    assert "Sem professor na agenda: 1 aula" in block
+    assert "Sem professor na agenda" not in block
     # the tool relays exactly that block
     assert _tool(_svc())(period="2026-09", professor=ALL_PROFESSORS, **SUPERVISOR) == block
+
+
+
+def test_a_class_with_no_professor_is_still_counted_outside_every_block():
+    """The control for the holiday leaving the count above: a CLASS whose professor column is
+    empty is still a class nobody is paid for, counted beside the blocks and outside the total.
+    Without it, the holiday was the only row that exercised this line."""
+    svc = _svc()
+    svc.store.put(S33, "Secretaria", [_HEADER] + _SHEETS[S33]
+                  + [["25/09/2026", "Sex", "", "Oficina de Cerâmica", ""]])
+    fac = svc.estimate_faculty_pay(period="2026-09", **SUPERVISOR)
+    assert fac.unassigned_classes == 1
+    assert (fac.hours, fac.base) == (64, 7680.0)          # outside the total, as before
+    assert "Sem professor na agenda: 1 aula no período" in render_faculty_pay_block(fac)
 
 
 def test_the_grand_total_is_NEVER_a_bare_sum():
@@ -437,18 +455,21 @@ def test_NOT_CONFIGURED_names_the_key_for_the_faculty_estimate_too_one_configura
 def test_the_supervisors_master_listing_names_the_professor_on_every_line_and_ONLY_adds_that():
     """Hole (c). The listing of turn 115 — the 1256 characters, with no professor anywhere —
     is exactly what the new listing becomes once each line's `` · Professor: <name>`` is
-    stripped: nothing else moved. The holiday row has no professor on the sheet and gets no
-    part. The mutation «line without professor» dies here."""
+    stripped — except ONE line: turn 115 recorded the holiday («Feriado - Independência do
+    Brasil») as a class of the listing, and the skip now reads the cell's base name and drops it
+    (``test_coordinator_skip_reads_the_base_name.py``). The mutation «line without professor»
+    dies here."""
     out = _tool(_svc(), "get_professor_schedule")(month="2026-09", include_past=True, professor="",
                                                    **SUPERVISOR)
     lines = out.splitlines()
     named = [ln for ln in lines if " · Professor: " in ln]
-    assert len(named) == 18 and len([ln for ln in lines if ln.startswith("- ")]) == 19
-    assert "- 07/09 · Turma DSA_33 · Feriado - Independência do Brasil" in lines
+    assert len(named) == 18 and len([ln for ln in lines if ln.startswith("- ")]) == 18
+    holiday = "- 07/09 · Turma DSA_33 · Feriado - Independência do Brasil"
+    assert holiday in TURN_115_LISTING.splitlines() and holiday not in lines
     assert "- 03/09 · Turma DE_09 · NoSQL and Distributed Databases · Professor: Professor A" in lines
     assert "- 30/09 · Turma DSA_33 · Microservices Architecture · Professor: Professor C" in lines
     stripped = "\n".join(ln.split(" · Professor: ")[0] for ln in lines)
-    assert stripped == TURN_115_LISTING
+    assert stripped == TURN_115_LISTING.replace(holiday + "\n", "")
     assert len(TURN_115_LISTING) == 1256
 
 
