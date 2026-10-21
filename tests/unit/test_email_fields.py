@@ -161,8 +161,10 @@ def test_the_list_is_derived_once_and_the_docs_cite_nothing_outside_it():
     markers is checked AGAINST the list, so a marker added to the prose and not to the code (or
     the other way round) fails here."""
     import cogno_praxis.email_fields as ef
-    # ``[nmoe]`` is the docs' deliberate counter-example — the typo the validator exists to catch.
-    allowed = set(EMAIL_FIELDS) | set(REFUSED_FIELDS) | {"nmoe"}
+    # ``[nmoe]`` is the docs' deliberate counter-example — the typo the validator exists to catch;
+    # ``[horario_atendimento]`` is their example of a tenant's company tag, and is one.
+    allowed = set(EMAIL_FIELDS) | set(REFUSED_FIELDS) | {"nmoe", "horario_atendimento"}
+    assert ef.is_custom_tag_name("horario_atendimento")
     root = pathlib.Path(ef.__file__).resolve().parents[1]
     whole = (root / "README.md").read_text(encoding="utf-8")
     head = "### Templated e-mail fields"

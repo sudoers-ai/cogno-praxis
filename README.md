@@ -135,6 +135,32 @@ either is refused, for every persona. So is any `[` that does not open a known m
 what catches `[nmoe]`. There is no marker for the sender's mailbox: `[assinatura]` is the
 persona and `[solicitante]` the person who asked, and no marker quotes a third person's data.
 
+**The tenant's own markers — company tags with a FIXED value (2026-10-21).** Beside the
+thirteen, a tenant may declare tags of its own, `{name: value}`, valid in EVERY persona's
+template: `[horario_atendimento]` → «de segunda a sexta, das 8h às 18h». The name is
+`CUSTOM_TAG_NAME` (`[a-z][a-z0-9_]{1,30}`: lowercase, no accent, no space) and is never one of
+the thirteen nor a reserved name (`[cpf_cnpj]`, `[contrato]`). The value is plain text, one line
+or several (line breaks and tabs are the only control characters), at most
+`MAX_CUSTOM_TAG_CHARS` (500) characters, and a tenant holds at most `MAX_CUSTOM_TAGS` (50). It is
+the business's DATA and never an instruction: a host that lets it into a prompt fences it like
+any other text of the tenant.
+
+- `normalise_custom_tags(raw)` → `(stored, refusals)`, the SAVE door: every refusal named, and
+  nothing stored on any refusal. `parse_custom_tags(raw)` is the TURN door: what the save would
+  keep, the rest dropped, never a refusal. `custom_tag_problems(name, value)` is the one rule
+  both apply.
+- `validate_template(…, custom_tags=…)` accepts the tenant's tags (a mapping, or just the names)
+  beside the thirteen, in any persona; with the values, a tag that spans lines is refused in the
+  subject. A name that cannot be a tag is ignored, so it unlocks nothing. With no `custom_tags`
+  the verdict is the one of before, byte for byte. `removed_tags=` is the turn's reading: the
+  names of tags the tenant REMOVED, so a template whose tag was removed after it was saved still
+  exists; a name never declared (a typo) is refused at both doors.
+- `fill_email_fields` fills a company tag from `EmailContext.custom_tags`, before any provider and
+  in any persona — the value is the tenant's, not a persona's read. A tag the context no longer
+  carries is `missing` with «tag personalizada removida» (its source:
+  «as tags personalizadas da empresa»), so the send asks the requester instead of sending.
+- Tags filled by data (a provider, code), tags of one persona only and HTML are not here.
+
 - `validate_template(subject, body, persona=…)` → the refusals in words, `()` when valid. The
   verdict is the same for every persona: `persona=` is still accepted and changes nothing. A
   template of the front desk that says `[aulas]` saves. From E3 (2026-10-07) until 2026-10-21 it

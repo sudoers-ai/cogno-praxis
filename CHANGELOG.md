@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+### Added — the tenant's own e-mail markers: company tags with a FIXED value, in every persona (2026-10-21)
+
+- **Why.** The owner asked for a field to create tags of one's own beside the thirteen standard
+  markers; the design keeps only tags with a FIXED value, the tenant's, valid in every persona
+  (the tags are standard for everything).
+- **What.** A company tag is `{name: value}`. The name is `CUSTOM_TAG_NAME`
+  (`[a-z][a-z0-9_]{1,30}`) and is refused when it collides with one of the thirteen of
+  `EMAIL_FIELDS` or a name of `REFUSED_FIELDS` (`cpf_cnpj`, `contrato`). The value is plain
+  text, one line or several (line breaks and tabs only), at most `MAX_CUSTOM_TAG_CHARS` = 500
+  characters; a tenant holds at most `MAX_CUSTOM_TAGS` = 50. `custom_tag_problems(name, value)`
+  is the one rule; `normalise_custom_tags` is the SAVE door (every refusal named, nothing stored
+  on any refusal) and `parse_custom_tags` the TURN door (it drops what the save would refuse).
+- **The template.** `validate_template(…, custom_tags=…)` accepts the tenant's tags beside the
+  thirteen, in any persona; with the values, a tag whose value spans lines is refused in the
+  subject. A name that cannot be a tag is ignored, so a tag never unlocks a reserved marker nor
+  overrides a standard one. With no `custom_tags` the verdict is the one of before, byte for
+  byte. `removed_tags=` is the turn's reading: the names of the tags the tenant REMOVED (the host
+  keeps them), so a template whose tag was removed after it was saved still exists, and a name
+  never declared (a typo) is refused at both doors, as any unknown marker always was. (A first
+  cut accepted at the turn every name a tag CAN have; it kept a typo template offered and broke
+  two E3 pins of the host — measured, and narrowed.)
+- **The fill.** `EmailContext.custom_tags` carries the tenant's tags, and `fill_email_fields`
+  fills a company tag from it FIRST and in ANY persona — the value is the tenant's, not a
+  persona's read. A tag the context no longer carries is a `Missing` with «tag personalizada
+  removida» (source «as tags personalizadas da empresa»), so the send asks the requester instead
+  of sending, the path that already existed.
+- **The marker grammar.** `[a-z_]+` became `[a-z_][a-z0-9_]*`, a strict superset: the first
+  character is the same and digits may follow it, because a tag's name may carry them
+  (`[sala2]`). A text without digits inside brackets is read exactly as before; `[x1]` is now
+  refused as «não é um marcador» (it used to be «abre um «[» que não é marcador»), and a bracketed
+  number (`[2026]`) still opens no marker.
+- **Not here:** tags filled by data (a provider, code), tags of one persona only, HTML. Storing
+  the tags, the admin API and the send are the host's.
+- **Version.** None: the praxis does not bump its version per PR; this entry waits in
+  «Unreleased» with the others.
+- **Tests.** `tests/unit/test_email_company_tags.py` (new): the twin (a template with
+  `[horario_atendimento]` saves and fills with the value), the controls (without the tag the
+  refusal is the base's byte for byte; a template with no company tag validates, fills and
+  renders the same with or without the tenant's tags), each collision, the removed tag (the save
+  refuses, the turn keeps, the fill asks), the per-persona rows of `test_email_fill_by_persona.py`
+  (the tag fills in every one and leaves the rest of the row as it was), the name grammar and the
+  value limits with their adversarial spellings, the subject, the one-pass render, the digits.
+  Docs: README «Templated e-mail fields», `docs/HOST_INTEGRATION.md` §7, the module docstring.
+
 ### Changed — ONE list of e-mail markers for every persona; who can FILL a marker is separate (2026-10-21)
 
 - **Why.** The owner's rule: «as tags do template devem ser padrão para tudo e não especifico
