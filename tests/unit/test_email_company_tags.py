@@ -13,8 +13,9 @@ text, one line or several, at most 500 characters. What is pinned, one line each
 * a collision with any of the thirteen and with the reserved names is refused, and a tag can
   never unlock a reserved marker nor override a standard one;
 * a tag removed after the template was saved: the save door refuses the template, the turn door
-  (``any_company_tag=True``) keeps it, and the fill says ``missing`` — «tag personalizada
-  removida» — so the send asks the requester instead of sending;
+  keeps it because the host names the tags the tenant REMOVED (``removed_tags=``), and the fill
+  says ``missing`` — «tag personalizada removida» — so the send asks the requester instead of
+  sending. A name the tenant never declared (a typo) is refused at BOTH doors, as before;
 * PER PERSONA: the company tag fills in EVERY row of the per-persona matrix
   (``test_email_fill_by_persona.py``'s, derived from :data:`FIELD_PROVIDERS`), and leaves the
   rest of each row exactly as it was. A provider persona without a row fails here too;
@@ -138,8 +139,8 @@ def test_a_tag_can_never_unlock_a_reserved_marker_nor_override_a_standard_one():
 def test_a_removed_tag_the_save_refuses_the_turn_keeps_and_the_fill_asks():
     # the save door, with the tenant's tags of NOW (none): refused, as any unknown marker
     assert validate_template(*T_HOURS, custom_tags={}) != ()
-    # the turn door: a template whose tag was removed still EXISTS
-    assert validate_template(*T_HOURS, custom_tags={}, any_company_tag=True) == ()
+    # the turn door: a template whose tag was REMOVED still exists
+    assert validate_template(*T_HOURS, custom_tags={}, removed_tags={TAG}) == ()
     values, missing = fill_email_fields(template_fields(*T_HOURS), _with_tags(_host_half(), {}))
     assert [m.field for m in missing] == [TAG]
     assert missing[0].reason == "tag personalizada removida"
@@ -151,12 +152,22 @@ def test_a_removed_tag_the_save_refuses_the_turn_keeps_and_the_fill_asks():
         render_email(*T_HOURS, values)
 
 
-def test_the_turn_door_still_refuses_what_is_not_a_tag_name():
-    """``any_company_tag`` opens only the tag GRAMMAR: a reserved marker, a ``[`` that opens no
-    marker and the subject rules are refused all the same."""
+def test_a_name_never_declared_is_refused_at_the_turn_as_at_the_save():
+    """The turn opens only the names the tenant REMOVED: a typo (``[nmoe]``) is not one, and a
+    template that says it is still refused — and dropped — at the turn, as it always was."""
+    (reason,) = validate_template("Aviso", "Olá [nmoe]", custom_tags=TAGS, removed_tags={"outra"})
+    assert reason.startswith("no corpo, [nmoe] não é um marcador;")
+    # CONTROL — the same template, once [nmoe] is a name the tenant removed, is kept
+    assert validate_template("Aviso", "Olá [nmoe]", removed_tags={"nmoe"}) == ()
+
+
+def test_removed_names_open_nothing_but_a_tag_name():
+    """A «removed» name that cannot be a tag (a reserved marker, a capital, one letter, a digit
+    first, a standard marker) changes no verdict."""
+    junk = {"cpf_cnpj", "Nome", "x", "1abc", "nome", "aulas"}
     for subject, body in (("NF", "[cpf_cnpj]"), ("Aviso", "Olá [Nome]"), ("Aviso", "[x]"),
-                          ("Aviso", "[1abc]"), ("Total [aulas]", "corpo")):
-        assert validate_template(subject, body, any_company_tag=True) == \
+                          ("Aviso", "[1abc]"), ("Total [aulas]", "corpo"), ("Aviso", "[nmoe]")):
+        assert validate_template(subject, body, removed_tags=junk) == \
             validate_template(subject, body), (subject, body)
 
 
@@ -292,7 +303,7 @@ def test_the_readme_documents_the_company_tags():
     root = pathlib.Path(ef.__file__).resolve().parents[1]
     readme = (root / "README.md").read_text(encoding="utf-8").split(
         "### Templated e-mail fields", 1)[1].split("\n**Prompt-only personas.**", 1)[0]
-    for name in ("custom_tags=", "any_company_tag", "normalise_custom_tags", "parse_custom_tags",
+    for name in ("custom_tags=", "removed_tags=", "normalise_custom_tags", "parse_custom_tags",
                  "custom_tag_problems", "CUSTOM_TAG_NAME", "MAX_CUSTOM_TAG_CHARS",
                  "MAX_CUSTOM_TAGS", "EmailContext.custom_tags", ef.CUSTOM_TAG_REMOVED,
                  ef.CUSTOM_TAG_SOURCE):
