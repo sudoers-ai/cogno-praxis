@@ -169,3 +169,17 @@ persona=…)`. The declaration reads nothing; a host calls `email_context` only 
 `provider_fields(template_fields(…))` names `coordinator`, so a template of generic markers
 (`[nome]`, `[empresa]`, `[data]`, …) is composed without this read, in any persona.
 `tests/unit/test_email_field_providers.py`.
+
+## A rehearsal tenant's classes, from a FILE (2026-10-21)
+
+Without a Google token the coordinator's subprocess serves an EMPTY in-memory store, so a
+rehearsal tenant — which has no Google grant — had no classes and nothing on this path could be
+rehearsed. `COGNO_COORDINATOR_SEED_FILE` names a JSON file with the grids of the tenant's
+spreadsheets (`coordinator/seed.py`; the shape is in `docs/HOST_INTEGRATION.md`). The file carries
+the tenant it belongs to, and **that is the guard**: the subprocess inherits the box's
+environment, so the file is applied only when `COGNO_COORDINATOR_TENANT` — the tenant the host
+names for the turn — is EXACTLY the file's. Never over a Google token, only the spreadsheet ids
+the tenant's rules name, and a file that cannot be read whole seeds nothing (a WARNING with the
+kind of the problem, never the path or the content). The seed is not durable: a write over a
+seeded sheet lives as long as the subprocess. Until a host passes `COGNO_COORDINATOR_TENANT` the
+seed is never applied.

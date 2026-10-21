@@ -53,6 +53,8 @@ _PINNED: "dict[str, set[str]]" = {
     "kept": {"kept"},
     "pairs": {"len(unsettled)"},
     "row": {"number"},
+    "rows": {"rows"},
+    "sheets": {"len(mine)"},
     "status": {"_http_status(exc)"},
     "value_len": {"len(value)"},
     # ── closed ──
