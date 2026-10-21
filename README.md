@@ -97,9 +97,10 @@ when a request asks for it. This module is the **closed list of markers** and th
 fills them; the host owns the send, the confirmation and the audit. The model writes exactly one
 marker, `[conteudo]` (the free text of the request); every other value is filled in code.
 
-**A template belongs to a persona, and the list has two halves.** `GENERIC_FIELDS` are the
-markers any persona's template may use — their values come from the tenant's records, the
-tenant, the request or the clock, so no persona has to read anything to fill them:
+**One list for every persona, in two halves by who can FILL a marker (2026-10-21).** Every
+marker of `EMAIL_FIELDS` is valid in any persona's template; what depends on the persona is
+whether it has somewhere to read the value from. `GENERIC_FIELDS` come from the tenant's records,
+the tenant, the request or the clock, so every persona fills them:
 
 | generic marker | value |
 |---|---|
@@ -111,7 +112,7 @@ tenant, the request or the clock, so no persona has to read anything to fill the
 | `[solicitante]` | the name of the person who asked for the e-mail |
 | `[conteudo]` | the free text, at most once per template, never in the subject |
 
-Every other marker is **specific to one persona** and is declared by that persona's
+Every other marker is **filled by one persona** and is declared by that persona's
 `FieldProvider` in `FIELD_PROVIDERS` (by persona id). Today there is one, the `COORDINATOR`'s:
 
 | `COORDINATOR` marker | value |
@@ -134,13 +135,14 @@ either is refused, for every persona. So is any `[` that does not open a known m
 what catches `[nmoe]`. There is no marker for the sender's mailbox: `[assinatura]` is the
 persona and `[solicitante]` the person who asked, and no marker quotes a third person's data.
 
-- `validate_template(subject, body, persona=…)` → the refusals in words, `()` when valid.
-  `persona=` is the persona the template is saved for: its markers are the generic ones and its
-  own provider's (`fields_for(persona)`), and a marker ANOTHER persona supplies is refused with
-  both named («[aulas] é um marcador da persona COORDINATOR (coordenação); a persona SECRETARY
-  não o tem»). The id is compared as written; a persona with no provider has the generic
-  markers. With no `persona` the validation is against every marker, as before E3 — a caller
-  that knows the persona passes it.
+- `validate_template(subject, body, persona=…)` → the refusals in words, `()` when valid. The
+  verdict is the same for every persona: `persona=` is still accepted and changes nothing. A
+  template of the front desk that says `[aulas]` saves. From E3 (2026-10-07) until 2026-10-21 it
+  was refused there.
+- `fields_for(persona)` → the markers that persona can FILL: the generic ones and its own
+  provider's (the id is compared as written). A host composing an e-mail asks it. For a marker
+  outside it, the host hands over a sentence as `schedule_error`, `fill_email_fields` returns
+  that marker as `missing` with the sentence verbatim, and the send asks the requester.
 - `CoordinatorService.email_context(professor=…, role=…, identity_label=…, period="YYYY-MM")` →
   the classes AND the pay estimate from ONE read of the schedule, so the classes listed are the
   classes paid (past days of the month included). An access refusal or an unreadable sheet

@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Changed — ONE list of e-mail markers for every persona; who can FILL a marker is separate (2026-10-21)
+
+- **Why.** The owner's rule: «as tags do template devem ser padrão para tudo e não especifico
+  para a persona». From E3 (2026-10-07) `validate_template(…, persona=…)` refused a marker
+  another persona supplies, so a front-desk template could not say `[aulas]` at all.
+- **What.** `validate_template` answers «which markers EXIST», and that answer is now the same
+  for every persona: the 13 of `EMAIL_FIELDS`. `persona=` is still accepted, so a caller
+  written when it narrowed the list keeps working, and it changes no verdict. The refusals that
+  stay (an unknown marker, `[cpf_cnpj]`, `[contrato]`, a `[` that opens nothing, the subject
+  rules) list all 13 markers. `FIELD_PROVIDERS` and `fields_for(persona)` still answer «who has
+  somewhere to READ a marker from».
+- **What happens at the send.** The fill is unchanged. A host with no reader for a provider in
+  this persona hands over its sentence as `schedule_error`, and `fill_email_fields` returns that
+  marker as `missing` with the sentence verbatim. The send then asks the requester, the path that
+  already existed. Without a sentence the reason is the fill's own («não encontro aulas de … em
+  MM/AAAA na agenda; confirma o mês?»), which is true of an empty schedule and misleading for a
+  persona that reads none. So a host should say why.
+- **Tests.** `tests/unit/test_email_markers_are_one_list.py` (new: the SECRETARY template with
+  `[aulas]` saves; every marker in every persona; the persona changes no verdict; the refusals
+  list the 13; the fill with and without the host's sentence; the coordinator's fill as the
+  control). In `tests/unit/test_email_field_providers.py`, the three pins of the refusal now pin
+  the opposite, and `fields_for` still says who fills. Docs: README «Templated e-mail fields»,
+  `docs/COORDINATOR.md`, the module docstring.
+
 ### Fixed — «Feriado - <nome>» is a holiday, not a class: the skip reads the base name (2026-10-21)
 
 - **Why.** `CoordinatorService._is_skip` compared the WHOLE subject cell with `SKIP_LABELS`. A
