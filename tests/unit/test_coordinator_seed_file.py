@@ -93,6 +93,17 @@ def test_o_ficheiro_de_outro_tenant_ou_de_ninguem_nao_se_aplica(_env, tmp_path, 
     assert _aulas() == []
 
 
+def test_sem_tenant_nomeado_o_ficheiro_nem_se_le(_env, tmp_path, caplog):
+    """A host that names no tenant costs no read: an unreadable file says nothing."""
+    p = tmp_path / "aulas.json"
+    p.write_text("não é json", encoding="utf-8")
+    _env.setenv("COGNO_COORDINATOR_SEED_FILE", str(p))
+    with caplog.at_level(logging.DEBUG, logger="cogno_praxis.coordinator.seed"):
+        assert _aulas() == []
+    assert [r.getMessage() for r in caplog.records] == [
+        "stage=coordinator event=seed_skipped reason=no_tenant"]
+
+
 def test_um_ficheiro_sem_tenant_nao_e_de_ninguem(_env, tmp_path):
     _env.setenv("COGNO_COORDINATOR_SEED_FILE", _ficheiro(tmp_path, tenant=""))
     _env.setenv("COGNO_COORDINATOR_TENANT", "")

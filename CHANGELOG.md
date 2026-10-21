@@ -19,9 +19,10 @@
 - **Logs** (`LOGGING.md`): `seed_applied` (INFO, how many spreadsheets and rows), `seed_skipped`
   (DEBUG, a closed reason), `seed_unreadable` (WARNING, a closed reason) — never the tenant, an
   id, a tab, the path or a cell.
-- **Tests.** `tests/unit/test_coordinator_seed_file.py` (20; 9 red on `911efd7` — the two twins
-  and the seven unreadable files that must warn): the tenant's file is its spreadsheet, the
-  applied line, the guard (no tenant, blank, another, another case, a file with no tenant), never
+- **Tests.** `tests/unit/test_coordinator_seed_file.py` (21; 10 red on `911efd7` — the two twins,
+  the seven unreadable files that must warn, and «no tenant named → the file is not even read»): the
+  tenant's file is its spreadsheet, the applied line, the guard (no tenant, blank, another, another
+  case, a file with no tenant), never
   over a token, only the sheets the rules name, seven unreadable shapes and a missing file; two
   controls green in both worlds (no variable → today's service; a hand-placed grid is read the same
   way). The logging sync tests hold the three rows and the two new count fields.

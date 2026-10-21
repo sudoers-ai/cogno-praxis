@@ -108,7 +108,7 @@ def apply_seed(store: Any, spreadsheet_ids: "Iterable[str]",
     if seed is None:
         return 0
     owner, sheets = seed
-    if not owner or owner != running:
+    if owner != running:            # `running` is not blank (above), so neither is a match
         log.debug("stage=coordinator event=seed_skipped reason=other_tenant")
         return 0
     named = set(spreadsheet_ids)
