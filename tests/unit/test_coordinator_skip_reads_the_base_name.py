@@ -19,10 +19,15 @@ still does:
 * «Laboratório - Redes» is a discipline with a suffix and stays a class (the case that stays);
 * «Redes - Feriado» is a class of Redes annotated with a word, and stays a class: the base name
   decides, never a word anywhere in the cell;
-* «Feriado Nacional - Tiradentes» has the base name «Feriado Nacional». It is skipped where the
-  labels hold it (the library's defaults do) and is a class where they do not (a tenant that
-  declares only «Feriado»). Treating it as a holiday there would be a new label, and a label is
-  the tenant's.
+* «Feriado Nacional - Tiradentes» has the base name «Feriado Nacional», which BEGINS with the
+  label «Feriado» as a whole word. A tenant that declares only «Feriado» (the real one does) was
+  paying that row as a class; it is skipped now, under that list and under the defaults. «Feriado
+  Nacional», «Feriado-Ponte» and «Feriado: Tiradentes» begin with the label the same way;
+* the word must be WHOLE and FIRST: «Feriados e Festas» (a longer word) and «Fisica» against a label
+  «Fis» stay classes, and so does «Gestão de Férias» (the label is there, but not first);
+* the widening never takes an OPEN slot: «Reservado para Reposição» with nobody in the professor
+  column begins with the default label «Reservado» and carries the free-slot label «Reposição»; it
+  stays the free slot the owner's rule made it (``_is_free_by_word``).
 
 Holiday names are public; every other name, id and figure here is invented.
 """
@@ -46,12 +51,14 @@ _HEADER = ["Data", "Dia", "Professor", "Disciplina", "Sala"]
 _COMMON = (f"SPREADSHEETS:\nTurma SMP_33 = {_SID}\n"
            'TAB_SCHEDULE: "Secretaria"\nRANGE_SCHEDULE: "A4:E200"\n'
            'COLUMN_DATE: "Data"\nCOLUMN_PROFESSOR: "Professor"\nCOLUMN_SUBJECT: "Disciplina"\n'
-           'FIXED_COLUMNS: "Data, Dia"\nFREE_SLOT_LABELS: "Livre"\n'
+           'FIXED_COLUMNS: "Data, Dia"\nFREE_SLOT_LABELS: "Livre, Reposição"\n'
            'PAY_RATE_PER_HOUR: "100"\nHOURS_PER_CLASS: "2"\n')
 #: The tenant declares only «Feriado» (the shape of the rules the consultant's probe used).
 _RULES_FERIADO = _COMMON + 'SKIP_LABELS: "Feriado"\n'
-#: No SKIP_LABELS line: the library's defaults (they include «Feriado Nacional»).
+#: No SKIP_LABELS line: the library's defaults (they include «Feriado Nacional» and «Reservado»).
 _RULES_DEFAULT = _COMMON
+#: A label that is the first letters of a discipline, «Fisica», with no word boundary after them.
+_RULES_FIS = _COMMON + 'SKIP_LABELS: "Fis"\n'
 
 _CLASSES = [["03/09/2026", "Qui", "Ana", "Deep Learning", "101"],
             ["17/09/2026", "Qui", "Ana", "Deep Learning", "101"]]
@@ -93,23 +100,59 @@ def test_the_bare_label_is_skipped_as_before():
     assert _sites(_svc("Feriado"), "Feriado") == _SKIPPED
 
 
-@pytest.mark.parametrize("cell", ["Laboratório - Redes", "Redes - Feriado", "Feriado-Ponte",
-                                  "Feriados Escolares", "Redes"])
+@pytest.mark.parametrize("cell", ["Laboratório - Redes", "Redes - Feriado",
+                                  "Feriados Escolares", "Feriados e Festas", "Redes"])
 def test_a_discipline_whose_base_name_is_not_a_label_stays_a_class(cell):
     """The case that stays, and the adverse probe: a suffix that is not a label's base name, a
-    label word AFTER the dash, a dash with no spaces (one word) and a longer word are classes."""
+    label word AFTER the dash, and a base name that begins with the label's letters inside a
+    LONGER word («Feriados») are classes."""
     assert _sites(_svc(cell), cell) == _A_CLASS
 
 
-def test_feriado_nacional_follows_the_labels_the_tenant_declared():
-    """«Feriado Nacional - Tiradentes» has the base name «Feriado Nacional». The defaults hold that
-    label, so it is skipped there; a tenant that declares only «Feriado» does not, and the row is a
-    class there, exactly as it was. No word is added to anybody's labels."""
+@pytest.mark.parametrize("cell", ["Feriado Nacional - Tiradentes", "Feriado Nacional",
+                                  "Feriado-Ponte", "Feriado: Tiradentes"])
+def test_a_base_name_that_begins_with_the_label_as_a_word_is_skipped(cell):
+    """The twin, under the tenant's own list (only «Feriado»): on ``0fee415`` each of these rows
+    was in the agenda, in the footer and paid as one class. The label begins the base name and
+    is followed by a space, a dash, a colon or the end — a whole word."""
+    assert "Feriado Nacional" not in CoordinatorConfig(_RULES_FERIADO).skip_labels
+    assert _sites(_svc(cell), cell) == _SKIPPED
+
+
+def test_feriado_nacional_is_skipped_under_either_label_list():
+    """«Feriado Nacional - Tiradentes»: the defaults hold «Feriado Nacional» itself, a tenant that
+    declares only «Feriado» holds the word it begins with. Skipped under both; no word is added
+    to anybody's labels."""
     cell = "Feriado Nacional - Tiradentes"
     assert "Feriado Nacional" in CoordinatorConfig(_RULES_DEFAULT).skip_labels
-    assert "Feriado Nacional" not in CoordinatorConfig(_RULES_FERIADO).skip_labels
     assert _sites(_svc(cell, rules=_RULES_DEFAULT), cell) == _SKIPPED
-    assert _sites(_svc(cell, rules=_RULES_FERIADO), cell) == _A_CLASS
+    assert _sites(_svc(cell, rules=_RULES_FERIADO), cell) == _SKIPPED
+
+
+@pytest.mark.parametrize(("cell", "rules"), [("Fisica", _RULES_FIS),
+                                             ("Gestão de Férias", _RULES_DEFAULT)],
+                         ids=["Fisica-vs-label-Fis", "Gestao-de-Ferias-vs-defaults"])
+def test_the_label_must_be_a_whole_word_and_first(cell, rules):
+    """The controls of the widening: «Fisica» begins with the letters of a label «Fis» but not
+    with the WORD; «Gestão de Férias» holds the default label «Férias» as a word but not FIRST.
+    Both are classes, as they were."""
+    assert _sites(_svc(cell, rules=rules), cell) == _A_CLASS
+
+
+@pytest.mark.parametrize(("cell", "rules"), [("Reservado para Reposição", _RULES_DEFAULT),
+                                             ("Feriado Nacional - Reposição", _RULES_FERIADO)],
+                         ids=["Reservado-para-Reposicao-vs-defaults",
+                              "Feriado-Nacional-Reposicao-vs-Feriado"])
+def test_the_widening_never_takes_an_open_slot(cell, rules):
+    """Each cell begins with a skip label as a word («Reservado» is a default, «Feriado» the
+    tenant's) and carries the free-slot label «Reposição» with nobody in the professor column:
+    the owner's rule reads it as an OPEN slot, and it stays one — listed, free, and offered by
+    ``find_replacement_slot``. Without the guard it is skipped and the slot disappears."""
+    svc = _svc(cell, rules=rules, professor="")
+    row = [e for e in svc.aggregate() if e.subject == cell]
+    assert [e.is_free_slot for e in row] == [True]
+    slots = svc.find_replacement_slot(identity_label="Sofia", role="SUPERVISOR")
+    assert [e.date_str for e in slots] == ["07/09/2026"]
 
 
 def test_the_skip_row_is_still_read_when_a_caller_asks_for_skip_rows():
@@ -147,3 +190,6 @@ def test_the_skip_reads_the_one_base_name_reader():
     src = inspect.getsource(_S._is_skip)
     assert "_discipline(" in src
     assert "split(" not in src and "_ANNOTATION_SEP" not in src
+    # and ONE definition of a whole word: the module's _has_phrase, never a regex of its own
+    assert "_has_phrase(" in src
+    assert "re.search(" not in src and "re.match(" not in src and "startswith(" not in src
