@@ -121,10 +121,16 @@ def test_nunca_por_cima_de_um_token_do_google(_env, tmp_path):
     assert type(svc.store).__name__ == "GoogleSheetsStore" and lidos == []
 
 
-def test_so_as_planilhas_que_as_regras_do_tenant_nomeiam(_env, tmp_path):
+def test_so_as_planilhas_que_as_regras_do_tenant_nomeiam(_env, tmp_path, caplog):
+    """A sheet the rules do not name never enters the store — not even where nothing reads it."""
     _env.setenv("COGNO_COORDINATOR_SEED_FILE", _ficheiro(
         tmp_path, sheets={_OUTRA: {"Secretaria": _GRID}}))
     _env.setenv("COGNO_COORDINATOR_TENANT", _TENANT)
+    with caplog.at_level(logging.DEBUG, logger="cogno_praxis.coordinator.seed"):
+        svc = srv._demo_service()
+    assert svc.store.read_range(_OUTRA, "Secretaria", "A1:E200") == []
+    assert [r.getMessage() for r in caplog.records] == [
+        "stage=coordinator event=seed_skipped reason=no_sheet_for_rules"]
     assert _aulas() == []
 
 
