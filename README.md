@@ -140,15 +140,17 @@ persona and `[solicitante]` the person who asked, and no marker quotes a third p
   template of the front desk that says `[aulas]` saves. From E3 (2026-10-07) until 2026-10-21 it
   was refused there.
 - `fields_for(persona)` → the markers that persona can FILL: the generic ones and its own
-  provider's (the id is compared as written). A host composing an e-mail asks it. For a marker
-  outside it, the host hands over a sentence as `schedule_error`, `fill_email_fields` returns
-  that marker as `missing` with the sentence verbatim, and the send asks the requester.
+  provider's (the id is compared as written). A host composing an e-mail reads a provider only for
+  the markers in it.
 - `CoordinatorService.email_context(professor=…, role=…, identity_label=…, period="YYYY-MM")` →
   the classes AND the pay estimate from ONE read of the schedule, so the classes listed are the
   classes paid (past days of the month included). An access refusal or an unreadable sheet
   becomes a sentence on the context; only a caller with no identity is refused by raising.
-- `fill_email_fields(fields, context)` → `(values, missing)`; a non-empty `missing` names each
-  field, its source and the reason, and the send asks instead of sending. The generic markers
+- `fill_email_fields(fields, context, persona=…)` → `(values, missing)`; a non-empty `missing`
+  names each field, its source and the reason, and the send asks instead of sending. With
+  `persona=`, a marker that persona cannot fill is `missing` with «o template usa [aulas], que
+  esta persona não consegue preencher: só a coordenação (COORDINATOR) o lê», never taken from the
+  context; with no `persona`, every marker is filled from the context, as before. The generic markers
   are filled from the host's half of `EmailContext` (`recipient_name`, `recipient_email`,
   `tenant_name`, `month`, `conteudo`, `today`, `persona_name`, `requester_name`); a marker the
   template does not use is never asked for.

@@ -23,11 +23,11 @@ the tenant itself, the request, the clock): ``[nome]``, ``[email]``, ``[empresa]
 persona and is declared by that persona's :class:`FieldProvider`: today only the coordinator's
 (``[aulas]``, ``[disciplinas]``, ``[valor_por_aula]``, ``[valores_por_bonus]``, ``[total]``).
 :data:`EMAIL_FIELDS` is the union, derived — never typed. :func:`fields_for` says what one
-persona can fill. A template that uses a marker its persona cannot fill SAVES; at the send that
-marker comes out of :func:`fill_email_fields` as a :class:`Missing` (the host hands over the
-sentence that says this persona cannot fill it, as ``schedule_error``), and the send asks the
-requester instead of sending. Until 2026-10-21 such a template was refused at save, by persona
-(E3, 2026-10-07).
+persona can fill. A template that uses a marker its persona cannot fill SAVES; at the send,
+``fill_email_fields(…, persona=…)`` returns that marker as a :class:`Missing` naming it and who
+reads it («o template usa [aulas], que esta persona não consegue preencher: só a coordenação
+(COORDINATOR) o lê»), and the send asks the requester instead of sending. Until 2026-10-21 such a
+template was refused at save, by persona (E3, 2026-10-07).
 
 A provider DECLARES fields; it does not read them. Which service answers for a provider's
 fields is the host's wiring (:func:`provider_fields` tells it which providers a template needs,
@@ -417,7 +417,8 @@ def _bonus_value(est: PayEstimate) -> str:
     return "\n".join(lines + ([""] + cond if cond else []))
 
 
-def fill_email_fields(fields: "Iterable[str]", context: EmailContext
+def fill_email_fields(fields: "Iterable[str]", context: EmailContext, *,
+                      persona: "Optional[str]" = None
                       ) -> "tuple[dict[str, str], tuple[Missing, ...]]":
     """Fill ``fields`` (a template's markers) from ``context`` — ``(values, missing)``.
 
@@ -426,10 +427,16 @@ def fill_email_fields(fields: "Iterable[str]", context: EmailContext
     goes, whether or not the body quotes it. A free text given to a template with no
     ``[conteudo]`` is also a ``Missing``: it would be dropped in silence, and the requester asked
     for it to be said.
+
+    ``persona`` — the persona the e-mail is composed FOR. A marker it cannot fill
+    (:func:`fields_for`: another persona's provider reads it) is a ``Missing`` that names the
+    marker and WHO reads it, and is never taken from ``context`` — a value there was not this
+    persona's to read. ``None`` fills every marker from the context, exactly as before.
     """
     wanted = tuple(dict.fromkeys(f for f in fields if f in EMAIL_FIELDS))
     values: dict[str, str] = {}
     missing: list[Missing] = []
+    mine = fields_for(persona)
 
     def miss(name: str, reason: str) -> None:
         missing.append(Missing(name, EMAIL_FIELDS[name].source, reason))
@@ -439,7 +446,11 @@ def fill_email_fields(fields: "Iterable[str]", context: EmailContext
     if not context.recipient_email.strip():
         miss("email", f"{who} não tem e-mail no cadastro")
     for name in wanted:
-        if name == "nome":
+        if name not in mine:
+            owner = provider_of(name)
+            miss(name, f"o template usa [{name}], que esta persona não consegue preencher"
+                       + (f": só a {owner.label} ({owner.persona}) o lê" if owner else ""))
+        elif name == "nome":
             if context.recipient_name.strip():
                 values[name] = context.recipient_name.strip()
             else:

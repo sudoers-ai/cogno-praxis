@@ -15,10 +15,10 @@ What is pinned:
 * every marker in every persona, and the persona argument changes no verdict;
 * the refusals that stay — an unknown marker, a removed one, a ``[`` that opens nothing — list
   the thirteen markers in every persona;
-* the fill, unchanged: for a persona with no reader the host hands over a sentence as
-  ``schedule_error``, and ``[aulas]`` is ``missing`` with that sentence verbatim. With no sentence
-  the reason is the code's own («não encontro aulas …; confirma o mês?»). The control: the
-  coordinator's context fills it;
+* the fill WITHOUT a persona, unchanged: a sentence handed over as ``schedule_error`` is carried
+  verbatim, and with none the reason is the code's own («não encontro aulas …; confirma o mês?»).
+  The control: the coordinator's context fills it. (The fill FOR a persona, with its own reason,
+  is ``test_email_fill_by_persona.py``);
 * :data:`FIELD_PROVIDERS` still says who fills (the SECRETARY cannot, the COORDINATOR can).
 
 Everything here is invented.
