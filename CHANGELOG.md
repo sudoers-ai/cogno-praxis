@@ -11,21 +11,31 @@
   1 aula» when the row has no professor) and the swap refusal («already has a class scheduled»). On a
   real export of a coordinator's schedule replies (31 distinct cells, 414 lines) the shape is 2
   cells and 10 lines. Both are «Feriado - <nome>», and the pay replies of the same export had none.
-- **What.** The skip is the whole cell OR its base name (`service._discipline`, the reader the
-  discipline list's status notes already use). The labels still decide: «Feriado» alone is skipped
-  as before; «Laboratório - Redes», «Redes - Feriado», «Feriado-Ponte» and «Feriados Escolares» are
-  classes. «Feriado Nacional - …» is skipped where the labels hold «Feriado Nacional» (the defaults
-  do) and is a class where they do not. On that export the fix moves exactly those 2 cells, under
-  the defaults, under «Feriado» alone and under the rules template's «Recesso, Feriado, Férias»,
-  and no other cell.
-- **Tests.** `tests/unit/test_coordinator_skip_reads_the_base_name.py` (14; 8 red on `1efa214`):
-  the twin in the four places, the bare label as the control, the cases that stay classes,
-  «Feriado Nacional» under both label lists, `include_skip=True` still returning the row, and the
-  one reader. Two pins of `tests/unit/test_oversight_pay_by_professor.py` DEFENDED the defect: the
+- **What.** The skip is the whole cell, OR its base name (`service._discipline`, the reader the
+  discipline list's status notes already use) is a label or BEGINS with one as a whole word: the
+  label followed by the end, a space or any character that is not part of a word
+  (`service._has_phrase` with `at_start=True`, the module's one definition of a whole word). A
+  tenant that declares only «Feriado» (the real one does) was still paying «Feriado Nacional -
+  Tiradentes» as a class, because its base name is «Feriado Nacional»; it is skipped now, and so
+  are «Feriado Nacional», «Feriado-Ponte» and «Feriado: Tiradentes». The labels still decide:
+  «Feriado» alone is skipped as before; «Laboratório - Redes», «Redes - Feriado», «Feriados
+  Escolares», «Feriados e Festas» (a longer word), «Fisica» against a label «Fis» (no word
+  boundary) and «Gestão de Férias» (the label is not first) are classes. The widening never takes
+  a cell that carries a `FREE_SLOT_LABELS` label as a whole word: «Reservado para Reposição» with
+  nobody in the professor column begins with the default label «Reservado», and it stays the open
+  slot the owner's rule (`_is_free_by_word`) made it. On that export the fix moves exactly those 2
+  cells, under the defaults, under «Feriado» alone and under the rules template's «Recesso,
+  Feriado, Férias», and no other cell; the widening and its guard move none of the 31.
+- **Tests.** `tests/unit/test_coordinator_skip_reads_the_base_name.py` (22; 12 red on `1efa214`,
+  6 red on `0fee415`, the head before the widening): the twin in the four places, the bare label
+  as the control, the cases that stay classes, the base name that begins with the label (four
+  shapes, under «Feriado» alone), «Feriado Nacional» under both label lists, the whole-word and
+  first-word controls, the open slot the widening must not take, `include_skip=True` still
+  returning the row, and the one reader and the one whole-word definition. Two pins of `tests/unit/test_oversight_pay_by_professor.py` DEFENDED the defect: the
   faculty-pay block's «1 aula» with no professor was the holiday row, and the master listing held
   it as a class (the line turn 115 recorded). They now say what the holiday is. A new control keeps
   a real class with an empty professor column counted, because the holiday was the only row that
-  reached that line. 11 red on `1efa214` across the two files.
+  reached that line. 15 red on `1efa214` across the two files.
 - **Docs.** `docs/COORDINATOR.md`.
 
 ### Added — a seed of classes for the coordinator, read from a FILE, for ONE tenant (2026-10-21)

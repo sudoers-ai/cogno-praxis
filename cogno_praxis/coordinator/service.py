@@ -193,16 +193,23 @@ def _annotation(subject: str) -> str:
     return parts[-1].strip() if len(parts) > 1 else ""
 
 
-def _has_phrase(text: str, phrase: str) -> bool:
+def _has_phrase(text: str, phrase: str, *, at_start: bool = False) -> bool:
     """Does ``text`` contain ``phrase`` as WHOLE words — both under the module's fold
     (:func:`_norm`), runs of whitespace collapsed?
 
     ``"Espaço Reservado para Reposição"`` has ``"reposição"``; ``"Livreto de Exercícios"`` does
     NOT have ``"livre"`` — a label inside a longer word is not the label.
+
+    With ``at_start``, only where ``text`` BEGINS with it: ``"Feriado Nacional"`` begins with
+    ``"feriado"``; ``"Feriados e Festas"`` does not (the label is inside a longer word), and
+    ``"Gestão de Férias"`` does not either (the label is there, but not first). The boundary
+    after the phrase is the same one either way — the end, a space or any other character that
+    is not part of a word — so the module has ONE definition of a whole word.
     """
     t = " ".join(_norm(text).split())
     ph = " ".join(_norm(phrase).split())
-    return bool(ph) and re.search(rf"(?<!\w){re.escape(ph)}(?!\w)", t) is not None
+    lead = "^" if at_start else r"(?<!\w)"
+    return bool(ph) and re.search(rf"{lead}{re.escape(ph)}(?!\w)", t) is not None
 
 
 def _names_a_turma(text: str, keys: "Iterable[str]") -> bool:
@@ -845,18 +852,36 @@ class CoordinatorService:
 
     def _is_skip(self, subject: str) -> bool:
         """Is this row NOT a class — the whole cell is a ``SKIP_LABELS`` label, or its BASE name
-        (:func:`_discipline`, the text before the last spaced dash) is?
+        (:func:`_discipline`, the text before the last spaced dash) is one or BEGINS with one as
+        a whole word?
 
         A secretary writes a holiday the way she writes every exception: she appends its name to
         the label, «Feriado - Independência do Brasil». Compared WHOLE, that cell was a class
         named after the holiday, in the agenda, in the discipline list and in the pay estimate.
         The base name is read with the SAME reader the discipline list's status notes use, so
-        the two can never disagree about where a cell splits. The labels still decide: «Redes -
-        Feriado» is a class of Redes, and «Feriado Nacional - …» is skipped only where the
-        tenant's labels (or the defaults) hold «Feriado Nacional».
+        the two can never disagree about where a cell splits.
+
+        She also qualifies the label: «Feriado Nacional - Tiradentes» has the base name
+        «Feriado Nacional», and a tenant that declares only «Feriado» was paying it as a class.
+        So the base name also counts when it BEGINS with a label as a whole word
+        (:func:`_has_phrase` with ``at_start``, the module's one definition of a whole word):
+        «Feriado Nacional», «Feriado-Ponte» and «Feriado: Tiradentes» begin with «Feriado»;
+        «Feriados e Festas» does not (a longer word), «Redes - Feriado» and «Gestão de Férias»
+        do not (the label is there, but not first).
+
+        That widening does NOT take a cell that carries a ``FREE_SLOT_LABELS`` label as a whole
+        word. «Reservado para Reposição» begins with the default label «Reservado», and with
+        nobody in the professor column it is an OPEN slot by the owner's rule
+        (:meth:`_is_free_by_word`); skipping it would hide it from ``find_replacement_slot``.
+        Such a cell keeps the verdict it had: skipped only when it, or its base name, IS a label.
         """
         labels = {_norm(lbl) for lbl in self.cfg.skip_labels}
-        return _norm(subject) in labels or _norm(_discipline(subject)) in labels
+        base = _discipline(subject)
+        if _norm(subject) in labels or _norm(base) in labels:
+            return True
+        if self._names_free_label(subject):
+            return False
+        return any(_has_phrase(base, lbl, at_start=True) for lbl in self.cfg.skip_labels)
 
     def _is_free_label(self, subject: str) -> bool:
         """The WHOLE cell is a free-slot label — the comparison every label here started with.

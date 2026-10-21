@@ -139,18 +139,30 @@ the row was a class named after the holiday. It showed up in five places:
 - in the supervisor's faculty-pay block, as «1 aula» with no professor, when the row has none;
 - in the swap refusal, which said the date «already has a class scheduled».
 
-`CoordinatorService._is_skip` now skips a row when the whole cell is a label, or its BASE name is.
-The base name is `service._discipline` (the text before the last spaced dash), the same reader the
-status notes of the discipline list use above.
+`CoordinatorService._is_skip` now skips a row when the whole cell is a label, or its BASE name is
+a label or BEGINS with one as a whole word. The base name is `service._discipline` (the text before
+the last spaced dash), the same reader the status notes of the discipline list use above. A whole
+word is `service._has_phrase` with `at_start=True`: the label, then the end, a space or any
+character that is not part of a word. It is the module's one definition of a whole word, the one
+the free-slot labels are read with.
 
 The labels still decide what a holiday is:
 - «Feriado» alone is skipped, as before.
+- «Feriado Nacional - Tiradentes» has the base name «Feriado Nacional», which begins with the word
+  «Feriado». It is skipped under a tenant that declares only «Feriado» (the real one does) and
+  under the defaults, which hold «Feriado Nacional» itself. «Feriado Nacional», «Feriado-Ponte» and
+  «Feriado: Tiradentes» are skipped the same way.
 - «Laboratório - Redes» and «Redes - Feriado» are classes. Their base names are «Laboratório» and
   «Redes», and a label word after the dash is not the base name.
-- «Feriado-Ponte» is a class, because a dash with no spaces is one word.
-- «Feriado Nacional - Tiradentes» has the base name «Feriado Nacional». It is skipped where the
-  labels hold «Feriado Nacional» (the defaults do) and stays a class where they do not, for example
-  a tenant that declares only «Feriado». Adding the label is the tenant's decision.
+- «Feriados Escolares» and «Feriados e Festas» are classes: «Feriados» is a longer word. So is
+  «Fisica» under a label «Fis».
+- «Gestão de Férias» is a class: the label «Férias» is a word of it, but not the first.
+
+The widening does not take an OPEN slot. A cell that carries a `FREE_SLOT_LABELS` label as a whole
+word keeps the verdict it had: it is skipped only when it, or its base name, IS a label. «Reservado
+para Reposição» with nobody in the professor column begins with the default label «Reservado», and
+it stays the free slot the owner's rule made it (see «A free slot written as a sentence» above), so
+`find_replacement_slot` still offers it.
 
 `aggregate(include_skip=True)` still returns the row. `tests/unit/test_coordinator_skip_reads_the_base_name.py`.
 
