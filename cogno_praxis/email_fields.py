@@ -12,17 +12,22 @@ second copy. A marker outside it is REFUSED when the template is saved
 (:func:`validate_template`), and so is any ``[`` that does not open a known marker — that is what
 catches a typo like ``[nmoe]`` before it ships as literal text to a professor.
 
-**The list has two halves, and a template belongs to a PERSONA (E3).** :data:`GENERIC_FIELDS`
-are the markers ANY persona's template may use: their values come from the tenant's records, the
-tenant itself, the request or the clock — ``[nome]``, ``[email]``, ``[empresa]``, ``[mes]``,
-``[data]``, ``[assinatura]``, ``[solicitante]``, ``[conteudo]``. Everything else is SPECIFIC to
-one persona and is declared by that persona's :class:`FieldProvider` in :data:`FIELD_PROVIDERS`:
-today only the coordinator's (``[aulas]``, ``[disciplinas]``, ``[valor_por_aula]``,
-``[valores_por_bonus]``, ``[total]``). :data:`EMAIL_FIELDS` is the union, derived — never typed.
-So :func:`validate_template` takes the persona the template is being saved FOR, and a marker
-another persona supplies is refused there by name, with the persona that does supply it: a
-front-desk template that says ``[aulas]`` would otherwise save and then ask the requester, at
-every send, for classes no front desk reads.
+**ONE list for every persona; who can FILL each marker is a separate question (2026-10-21).**
+The owner's rule: the markers are standard for everything, not specific to a persona. So
+:func:`validate_template` accepts every marker of :data:`EMAIL_FIELDS` in any persona's
+template — it answers «which markers EXIST», and that answer is the same for everyone.
+:data:`FIELD_PROVIDERS` still answers the other question, «who has somewhere to READ this
+marker from». :data:`GENERIC_FIELDS` are filled from what every turn has (the tenant's records,
+the tenant itself, the request, the clock): ``[nome]``, ``[email]``, ``[empresa]``, ``[mes]``,
+``[data]``, ``[assinatura]``, ``[solicitante]``, ``[conteudo]``. Everything else is read by ONE
+persona and is declared by that persona's :class:`FieldProvider`: today only the coordinator's
+(``[aulas]``, ``[disciplinas]``, ``[valor_por_aula]``, ``[valores_por_bonus]``, ``[total]``).
+:data:`EMAIL_FIELDS` is the union, derived — never typed. :func:`fields_for` says what one
+persona can fill. A template that uses a marker its persona cannot fill SAVES; at the send,
+``fill_email_fields(…, persona=…)`` returns that marker as a :class:`Missing` naming it and who
+reads it («o template usa [aulas], que esta persona não consegue preencher: só a coordenação
+(COORDINATOR) o lê»), and the send asks the requester instead of sending. Until 2026-10-21 such a
+template was refused at save, by persona (E3, 2026-10-07).
 
 A provider DECLARES fields; it does not read them. Which service answers for a provider's
 fields is the host's wiring (:func:`provider_fields` tells it which providers a template needs,
@@ -184,12 +189,14 @@ def provider_of(field: str) -> "Optional[FieldProvider]":
 
 
 def fields_for(persona: "Optional[str]") -> "Mapping[str, FieldSpec]":
-    """The markers a template of ``persona`` may use: the generic ones and its provider's.
+    """The markers ``persona`` can FILL: the generic ones and its own provider's.
 
-    ``None`` — the caller does not say whose template it is — answers EVERY marker, the reading
-    from before templates belonged to a persona. It is kept for a caller that has no persona to
-    give (a doc check, a pre-E3 host); a caller that knows the persona passes it, and any string,
-    the empty one included, is a persona."""
+    This is not what a template may USE — every marker of :data:`EMAIL_FIELDS` is valid in any
+    persona's template (:func:`validate_template`). It is what this persona has somewhere to read
+    from; a host composing an e-mail asks it, and a marker outside it comes out as ``missing``.
+
+    ``None`` — the caller does not say whose it is — answers EVERY marker. Any string, the empty
+    one included, is a persona."""
     if persona is None:
         return EMAIL_FIELDS
     p = provider_for(persona)
@@ -199,8 +206,9 @@ def fields_for(persona: "Optional[str]") -> "Mapping[str, FieldSpec]":
 
 
 def known_markers(persona: "Optional[str]" = None) -> "tuple[str, ...]":
-    """``("[nome]", "[email]", …)`` — the list as a person reads it: :func:`fields_for` this
-    persona, generic markers first."""
+    """``("[nome]", "[email]", …)`` — the list as a person reads it, generic markers first. With
+    no ``persona``, every marker (the ONE list a template may use); with one, the markers that
+    persona can fill (:func:`fields_for`)."""
     return tuple(f"[{n}]" for n in fields_for(persona))
 
 
@@ -243,14 +251,11 @@ def template_fields(subject: str, body: str) -> "tuple[str, ...]":
     return tuple(dict.fromkeys(markers_cited(subject or "") + markers_cited(body or "")))
 
 
-def _bracket_problems(text: str, where: str, phase: str,
-                      persona: "Optional[str]" = None) -> "list[str]":
-    """Every ``[`` in ``text`` that does not open a marker THIS persona has — named, with its
-    position, and a marker of another persona with the persona that supplies it."""
+def _bracket_problems(text: str, where: str, phase: str) -> "list[str]":
+    """Every ``[`` in ``text`` that does not open a marker of :data:`EMAIL_FIELDS` — named,
+    with its position, listing every marker that exists."""
     out: list[str] = []
-    usable = fields_for(persona)
-    allowed = ", ".join(known_markers(persona))
-    whose = str(persona).strip() if persona is not None else ""
+    allowed = ", ".join(known_markers())
     for i, ch in enumerate(text):
         if ch != "[":
             continue
@@ -261,20 +266,13 @@ def _bracket_problems(text: str, where: str, phase: str,
                        f"marcador; os marcadores são {allowed}")
             continue
         name = m.group(1)
-        if name in usable:
+        if name in EMAIL_FIELDS:
             continue
         if name in REFUSED_FIELDS:
             since = _FIELD_PHASE.get(name)
             if since is not None and _PHASES.index(phase) >= _PHASES.index(since):
                 continue
             out.append(f"no {where}: {REFUSED_FIELDS[name]}")
-            continue
-        owner = provider_of(name)
-        if owner is not None:
-            # A real marker, of ANOTHER persona: say whose it is and who is asking for it.
-            out.append(f"no {where}, [{name}] é um marcador da persona {owner.persona} "
-                       f"({owner.label}); {f'a persona {whose}' if whose else 'esta persona'} "
-                       f"não o tem — os marcadores desta persona são {allowed}")
             continue
         out.append(f"no {where}, [{name}] não é um marcador; os marcadores são {allowed}")
     return out
@@ -287,9 +285,10 @@ def validate_template(subject: str, body: str, *, phase: str = "E1",
     Never raises. Each reason is a sentence the tenant's admin reads (the host answers 400 with
     the list), so it names what is wrong and where, and lists the markers that DO exist.
 
-    ``persona`` — the persona the template is saved for. Its markers are the generic ones and its
-    own provider's (:func:`fields_for`); a marker another persona supplies is refused with both
-    personas named. ``None`` validates against every marker, as before templates had a persona.
+    ``persona`` — the persona the template is saved for. It changes nothing: the markers are ONE
+    list for every persona (the owner's rule, 2026-10-21), and a marker this persona cannot fill
+    is the send's question, not the save's refusal (:func:`fields_for`, :class:`Missing`). It is
+    still accepted so that a caller written when it narrowed the list keeps working.
     """
     if phase not in _PHASES:
         raise ValueError(f"phase must be one of {_PHASES}, not {phase!r}")
@@ -304,8 +303,8 @@ def validate_template(subject: str, body: str, *, phase: str = "E1",
         out.append("o corpo está vazio")
     elif len(body) > MAX_BODY_CHARS:
         out.append(f"o corpo tem {len(body)} caracteres; o máximo é {MAX_BODY_CHARS}")
-    out += _bracket_problems(subject, "assunto", phase, persona)
-    out += _bracket_problems(body, "corpo", phase, persona)
+    out += _bracket_problems(subject, "assunto", phase)
+    out += _bracket_problems(body, "corpo", phase)
     for name in markers_cited(subject):
         if name in SUBJECT_FORBIDDEN:
             out.append(f"[{name}] não pode ir no assunto (tem várias linhas ou é texto livre)")
@@ -418,7 +417,8 @@ def _bonus_value(est: PayEstimate) -> str:
     return "\n".join(lines + ([""] + cond if cond else []))
 
 
-def fill_email_fields(fields: "Iterable[str]", context: EmailContext
+def fill_email_fields(fields: "Iterable[str]", context: EmailContext, *,
+                      persona: "Optional[str]" = None
                       ) -> "tuple[dict[str, str], tuple[Missing, ...]]":
     """Fill ``fields`` (a template's markers) from ``context`` — ``(values, missing)``.
 
@@ -427,10 +427,16 @@ def fill_email_fields(fields: "Iterable[str]", context: EmailContext
     goes, whether or not the body quotes it. A free text given to a template with no
     ``[conteudo]`` is also a ``Missing``: it would be dropped in silence, and the requester asked
     for it to be said.
+
+    ``persona`` — the persona the e-mail is composed FOR. A marker it cannot fill
+    (:func:`fields_for`: another persona's provider reads it) is a ``Missing`` that names the
+    marker and WHO reads it, and is never taken from ``context`` — a value there was not this
+    persona's to read. ``None`` fills every marker from the context, exactly as before.
     """
     wanted = tuple(dict.fromkeys(f for f in fields if f in EMAIL_FIELDS))
     values: dict[str, str] = {}
     missing: list[Missing] = []
+    mine = fields_for(persona)
 
     def miss(name: str, reason: str) -> None:
         missing.append(Missing(name, EMAIL_FIELDS[name].source, reason))
@@ -440,7 +446,11 @@ def fill_email_fields(fields: "Iterable[str]", context: EmailContext
     if not context.recipient_email.strip():
         miss("email", f"{who} não tem e-mail no cadastro")
     for name in wanted:
-        if name == "nome":
+        if name not in mine:
+            owner = provider_of(name)
+            miss(name, f"o template usa [{name}], que esta persona não consegue preencher"
+                       + (f": só a {owner.label} ({owner.persona}) o lê" if owner else ""))
+        elif name == "nome":
             if context.recipient_name.strip():
                 values[name] = context.recipient_name.strip()
             else:

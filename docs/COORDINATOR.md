@@ -202,9 +202,10 @@ is missing, never send one with part of the classes. Read-only.
 
 **Which markers this read answers for (E3).** The five markers filled from this context —
 `[disciplinas]`, `[aulas]`, `[valor_por_aula]`, `[valores_por_bonus]`, `[total]` — are the
-coordinator's own: `cogno_praxis.email_fields.FIELD_PROVIDERS["COORDINATOR"]` declares them, and
-a template saved for another persona that uses one is refused by `validate_template(…,
-persona=…)`. The declaration reads nothing; a host calls `email_context` only when
+coordinator's own: `cogno_praxis.email_fields.FIELD_PROVIDERS["COORDINATOR"]` declares them.
+Since 2026-10-21 a template of ANY persona may use them (the markers are one list), but only the
+coordinator can FILL them (`fields_for`). For another persona the send asks instead of sending.
+The declaration reads nothing; a host calls `email_context` only when
 `provider_fields(template_fields(…))` names `coordinator`, so a template of generic markers
 (`[nome]`, `[empresa]`, `[data]`, …) is composed without this read, in any persona.
 `tests/unit/test_email_field_providers.py`.

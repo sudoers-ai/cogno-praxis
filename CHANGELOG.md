@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### Changed — ONE list of e-mail markers for every persona; who can FILL a marker is separate (2026-10-21)
+
+- **Why.** The owner's rule: «as tags do template devem ser padrão para tudo e não especifico
+  para a persona». From E3 (2026-10-07) `validate_template(…, persona=…)` refused a marker
+  another persona supplies, so a front-desk template could not say `[aulas]` at all.
+- **What.** `validate_template` answers «which markers EXIST», and that answer is now the same
+  for every persona: the 13 of `EMAIL_FIELDS`. `persona=` is still accepted, so a caller
+  written when it narrowed the list keeps working, and it changes no verdict. The refusals that
+  stay (an unknown marker, `[cpf_cnpj]`, `[contrato]`, a `[` that opens nothing, the subject
+  rules) list all 13 markers. `FIELD_PROVIDERS` and `fields_for(persona)` still answer «who has
+  somewhere to READ a marker from».
+- **What happens at the send: `fill_email_fields(…, persona=…)`.** With the persona the
+  e-mail is composed for, a marker it cannot fill is a `missing` that names the marker and who
+  reads it («o template usa [aulas], que esta persona não consegue preencher: só a coordenação
+  (COORDINATOR) o lê»), and it is never taken from the context. The send then asks the requester,
+  the path that already existed. With no `persona` every marker is filled from the context, byte
+  for byte as before. Without it, a persona that reads no schedule got the fill's own reason
+  («não encontro aulas de … em MM/AAAA na agenda; confirma o mês?»), which is true of an empty
+  schedule and misleading there.
+- **Tests.** `tests/unit/test_email_markers_are_one_list.py` (new: the SECRETARY template with
+  `[aulas]` saves; every marker in every persona; the persona changes no verdict; the refusals
+  list the 13; the fill with and without a host's sentence; the coordinator's fill as the
+  control). `tests/unit/test_email_fill_by_persona.py` (new, the owner's «testes por persona»):
+  a template with all 13 markers filled FOR each persona the praxis declares, a derived row per
+  provider persona plus a persona with none, which markers fill and which come out `missing` with
+  the reason naming who reads them. The matrix over the host's own catalogue is the host's. In `tests/unit/test_email_field_providers.py`, the three pins of the refusal now pin
+  the opposite, and `fields_for` still says who fills. Docs: README «Templated e-mail fields»,
+  `docs/COORDINATOR.md`, the module docstring.
+
 ### Fixed — «Feriado - <nome>» is a holiday, not a class: the skip reads the base name (2026-10-21)
 
 - **Why.** `CoordinatorService._is_skip` compared the WHOLE subject cell with `SKIP_LABELS`. A
