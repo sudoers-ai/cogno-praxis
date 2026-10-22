@@ -24,6 +24,11 @@
     by the host's predicate (a successful read of the turn), or a DERIVATION checked here for any
     record with a `data` cell — `dia` its weekday, `mês` its month, the year from the cell or the
     send's month. A wrong derivation is unverified like a cell nobody read. Only keys come back.
+    A `data` cell carrying a year the read did not print passes only as its literal `dd/mm` with
+    the year of the send's month (the Director's correction: the owner's model writes «08/10/26»);
+    a wrong year is unverified.
+  - The HTML column of a `data` cell `dd/mm` whose date falls in the send's month is `dd/mm/aa`
+    (`records_html(…, month=…)`); with no month, as written. The TEXT never carries the year.
   - Two text rules for a record outside the dated form: ONE shown key → its value; TWO filled →
     «first: second». In HTML, records of one key are a LIST.
   - The HTML form exists when the body carries a free tag holding a list (`_structured`); that tag
@@ -40,8 +45,6 @@
 - **Declared — what differs from the provider.**
   - The response-rate CONDITION is not a record. The provider ended `[valores_por_bonus]` with it;
     the tenant now writes it in the template or a fixed tag.
-  - The HTML `Data` column of `[aulas]` is `dd/mm`, as the read prints it (the provider wrote
-    `dd/mm/aa`). The text never carried the year.
   - A figure alone (`[total]`, `[valor_por_aula]`) no longer makes the e-mail HTML, and no value
     is bold by its NAME.
   - A value no read gives is a free tag nobody filled, and the send asks. Before, the provider

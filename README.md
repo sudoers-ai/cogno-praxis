@@ -199,7 +199,10 @@ path.
   DERIVATION checked here, generic for any record with a `data` cell: `dia` must be the weekday of
   that date and `mês` its month, the year from the cell or else from `month` (the send's). A wrong
   derivation is unverified like a cell nobody read; a record with no `data` holds `dia`/`mês` to
-  the literal rule. Only keys come back, never a cell. The host asks it before handing a list to
+  the literal rule. A `data` cell carrying a year passes only as its literal `dd/mm` with the year
+  of the send's month (a wrong year is unverified); in the HTML, a `data` cell `dd/mm` of the
+  send's month is shown `dd/mm/aa` (`records_html(…, month=…)`), never in the text. Only keys come
+  back, never a cell. The host asks it before handing a list to
   the fill, and asks the requester instead of composing when anything comes back.
 - Not said → `missing`, with «o pedido não disse o que pôr nesta tag» (its source:
   «o que o solicitante disser na conversa»), so the send ASKS. With the tenant's hint the reason ends

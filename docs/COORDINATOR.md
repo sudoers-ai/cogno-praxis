@@ -204,8 +204,10 @@ this vertical's tools, and the persona fills them by COPYING what the tools prin
 text the provider wrote, byte for byte, over a corpus that reaches every bonus state
 (`tests/unit/test_the_coordination_by_the_generic_path.py`, digests taken on the provider's tree).
 What differs, declared there tag by tag: the response-rate condition is not a record (the tenant
-writes it in the template or in a fixed tag); the HTML `Data` column is `dd/mm`, as the read prints
-it; a figure alone no longer makes the e-mail HTML, and nothing is bold by its name.
+writes it in the template or in a fixed tag); a figure alone no longer makes the e-mail HTML, and
+nothing is bold by its name. The HTML tables are the provider's too: the read prints `dd/mm`, and
+the `Data` column adds the year of the send's month (`dd/mm/aa`, the owner's model), a derivation
+checked by code.
 
 **What moved with the arithmetic.** The provider's guarantees are the tools' now. The listing's
 classes in a month and the pay estimate's come from different reads: the persona asks

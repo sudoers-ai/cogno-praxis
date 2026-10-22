@@ -277,7 +277,8 @@ passes their rows. Two things are yours:
 - **The cells' provenance.** Before you hand a list over, ask
   `record_cells_unverified(records, month=<the send's YYYY-MM>, is_literal=<yours>)`: your
   predicate says whether a cell is written in a SUCCESSFUL read of this turn (under your fold);
-  the function adds the derivations it checks (`dia`, `mês` of a record's `data`) and returns the
+  the function adds the derivations it checks (`dia`, `mês` of a record's `data`, and a `data`
+  carrying the year of the send's month) and returns the
   `(index, key)` of every cell that is neither. Anything back → treat the tag as missing and ask;
   never compose a cell nobody read. Log keys and counts, never a cell.
 - **The subject.** Pass `in_subject=markers_cited(subject)` to `fill_email_fields`, so a list for

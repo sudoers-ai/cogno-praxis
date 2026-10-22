@@ -896,6 +896,27 @@ def _record_date(record: "Mapping[str, str]", month: str) -> "Optional[date]":
         return None
 
 
+def _in_send_month(day: date, month: str) -> bool:
+    """Whether ``day`` falls in ``month`` (``YYYY-MM``, the send's) — the one condition under which
+    a record's date may carry a year this module did not read: an e-mail about ONE month."""
+    m = _MONTH.match((month or "").strip())
+    return m is not None and (day.year, day.month) == (int(m.group(1)), int(m.group(2)))
+
+
+def _date_with_year(cell: str, month: str) -> str:
+    """A ``data`` cell as the HTML column shows it: ``dd/mm`` with the year of the send's month
+    appended (``dd/mm/aa``) when the date falls IN that month — the owner's model writes
+    «08/10/26» — else the cell as written (a cell that already carries a year, one that is no
+    such date, one of another month, no month at all). The TEXT never carries it."""
+    m = _RECORD_DATE.fullmatch(cell.strip())
+    if m is None or m.group(3) or not _MONTH.match((month or "").strip()):
+        return cell
+    day = _record_date({"data": cell}, month)
+    if day is None or not _in_send_month(day, month):
+        return cell
+    return f"{cell.strip()}/{month.strip()[2:4]}"
+
+
 def _derived(key: str, cell: str, day: "Optional[date]") -> bool:
     """Whether ``cell`` under ``key`` is the DERIVATION of the record's date ``day``: ``dia`` its
     weekday (abbreviated or named, with or without «-feira»), ``mês`` its month (named, or its
@@ -925,6 +946,11 @@ def record_cells_unverified(records: object, *, month: str,
     no ``data`` (or none this reads as a date) has its ``dia``/``mês`` held to the literal rule.
     Only keys and indexes come back — never a cell: a caller logs and asks with them.
 
+    A ``data`` cell that carries a year (``dd/mm/aa``, ``dd/mm/aaaa``) the read did not print is a
+    derivation too (the Director's correction, 2026-10-22: the owner's model writes «08/10/26»):
+    its ``dd/mm`` must be literal and its date must fall in ``month`` — a wrong year, or a date of
+    another month, is unverified. With no ``month``, only the literal rule.
+
     A ``records`` that is not a list of records is ``((0, ""),)``: nothing about it is verified."""
     recs = as_records(records)
     if recs is None:
@@ -936,12 +962,24 @@ def record_cells_unverified(records: object, *, month: str,
             if not v:
                 continue
             try:
-                ok = bool(is_literal(v)) or _derived(_fold_key(k), v, day)
+                ok = (bool(is_literal(v)) or _derived(_fold_key(k), v, day)
+                      or (_fold_key(k) == "data" and _dated_with_year(v, month, is_literal)))
             except Exception:  # noqa: BLE001 — a predicate that fails verifies nothing
                 ok = False
             if not ok:
                 out.append((i, k))
     return tuple(out)
+
+
+def _dated_with_year(cell: str, month: str, is_literal: "Callable[[str], bool]") -> bool:
+    """Whether a ``data`` cell carrying a year is its literal ``dd/mm`` with the year of the send's
+    month: the ``dd/mm`` read, the date in ``month``."""
+    m = _RECORD_DATE.fullmatch(cell.strip())
+    if m is None or not m.group(3):
+        return False
+    day = _record_date({"data": cell}, month)
+    prefix = f"{m.group(1)}/{m.group(2)}"
+    return day is not None and _in_send_month(day, month) and bool(is_literal(prefix))
 
 
 def fill_email_fields(fields: "Iterable[str]", context: EmailContext, *,
@@ -1428,7 +1466,8 @@ def _header(key: str) -> str:
     return text[:1].upper() + text[1:]
 
 
-def records_html(records: object, *, colors: "Optional[Mapping[str, str]]" = None) -> str:
+def records_html(records: object, *, colors: "Optional[Mapping[str, str]]" = None,
+                 month: str = "") -> str:
     """A list of records as HTML TABLES — the generic renderer every table of an e-mail is drawn
     by. ``""`` for anything that is not a list of records.
 
@@ -1440,6 +1479,8 @@ def records_html(records: object, *, colors: "Optional[Mapping[str, str]]" = Non
       :func:`record_colors`), the other cells are white and narrow, the discipline's wide.
     * Records that show ONE key (the group key aside) are a LIST, one item per record — a list
       of values is a list, not a one-column table (R-T13: the shape ``[disciplinas]`` always had).
+    * A ``data`` cell ``dd/mm`` whose date falls in ``month`` (``YYYY-MM``, the send's) is shown
+      ``dd/mm/aa`` (:func:`_date_with_year`); with no ``month``, as written.
     * Every value and every header is escaped."""
     recs = as_records(records)
     if recs is None:
@@ -1466,7 +1507,8 @@ def records_html(records: object, *, colors: "Optional[Mapping[str, str]]" = Non
                 if colored and _fold_key(k) == _COLOR_KEY:
                     row.append((cell, f"background:{colors.get(cell, '#ffffff')}"))
                 else:
-                    row.append((cell, _NARROW if colored else ""))
+                    shown = _date_with_year(cell, month) if _fold_key(k) == "data" else cell
+                    row.append((shown, _NARROW if colored else ""))
             rows.append(row)
         out.append(title + _table([_header(k) for k in keys], rows))
     return "".join(out)
@@ -1492,7 +1534,7 @@ def _records_block(name: str, value: str, context: EmailContext,
     records = _structured(name, context)
     if not records or records_text(records) != value:
         return None
-    return records_html(records, colors=look.colors)
+    return records_html(records, colors=look.colors, month=context.month)
 
 
 def _value_html(name: str, value: str, context: EmailContext) -> str:
