@@ -268,7 +268,12 @@ asks its executor for the value from the conversation and hands it over as
 `EmailContext.free_tag_values`, with the tenant's hints (`parse_custom_tag_hints`) as
 `EmailContext.custom_tag_hints`; a free tag nobody filled comes back `missing` and the send asks.
 Storing the hints, offering the free tags to the executor and fencing the hint in its prompt are
-yours.
+yours. A tag may carry a SCOPE (R-T16): save it through
+`normalise_custom_tag_scopes(raw, tags, <your catalogue of business persona ids>)`, read it back
+through `parse_custom_tag_scopes`, and hand it to `validate_template(…, tag_scopes=…)` (with your
+own `scope_refusal(where, name, ids)` when your panel names a persona otherwise than by its id)
+and to `EmailContext.custom_tag_scopes`; offering the executor only the tags in its persona's
+scope (`tags_in_scope`) is yours.
 
 **A free tag's value may be a LIST OF RECORDS (R-T13)** — the rows a tool printed, copied by the
 executor (`[{key: value}, …]`; the rule is `free_records_problems`). This is how a persona's own
@@ -314,7 +319,7 @@ read, and the tenant's appearance from `parse_email_appearance(<what you stored>
 - **Tables for other data.** `records_html(records, colors=record_colors([records],
   appearance))` and `records_text(records)` draw any list of records (`{key: text}`) the same
   way: one column per key, a table per `turma`, a colour per `disciplina`.
-- **Storing the appearance.** It is the tenant's, one per tenant. Save it through
+- **Storing the appearance.** Whose it is — the tenant's, or one per persona — is yours. Save it through
   `normalise_email_appearance` (answer the refusals with a 4xx and store nothing). Read it back
   through `parse_email_appearance`. The logo and the icons are the only images an e-mail loads,
   and they are the URLs the tenant gave.

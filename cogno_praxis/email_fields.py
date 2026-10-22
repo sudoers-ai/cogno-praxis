@@ -74,6 +74,19 @@ disciplina da aula remarcada»): plain text of the tenant, ONE line, at most
 ``EmailContext.custom_tag_hints`` — and the question names it. A host that puts a hint in a prompt
 shapes and fences it like any text of the tenant.
 
+**The SCOPE of a company tag — every persona, or the ones the tenant names (R-T16, 2026-10-22).**
+The owner: «são por persona. Mas no caso as que existem são só do coordinator». A tag, fixed or
+free, may carry a scope, ``{name: [persona id, …]}``: it then serves those personas only. No
+scope (absent, or an empty list) is every persona — the behaviour before scopes existed.
+:func:`normalise_custom_tag_scopes` is the SAVE door — the ids are checked against the HOST's
+catalogue of business personas, handed to it, and an id outside it is a named refusal —
+:func:`parse_custom_tag_scopes` the TURN's, and :func:`tag_in_scope`/:func:`tags_in_scope` the
+reading. For a persona outside a tag's scope the tag is not a marker: :func:`validate_template`
+(``tag_scopes=``) refuses a template that cites it, with a sentence that names the scope — the
+caller's ``scope_refusal`` composes it (this module knows ids, the host knows how its panel names
+a persona), :func:`default_scope_refusal` by the ids otherwise — and :func:`fill_email_fields`
+(``EmailContext.custom_tag_scopes``) never fills it for that persona.
+
 **Where a cell came from is checked by the HOST, with a rule written here.** A record's cell is
 the executor's copy of a tool's read; the host owns the reads of the turn and the fold a «literal»
 is compared under. :func:`record_cells_unverified` is the record grammar's half: a cell passes
@@ -517,6 +530,136 @@ def parse_custom_tags(raw: object) -> "dict[str, str]":
             and not custom_tag_problems(name, value)}
 
 
+# ── the SCOPE of a company tag: which personas it serves (R-T16, 2026-10-22) ──────────────────
+
+#: A persona id a scope names, as the host's catalogue spells it (``COORDINATOR``): an upper-case
+#: letter, then up to 39 upper-case letters, digits or ``_``. The catalogue itself is the host's —
+#: :func:`normalise_custom_tag_scopes` is handed it; this is only the form an id must have.
+PERSONA_ID = re.compile(r"[A-Z][A-Z0-9_]{0,39}")
+
+
+def _scope_ids(scope: object) -> "Optional[tuple[str, ...]]":
+    """``scope`` as the ids it names — stripped, de-duplicated, sorted — or ``None`` when it is not
+    a list (or tuple) whose every item is text in the form of :data:`PERSONA_ID`."""
+    if not isinstance(scope, (list, tuple)):
+        return None
+    ids: "set[str]" = set()
+    for item in scope:
+        if not isinstance(item, str) or PERSONA_ID.fullmatch(item.strip()) is None:
+            return None
+        ids.add(item.strip())
+    return tuple(sorted(ids))
+
+
+def scope_words(scope: "Sequence[str]") -> str:
+    """«da persona COORDINATOR» / «das personas BOOKKEEPER, COORDINATOR» — how a refusal and a
+    missing value name a tag's scope."""
+    ids = list(scope)
+    return (f"da persona {ids[0]}" if len(ids) == 1
+            else "das personas " + ", ".join(ids))
+
+
+def custom_tag_scope_problems(name: object, scope: object, tags: "Mapping[str, str]",
+                              personas: "Iterable[str]") -> "tuple[str, ...]":
+    """Every reason ``scope`` cannot be the SCOPE of the company tag ``name`` — ``()`` when it can.
+    Never raises.
+
+    ``tags`` is the tenant's map as it will be stored (:func:`normalise_custom_tags`) and
+    ``personas`` the HOST's catalogue of business personas (their ids): a scope names personas of
+    that catalogue only. A scope is a list of ids; an EMPTY list is no scope (the tag serves every
+    persona). A fixed tag and a free tag may both carry one. An id outside the catalogue is quoted
+    only when it has the form of an id (:data:`PERSONA_ID`) — anything else is anybody's text."""
+    known = tags if isinstance(tags, Mapping) else {}
+    if (not isinstance(name, str) or name not in known or not is_custom_tag_name(name)
+            or not isinstance(known[name], str)):
+        shown = name[:40] if isinstance(name, str) else type(name).__name__
+        return (f"o alcance de «{shown}» não é de nenhuma tag da empresa",)
+    if not isinstance(scope, (list, tuple)):
+        return (f"o alcance de [{name}] é uma lista de personas",)
+    catalogue = tuple(p for p in (personas if not isinstance(personas, str) else (personas,))
+                      if isinstance(p, str))
+    for item in scope:
+        if isinstance(item, str) and item.strip() in catalogue:
+            continue
+        shown = (f"«{item.strip()}»" if isinstance(item, str)
+                 and PERSONA_ID.fullmatch(item.strip()) else "um valor que não é um id de persona")
+        return (f"o alcance de [{name}] nomeia {shown}, que não é uma persona; as personas são "
+                + (", ".join(catalogue) if catalogue else "nenhuma"),)
+    return ()
+
+
+def normalise_custom_tag_scopes(raw: object, tags: "Mapping[str, str]", personas: "Iterable[str]"
+                                ) -> "tuple[dict[str, tuple[str, ...]], tuple[str, ...]]":
+    """The SAVE door for the SCOPES of the tenant's company tags: ``(stored, refusals)``.
+
+    ``raw`` is ``{name: [persona id, …]}``; ``tags`` the map as it will be stored; ``personas`` the
+    host's catalogue of business personas. ``None`` is no scopes. A scope's ids are stored
+    stripped, de-duplicated and sorted; an EMPTY list is no scope and is not stored (the tag
+    serves every persona). ``stored`` is ``{}`` whenever ``refusals`` is not empty. Never raises."""
+    if raw is None:
+        return {}, ()
+    if not isinstance(raw, Mapping):
+        return {}, ("os alcances das tags são um objeto {nome: [personas]}",)
+    catalogue = tuple(personas) if not isinstance(personas, str) else (personas,)
+    refusals: list[str] = []
+    stored: "dict[str, tuple[str, ...]]" = {}
+    for name, scope in raw.items():
+        why = custom_tag_scope_problems(name, scope, tags, catalogue)
+        if why:
+            refusals += why
+            continue
+        ids = _scope_ids(scope)
+        if isinstance(name, str) and ids:
+            stored[name] = ids
+    return ({}, tuple(refusals)) if refusals else (stored, ())
+
+
+def parse_custom_tag_scopes(raw: object, tags: "Mapping[str, str]"
+                            ) -> "dict[str, tuple[str, ...]]":
+    """The TURN door for the scopes: ``{name: ids}`` for every entry the save would keep, read
+    against the tags the turn reads — a scope of a tag that is gone, one that is not a list of
+    ids, and an empty one are dropped (the tag then serves every persona, the behaviour before
+    scopes existed). Never raises. Whether an id is still in the host's catalogue is the SAVE's
+    question: an id nobody has any more narrows the tag, it never widens it."""
+    if not isinstance(raw, Mapping):
+        return {}
+    known = tags if isinstance(tags, Mapping) else {}
+    out: "dict[str, tuple[str, ...]]" = {}
+    for name, scope in raw.items():
+        if not isinstance(name, str) or name not in known or not is_custom_tag_name(name):
+            continue
+        ids = _scope_ids(scope)
+        if ids:
+            out[name] = ids
+    return out
+
+
+def _scope_of(name: str, scopes: object) -> "tuple[str, ...]":
+    """The scope of ``name`` in ``scopes`` (``{name: ids}``) — ``()`` = every persona."""
+    if not isinstance(scopes, Mapping):
+        return ()
+    return _scope_ids(scopes.get(name)) or ()
+
+
+def tag_in_scope(name: str, persona: "Optional[str]", scopes: object) -> bool:
+    """Whether the company tag ``name`` serves ``persona``: it has no scope, or its scope names
+    the persona (compared as written, surrounding blanks aside). ``persona=None`` — the caller
+    does not say whose — is every tag: a scope is a question about a persona."""
+    scope = _scope_of(name, scopes)
+    if not scope or persona is None:
+        return True
+    return isinstance(persona, str) and persona.strip() in scope
+
+
+def tags_in_scope(tags: "Mapping[str, Any]", persona: "Optional[str]",
+                  scopes: object) -> "dict[str, Any]":
+    """The entries of ``tags`` (a ``{name: …}`` map: the tags, their hints, their sources) whose
+    tag serves ``persona`` (:func:`tag_in_scope`), in the map's order."""
+    if not isinstance(tags, Mapping):
+        return {}
+    return {n: v for n, v in tags.items() if isinstance(n, str) and tag_in_scope(n, persona, scopes)}
+
+
 def _company_tags(raw: "Mapping[str, str] | Iterable[str]") -> "dict[str, Optional[str]]":
     """``custom_tags=`` as ``{name: value or None}``: a mapping keeps its values (so a subject
     can be checked), an iterable of names has none. Whatever cannot be a tag is dropped."""
@@ -538,17 +681,45 @@ def template_fields(subject: str, body: str) -> "tuple[str, ...]":
     return tuple(dict.fromkeys(markers_cited(subject or "") + markers_cited(body or "")))
 
 
+def default_scope_refusal(where: str, name: str, scope: "Sequence[str]") -> str:
+    """«no corpo, [aulas] é uma tag da empresa só da persona COORDINATOR; este template é de
+    outra persona» — the refusal of a tag outside the scope of the template's persona when the
+    caller composes none of its own (``validate_template(…, scope_refusal=…)``): the scope named
+    by its ids, the only names this module knows."""
+    return (f"no {where}, [{name}] é uma tag da empresa só {scope_words(scope)}; este template é "
+            "de outra persona")
+
+
+def _scope_refusal_text(compose: "Optional[Callable[[str, str, tuple[str, ...]], str]]",
+                        where: str, name: str, scope: "tuple[str, ...]") -> str:
+    """The caller's sentence for an out-of-scope tag, or :func:`default_scope_refusal` when it has
+    none — or when its own fails or answers no text: the refusal is never lost."""
+    if compose is not None:
+        try:
+            text = compose(where, name, scope)
+        except Exception:  # noqa: BLE001 — a caller's composer that fails refuses all the same
+            text = None
+        if isinstance(text, str) and text.strip():
+            return text
+    return default_scope_refusal(where, name, scope)
+
+
 def _bracket_problems(text: str, where: str, phase: str,
                       tags: "Optional[Mapping[str, Optional[str]]]" = None,
                       removed: "frozenset[str]" = frozenset(),
-                      persona: "Optional[str]" = None) -> "list[str]":
+                      persona: "Optional[str]" = None,
+                      out_of_scope: "Optional[Mapping[str, tuple[str, ...]]]" = None,
+                      scope_refusal: "Optional[Callable[[str, str, tuple[str, ...]], str]]" = None
+                      ) -> "list[str]":
     """Every ``[`` in ``text`` that does not open a marker a template of ``persona`` may use
     (:func:`known_markers`) nor one of the tenant's company ``tags`` — named, with its position,
     listing exactly the markers it may use. A marker of ANOTHER persona's provider is refused
     naming the persona it belongs to. A name in ``removed`` (a tag the tenant removed) is accepted
-    too, and is not listed."""
+    too, and is not listed. A tag of ``out_of_scope`` (``{name: scope}``: a tag of the tenant this
+    persona is outside the scope of) is refused by ``scope_refusal`` (R-T16), and is not listed."""
     out: list[str] = []
     tags = tags or {}
+    out_of_scope = out_of_scope or {}
     usable = _template_fields_for(persona)
     allowed = ", ".join(known_markers(persona)) + (
         "; e os da empresa: " + ", ".join(f"[{n}]" for n in tags) if tags else "")
@@ -572,6 +743,9 @@ def _bracket_problems(text: str, where: str, phase: str,
             continue
         if name in tags or name in removed:
             continue
+        if name in out_of_scope:
+            out.append(_scope_refusal_text(scope_refusal, where, name, out_of_scope[name]))
+            continue
         if name in REFUSED_FIELDS:
             since = _FIELD_PHASE.get(name)
             if since is not None and _PHASES.index(phase) >= _PHASES.index(since):
@@ -585,7 +759,10 @@ def _bracket_problems(text: str, where: str, phase: str,
 def validate_template(subject: str, body: str, *, phase: str = "E1",
                       persona: "Optional[str]" = None,
                       custom_tags: "Mapping[str, str] | Iterable[str]" = (),
-                      removed_tags: "Iterable[str]" = ()) -> "tuple[str, ...]":
+                      removed_tags: "Iterable[str]" = (),
+                      tag_scopes: "Optional[Mapping[str, Iterable[str]]]" = None,
+                      scope_refusal: "Optional[Callable[[str, str, tuple[str, ...]], str]]" = None
+                      ) -> "tuple[str, ...]":
     """Every reason this template cannot be saved, in words — ``()`` when it is valid.
 
     Never raises. Each reason is a sentence the tenant's admin reads (the host answers 400 with
@@ -608,6 +785,16 @@ def validate_template(subject: str, body: str, *, phase: str = "E1",
     (:data:`CUSTOM_TAG_REMOVED`) — so it is accepted here; a name never declared (a typo) is not
     one, and is refused as at the save. A name that cannot be a tag is ignored. The SAVE passes
     the tenant's tags and no removed ones.
+
+    ``tag_scopes`` — the SCOPES of the tenant's tags (R-T16, 2026-10-22), ``{name: [persona id,
+    …]}`` as :func:`parse_custom_tag_scopes` reads them: a tag with a scope serves the personas it
+    names only. For any OTHER ``persona`` it is not a marker of this template — refused, never
+    listed among the markers it may use — and the refusal names the scope: the caller's
+    ``scope_refusal(where, name, scope_ids)`` composes it (the host names a persona as its panel
+    does; this module knows only ids), and without one — or when it fails — it is
+    :func:`default_scope_refusal`, by the ids. A tag with no scope (absent, empty) serves every
+    persona, and ``persona=None`` reads no scope. ``None`` — no scopes: the verdict of before,
+    byte for byte.
     """
     if phase not in _PHASES:
         raise ValueError(f"phase must be one of {_PHASES}, not {phase!r}")
@@ -622,10 +809,14 @@ def validate_template(subject: str, body: str, *, phase: str = "E1",
         out.append("o corpo está vazio")
     elif len(body) > MAX_BODY_CHARS:
         out.append(f"o corpo tem {len(body)} caracteres; o máximo é {MAX_BODY_CHARS}")
-    tags = _company_tags(custom_tags)
-    removed = frozenset(n for n in _company_tags(removed_tags) if n not in tags)
-    out += _bracket_problems(subject, "assunto", phase, tags, removed, persona)
-    out += _bracket_problems(body, "corpo", phase, tags, removed, persona)
+    every_tag = _company_tags(custom_tags)
+    removed = frozenset(n for n in _company_tags(removed_tags) if n not in every_tag)
+    tags = {n: v for n, v in every_tag.items() if tag_in_scope(n, persona, tag_scopes)}
+    out_of_scope = {n: _scope_of(n, tag_scopes) for n in every_tag if n not in tags}
+    out += _bracket_problems(subject, "assunto", phase, tags, removed, persona, out_of_scope,
+                             scope_refusal)
+    out += _bracket_problems(body, "corpo", phase, tags, removed, persona, out_of_scope,
+                             scope_refusal)
     for name in markers_cited(subject):
         if name in SUBJECT_FORBIDDEN:
             out.append(f"[{name}] não pode ir no assunto (tem várias linhas ou é texto livre)")
@@ -658,6 +849,8 @@ class EmailContext:
     (:func:`free_records`). Read for a free tag only; anything else in it is ignored.
     ``custom_tag_hints`` — the tenant's hints for its free tags (:func:`parse_custom_tag_hints`),
     named in the question when a value is missing.
+    ``custom_tag_scopes`` — the scopes of the tenant's tags (:func:`parse_custom_tag_scopes`,
+    R-T16): a tag outside the scope of the persona the e-mail is filled FOR is never filled for it.
     """
     recipient_name: str = ""
     recipient_email: str = ""
@@ -670,6 +863,7 @@ class EmailContext:
     custom_tags: "Mapping[str, str]" = field(default_factory=dict)
     free_tag_values: "Mapping[str, Any]" = field(default_factory=dict)
     custom_tag_hints: "Mapping[str, str]" = field(default_factory=dict)
+    custom_tag_scopes: "Mapping[str, Sequence[str]]" = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -1013,6 +1207,11 @@ def fill_email_fields(fields: "Iterable[str]", context: EmailContext, *,
     :func:`free_records_problems`) → a ``Missing`` with that sentence. A conversation value for
     anything that is not a free tag is never read.
 
+    A company tag outside the SCOPE of ``persona`` (``context.custom_tag_scopes``, R-T16) is a
+    ``Missing`` that names the scope (:data:`CUSTOM_TAG_SOURCE`), never filled — fixed or free:
+    the host does not offer such a template to that persona, and this is the floor under it.
+    ``persona=None`` reads no scope.
+
     ``in_subject`` — the markers the template's SUBJECT cites (``markers_cited(subject)``): a
     list of records for one of them is a ``Missing`` («uma lista não pode ir no assunto»), never a
     subject broken over lines. Without it, :func:`render_email`'s floor refuses such a subject.
@@ -1069,6 +1268,10 @@ def fill_email_fields(fields: "Iterable[str]", context: EmailContext, *,
             # A company tag: the tenant's fixed value, before any provider, in any persona.
             if name not in tags:
                 miss(name, CUSTOM_TAG_REMOVED)
+            elif not tag_in_scope(name, persona, context.custom_tag_scopes):
+                miss(name, f"[{name}] é uma tag da empresa só "
+                           f"{scope_words(_scope_of(name, context.custom_tag_scopes))}: esta "
+                           "persona não a preenche")
             elif custom_tag_problems(name, tags[name]):
                 miss(name, "; ".join(custom_tag_problems(name, tags[name])))
             elif not _custom_value(tags[name]):
@@ -1771,4 +1974,6 @@ __all__ = [
     "email_signature_text", "record_colors", "records_html", "records_text", "as_records",
     "MAX_RECORDS", "MAX_RECORD_KEYS", "MAX_RECORD_KEY_CHARS", "free_records",
     "free_records_problems", "record_cells_unverified",
+    "PERSONA_ID", "scope_words", "custom_tag_scope_problems", "normalise_custom_tag_scopes",
+    "parse_custom_tag_scopes", "tag_in_scope", "tags_in_scope", "default_scope_refusal",
 ]
