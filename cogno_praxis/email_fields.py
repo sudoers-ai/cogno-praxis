@@ -1609,6 +1609,40 @@ class _Look:
     colors: "Mapping[str, str]"
 
 
+#: WCAG 2.x AA for body text. A painted cell on which the body's ink reads worse than this gets the
+#: white ink instead, when the white reads better.
+MIN_CELL_CONTRAST = 4.5
+_WHITE = "#ffffff"
+
+
+def _luminance(colour: str) -> float:
+    """WCAG 2.x relative luminance of a ``#RRGGBB``."""
+    channels = [int(colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    lin = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def _contrast(a: str, b: str) -> float:
+    hi, lo = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _paint(background: str) -> str:
+    """The style of a cell painted ``background``: the background, and an ink of its own only when
+    the body's (``_INK``) would not read on it.
+
+    The tenant's accent is the FIRST discipline colour (:func:`_palette`), and the panel accepts any
+    ``#RRGGBB``: a dark accent painted the first discipline's name and its dates near-black on dark
+    (``#1f3a5f``: 1.38:1). Every default colour, and every light accent, reads the body's ink at
+    9.4:1 or more and gets NO ink of its own, so their bytes are the ones they always were."""
+    style = f"background:{background}"
+    if _COLOR.fullmatch(background):
+        ink = _contrast(_INK, background)
+        if ink < MIN_CELL_CONTRAST and _contrast(_WHITE, background) > ink:
+            style += f";color:{_WHITE}"
+    return style
+
+
 def _palette(appearance: "Optional[EmailAppearance]") -> "tuple[str, ...]":
     accent = appearance.accent_color if appearance is not None else ""
     return ((accent,) + tuple(c for c in DEFAULT_PALETTE if c != accent)) if accent \
@@ -1776,12 +1810,12 @@ def records_html(records: object, *, colors: "Optional[Mapping[str, str]]" = Non
                 if not cell and derive:
                     cell = _derived_cell(derive, _shown_date(_field(r, "data"), month))
                 if colored and _fold_key(k) == _COLOR_KEY:
-                    row.append((cell, f"background:{colors.get(cell, '#ffffff')}"))
+                    row.append((cell, _paint(colors.get(cell, _WHITE))))
                 elif _fold_key(k) == "data":
                     # the row's discipline colour (R-T18) — the same lookup its own cell makes
-                    paint = colors.get(r.get(discipline, ""), "#ffffff") if colored else ""
+                    paint = colors.get(r.get(discipline, ""), _WHITE) if colored else ""
                     row.append((_date_with_year(cell, month),
-                                f"{_NARROW_BOX};background:{paint}" if colored else ""))
+                                f"{_NARROW_BOX};{_paint(paint)}" if colored else ""))
                 else:
                     row.append((cell, _NARROW if colored else ""))
             rows.append(row)
