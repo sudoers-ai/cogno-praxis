@@ -77,10 +77,11 @@ Two things this buys beyond the wording of the question:
   different row; pinning the id deletes what was proposed, or nothing.
 
 This is the vertical half of the EGO's third confirmation gate (`cogno_anima.types.ToolResult.
-needs_confirmation` — *the skill ran, read, and is asking about THIS call*). The flag itself is not
-carried by `cogno-mcp` today (`grep -rn needs_confirmation` in that repo: zero hits), so over the
-MCP bridge the proposal travels as ordinary tool text; the two-step is what protects the ledger
-either way.
+needs_confirmation` — *the skill ran, read, and is asking about THIS call*). `cogno-mcp` carries the
+flag: its dispatcher maps `_meta["cogno-mcp/needs_confirmation"]` onto
+`ToolResult.needs_confirmation`. It did not when this section was first written (measured
+2026-09-02, `grep -rn needs_confirmation` in that repo: zero hits), and the proposal travelled as
+ordinary tool text; the two-step is what protects the ledger either way.
 
 ## Values the business declared are a source
 
@@ -214,4 +215,4 @@ the caller's `identity_id` + role, so an EMPLOYEE only sees their own transactio
 oversight role sees the whole scope — the vertical only maps role→visibility (mechanics).
 
 See `docs/HOST_INTEGRATION.md` for the scheduler's wiring; the bookkeeper mirrors it. The full
-port plan (phases, tests, benches) is in `docs/BOOKKEEPER_PLAN.md`.
+port plan (phases, tests, benches), historical, is in `docs/BOOKKEEPER_PLAN.md`.

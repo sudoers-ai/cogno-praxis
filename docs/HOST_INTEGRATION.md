@@ -254,9 +254,10 @@ selection, metering, the deploy topology (how/where servers run), auth between h
 and server. cogno-praxis is the domain server; you bring the data and the orchestration.
 
 The e-mail templates (`cogno_praxis.email_fields`) split the same way: the module decides which
-markers exist, refuses a bad template or a bad company tag in words, and fills every value in
-code; storing the templates and the tenant's company tags, the admin API, the send, the
-confirmation and the audit are yours (README, «Templated e-mail fields»). A host passes the
+markers exist, refuses a bad template or a bad company tag in words, and fills in code every value
+the model does not write (the model writes `[conteudo]` and a FREE tag's value); storing the
+templates and the tenant's company tags, the admin API, the send, the confirmation and the audit
+are yours (README, «Templated e-mail fields»). A host passes the
 persona a template is saved for to `validate_template(…, persona=…)` — every persona's template may
 use the eight generic markers (`known_markers(persona)`: no persona has markers of its own since
 R-T13, 2026-10-22) — and the tenant's tags as `custom_tags=` when a template is SAVED, adds
@@ -307,7 +308,9 @@ read, and the tenant's appearance from `parse_email_appearance(<what you stored>
 A vertical run as `python -m cogno_praxis.<vertical>.server` is configured through the
 environment of that process — which, over stdio, is the environment the host gives the child it
 spawns. Nothing here is read by the library when a host calls `build_server(service)` with a
-service of its own, except the three marked *at call time*.
+service of its own, except the three marked *at call time* and `COGNO_COORDINATOR_TZ`, which the
+coordinator's `build_server` reads when it is given no `tz_name=`. `COGNO_COORDINATOR_SMTP` is read
+only when `build_server` was given neither `sender=` nor `sender_for=`.
 
 | variable | read by | default | what |
 | --- | --- | --- | --- |
@@ -329,7 +332,7 @@ service of its own, except the three marked *at call time*.
 | `COGNO_COORDINATOR_TODAY` | coordinator | unset = the real date | a fixed ISO date |
 | `COGNO_COORDINATOR_SEED_FILE` | coordinator | unset = no seed | the path of a JSON file `{"tenant": …, "sheets": {<spreadsheet id>: {<tab>: [[row 1], …]}}}` whose grids go into the in-memory store — a REHEARSAL tenant's classes, never production. Applied only with no Google token, only to the spreadsheet ids the tenant's rules name, used whole or not at all, and only when `COGNO_COORDINATOR_TENANT` is the file's own `tenant` (`coordinator/seed.py`) |
 | `COGNO_COORDINATOR_TENANT` | coordinator | unset = no seed is ever applied | the tenant the host runs this turn for. The child inherits the box's environment, so a seed file set on the box reaches every tenant's coordinator: this is what keeps it to the one it names. A host that does not pass it never seeds anything |
-| `COGNO_COORDINATOR_TZ` | coordinator | empty = all-day events | the zone an hour travels with in the calendar export |
+| `COGNO_COORDINATOR_TZ` | coordinator, by `build_server` unless `tz_name=` | empty = all-day events | the zone an hour travels with in the calendar export |
 | `COGNO_COORDINATOR_SMTP` | coordinator, *at call time* | unset = no sender | ONE tenant's mailbox for the calendar export, as a JSON object; invalid JSON is ignored with a WARNING and the tool refuses |
 | `COGNO_RENDER_CHANNEL` | `cogno_praxis.render`, *at call time* | unset = WhatsApp | which channel's bold delimiter a listing uses when the caller names none; an unrecognised name falls to plain text |
 | `COGNO_PG_DSN` | bookkeeper, companies | — | the shared DSN the two fall back to |
