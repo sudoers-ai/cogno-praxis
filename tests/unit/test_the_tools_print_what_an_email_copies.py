@@ -236,6 +236,22 @@ def test_the_daily_digest_door_carries_the_hour_too():
         svc, "daily_checks", {"identity_label": PROF, "role": "EMPLOYEE"})
 
 
+def test_the_daily_digest_line_of_a_class_today_carries_its_hour():
+    """The class of TODAY, through the public door the host's sweep calls: its line carries the
+    hour. (The door test above compares the door with the tool; this one says what the line IS —
+    the mutation «the daily text drops time_of» survived the comparison, both sides losing it.)"""
+    from cogno_praxis.coordinator import daily_checks_text, status_args
+    store = InMemorySpreadsheetStore()
+    store.put(SHEET_X, "Secretaria", _SCHEDULE_X + [
+        ["20/09/2026", "Dom", PROF, "Redes de Computadores", "Verde", "19:00"]])
+    store.put(SHEET_Y, "Secretaria", _SCHEDULE_Y)
+    svc = CoordinatorService(store, CoordinatorConfig(_RULES.replace("{TIME}", "")),
+                             today=lambda: _TODAY)
+    out = daily_checks_text(svc.daily_checks(identity_label=PROF, role="EMPLOYEE"),
+                            **status_args(svc))
+    assert "- 20/09 19:00 · Turma XA_01 · Redes de Computadores" in out
+
+
 def test_the_pay_block_prints_the_value_of_one_class():
     # 4 h per class × R$ 120,00 per hour.
     assert "Horas por aula declaradas nas regras: 4 h\nValor por aula: R$ 480,00" in _own_pay(_svc())
