@@ -27,11 +27,12 @@
   form the schedule never carries designates nobody. The registry path re-reads the schedule (only
   when the tab had no address). The `SENT:` line does not name the source; the proposal did.
 - **Tests.** `tests/unit/test_calendar_recipient_from_the_registry.py`, through the real server
-  door: red on `5e654f4` by assertion (6 of 14); the 8 controls green in both worlds — the tab
+  door: red on `5e654f4` by assertion (6 of 16); the 10 controls green in both worlds — the tab
   wins and the text is today's, nobody in the registry is today's refusal, two addresses never
-  pick one, a label that fits two professors designates nobody, a professor is not given the
-  registry, malformed entries are ignored, the caller's own address still wins, and no registry
-  address reaches a log line.
+  pick one, a label that fits two professors designates nobody, a professor named who fits two
+  people has no registry address, a professor is not given the registry, malformed entries are
+  ignored, the caller's own address still wins, a schedule that did not read in full resolves
+  nobody, and no registry address reaches a log line. Mutations: 9/9 killed.
 - **Docs.** README «The calendar export», `docs/HOST_INTEGRATION.md` §7 (the host's half).
 
 ### Comments — the herald dependency, as it is (2026-10-22)
