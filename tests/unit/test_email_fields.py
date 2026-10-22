@@ -302,7 +302,9 @@ def test_M1_the_listed_classes_sum_to_the_estimates_base_past_days_included():
     est = ctx.estimate
     assert est is not None
     values, missing = fill_email_fields(("aulas",), ctx)
-    lines = values["aulas"].splitlines()
+    # One line per class under its class group's title (2026-10-22): the titles and the blank
+    # line between groups are not classes.
+    lines = [ln for ln in values["aulas"].splitlines() if " — " in ln]
     assert len(lines) == len(ctx.classes) == 4
     assert len(lines) * est.hours_per_class * est.rate == est.base == 1920.0
     # the same professor through the pay tool: the SAME base
@@ -314,11 +316,17 @@ def test_M1_the_listed_classes_sum_to_the_estimates_base_past_days_included():
 
 
 def test_aulas_are_chronological_and_never_invent_an_hour():
+    """One block per class group, in the order of its code, the classes chronological inside it,
+    each line with its weekday (2026-10-22, the owner's model e-mail); a class with no hour has
+    none in its line."""
     values, _ = fill_email_fields(("aulas", "disciplinas"), _ctx())
-    assert values["aulas"] == ("05/09 08:00 — Bancos NoSQL — Turma AA_01\n"
-                               "12/09 08:00 — Bancos NoSQL — Turma AA_01\n"
-                               "19/09 13:30 — Bancos NoSQL — Turma BB_02\n"
-                               "26/09 — Estatistica Aplicada — Turma AA_01")
+    assert values["aulas"] == ("Turma AA_01\n"
+                               "05/09 (sáb) 08:00 — Bancos NoSQL\n"
+                               "12/09 (sáb) 08:00 — Bancos NoSQL\n"
+                               "26/09 (sáb) — Estatistica Aplicada\n"
+                               "\n"
+                               "Turma BB_02\n"
+                               "19/09 (sáb) 13:30 — Bancos NoSQL")
     assert values["disciplinas"] == "Bancos NoSQL\nEstatistica Aplicada"
 
 
@@ -370,8 +378,8 @@ def test_the_response_rate_condition_follows_the_bands():
 _EXPECTED_SCHEDULE = (
     "Cronograma de aulas — setembro/2026",
     "Olá, Prof Alfa,\n\nSegue o seu cronograma de aulas de setembro/2026 na Escola Exemplo:\n\n"
-    "05/09 08:00 — Bancos NoSQL — Turma AA_01\n12/09 08:00 — Bancos NoSQL — Turma AA_01\n"
-    "19/09 13:30 — Bancos NoSQL — Turma BB_02\n26/09 — Estatistica Aplicada — Turma AA_01\n\n"
+    "Turma AA_01\n05/09 (sáb) 08:00 — Bancos NoSQL\n12/09 (sáb) 08:00 — Bancos NoSQL\n"
+    "26/09 (sáb) — Estatistica Aplicada\n\nTurma BB_02\n19/09 (sáb) 13:30 — Bancos NoSQL\n\n"
     "Disciplinas do mês:\nBancos NoSQL\nEstatistica Aplicada\n\n"
     "Lembre de confirmar a sala.\n\nAtenciosamente,\nCoordenação — Escola Exemplo")
 _EXPECTED_INVOICE = (
@@ -380,9 +388,9 @@ _EXPECTED_INVOICE = (
     "por nível de bônus (valor por aula: R$ 480,00):\n\n"
     "Sem bônus: R$ 1.920,00\nIBOPE 80–89%: R$ 2.400,00\n"
     "IBOPE 90%+: R$ 2.560,00 ← apurado (IBOPE 92%)\n\n"
-    "Aulas consideradas:\n05/09 08:00 — Bancos NoSQL — Turma AA_01\n"
-    "12/09 08:00 — Bancos NoSQL — Turma AA_01\n19/09 13:30 — Bancos NoSQL — Turma BB_02\n"
-    "26/09 — Estatistica Aplicada — Turma AA_01\n\nAtenciosamente,\nEscola Exemplo")
+    "Aulas consideradas:\nTurma AA_01\n05/09 (sáb) 08:00 — Bancos NoSQL\n"
+    "12/09 (sáb) 08:00 — Bancos NoSQL\n26/09 (sáb) — Estatistica Aplicada\n\n"
+    "Turma BB_02\n19/09 (sáb) 13:30 — Bancos NoSQL\n\nAtenciosamente,\nEscola Exemplo")
 
 
 @pytest.mark.parametrize("template, conteudo, expected", [

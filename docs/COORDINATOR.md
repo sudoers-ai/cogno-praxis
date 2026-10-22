@@ -216,15 +216,21 @@ The declaration reads nothing; a host calls `email_context` only when
 
 **The same five, as tables (2026-10-22).** An e-mail whose body uses one of them also has an HTML
 form, `render_email_html` (README «Templated e-mail fields»):
-- `[aulas]` is a table with one row per class;
-- `[valores_por_bonus]` is a two-column table, the determined band in bold;
+- `[aulas]` is one table per class group, under its «Turma X» title, in code order. The columns
+  are Mês · Dia · Data · Horário (when the group has one) · Disciplina, and each discipline has
+  one colour across the e-mail;
+- `[valores_por_bonus]` is a two-column table (the determined band carries its mark);
 - `[disciplinas]` is a list;
 - `[total]` and `[valor_por_aula]` are bold.
 
-It reads the classes and the estimate of this SAME context, through the same row builders as the
-text (`_ordered_classes`, `_subjects`, `_bonus_rows`). A table is drawn only when its rows rebuild
-the very text the e-mail carries, so the table and the text cannot disagree. The text and its
-digest do not move. `tests/unit/test_email_html.py`.
+Nothing here draws «the classes». The coordinator PRODUCES a list of records (`_aulas_records`:
+`mês`, `dia`, `data`, `horário`, `disciplina`, `turma`), and the GENERIC renderer
+(`records_html`/`records_text`, README) draws it like any other list. That generic renderer is
+what a new persona's tags will use. It reads the classes and the estimate of this SAME context,
+through the same builders as the text (`_aulas_records`, `_subjects`, `_bonus_rows`). A table is drawn only when its rows rebuild
+the very text the e-mail carries, so the table and the text cannot disagree. The TEXT of `[aulas]`
+follows the same shape: a «Turma X» block per class group, each line with the weekday. That is the
+one change to the text, and it is declared. `tests/unit/test_email_html.py`.
 
 ## A rehearsal tenant's classes, from a FILE (2026-10-21)
 

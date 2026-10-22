@@ -226,4 +226,4 @@ def test_the_coordinator_fills_aulas():
                       turma="Turma X"),)
     values, missing = fill_email_fields(template_fields(*T_SECRETARY), _host_half(classes=cls))
     assert missing == ()
-    assert values["aulas"] == "08/10 19:00 — Disciplina Exemplo — Turma X"
+    assert values["aulas"] == "Turma X\n08/10 (qui) 19:00 — Disciplina Exemplo"
