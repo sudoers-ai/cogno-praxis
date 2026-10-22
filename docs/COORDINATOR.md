@@ -214,6 +214,18 @@ The declaration reads nothing; a host calls `email_context` only when
 (`[nome]`, `[empresa]`, `[data]`, …) is composed without this read, in any persona.
 `tests/unit/test_email_field_providers.py`.
 
+**The same five, as tables (2026-10-22).** An e-mail whose body uses one of them also has an HTML
+form, `render_email_html` (README «Templated e-mail fields»):
+- `[aulas]` is a table with one row per class;
+- `[valores_por_bonus]` is a two-column table, the determined band in bold;
+- `[disciplinas]` is a list;
+- `[total]` and `[valor_por_aula]` are bold.
+
+It reads the classes and the estimate of this SAME context, through the same row builders as the
+text (`_ordered_classes`, `_subjects`, `_bonus_rows`). A table is drawn only when its rows rebuild
+the very text the e-mail carries, so the table and the text cannot disagree. The text and its
+digest do not move. `tests/unit/test_email_html.py`.
+
 ## A rehearsal tenant's classes, from a FILE (2026-10-21)
 
 Without a Google token the coordinator's subprocess serves an EMPTY in-memory store, so a

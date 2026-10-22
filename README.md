@@ -164,7 +164,8 @@ any other text of the tenant.
   in any persona — the value is the tenant's, not a persona's read. A tag the context no longer
   carries is `missing` with «tag personalizada removida» (its source:
   «as tags personalizadas da empresa»), so the send asks the requester instead of sending.
-- Tags filled by data (a provider, code), tags of one persona only and HTML are not here.
+- Tags filled by data (a provider, code), tags of one persona only and HTML values are not
+  here: a tag's value is plain text, and the HTML form of an e-mail shows it escaped.
 
 **FREE company tags — no fixed value, filled from the conversation (2026-10-22).** The owner:
 «preciso q seja flexivel e chamada pelo usuario»; «o template terá tags que devem ser preenchidas
@@ -217,6 +218,21 @@ name grammar, the reservation of the thirteen and of the reserved names, the rem
   template does not use is never asked for.
 - `render_email(subject, body, values)` → one-pass substitution (a marker inside a value stays
   text); `email_digest(subject, body)` is what a proposal records and a confirmation compares.
+- `render_email_html(subject, body, values, context)` → the HTML form of the SAME e-mail, as a
+  whole document, or `""` (2026-10-22). It renders only when the BODY uses a provider's marker:
+  `[aulas]` becomes a table with one row per class (Data · Horário, only when some class has an
+  hour · Disciplina · Turma), `[valores_por_bonus]` a two-column table (Faixa · Valor) with the
+  determined band in bold and the response-rate condition below it, `[disciplinas]` a list, and
+  `[total]` and `[valor_por_aula]` bold. A template of generic markers or company tags has no
+  table to draw, so it renders `""` and its e-mail stays plain text.
+  - **Safe by construction.** Every value and the template's own text are escaped. The styles
+    are inline, and there is no script, style sheet, image, link or URL.
+  - **The same e-mail.** The render is one pass, like the text. A table is drawn only from rows
+    of `context` whose text IS the value the text part carries; any other value is shown as
+    escaped text.
+  - **The text does not move.** `render_email` is byte for byte the same, and the digest is still
+    of the text. The host sends the HTML beside it as `multipart/alternative`, and the proposal
+    in the chat stays the text.
 
 **Prompt-only personas.** Two personas ship here with **no tools of their own** — just the
 four prompt slots (`system`, `voice`, `scope`, `limits`) as package data, loaded by the host's

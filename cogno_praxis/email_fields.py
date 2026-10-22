@@ -57,7 +57,8 @@ was removed after it was saved is refused by the save and kept by the turn, whic
 names the tenant REMOVED (``removed_tags=``), and the fill returns it as a :class:`Missing` —
 «tag personalizada removida» — so the send asks the requester instead of sending. A name the
 tenant never declared (a typo) is refused at both doors, as any unknown marker always was. Tags
-filled by data (a provider, code), tags of one persona only and HTML are not here.
+filled by data (a provider, code), tags of one persona only and HTML values are not here: a tag's
+value is plain text, and the HTML form of an e-mail (below) shows it escaped.
 
 **FREE company tags — no fixed value, filled from the CONVERSATION (2026-10-22).** The owner:
 «preciso q seja flexivel e chamada pelo usuario»; «o template terá tags que devem ser preenchidas
@@ -86,6 +87,17 @@ it is not there, in the vertical's own words. The host turns a non-empty ``missi
 QUESTION to the requester instead of a proposal. :func:`render_email` refuses to run with a
 marker that has no value — it is never reached with one.
 
+**The HTML form — tables for an e-mail that carries data (2026-10-22).** The owner's order:
+«qdo for enviar cronograma ou algum dado especifico, colocar em formato tabular e visualmente
+agradavel». :func:`render_email_html` renders the SAME e-mail as an HTML document: the classes as a
+table (one row per class), the pay values as a two-column table, the disciplines as a list, the
+total in bold. The host sends it beside the text as ``multipart/alternative``. The TEXT does not
+move by a byte: it is what the requester was shown and confirmed, and :func:`email_digest` is
+still taken of it. A template whose body uses no provider's marker renders no HTML at all (``""``),
+and its e-mail goes out as the text it always was. Every value and the template's own text are
+escaped, the styles are inline, and the document loads nothing; a table is drawn only from rows
+whose text IS the value the text part carries.
+
 What deliberately is NOT here, by the owner's decisions of 2026-10-06:
 
 * ``[cpf_cnpj]`` — removed: no personal data beyond the recipient's own name and address;
@@ -103,11 +115,12 @@ block they sit beside (:mod:`cogno_praxis.coordinator.pay`).
 from __future__ import annotations
 
 import hashlib
+import html
 import re
 from dataclasses import dataclass, field
 from datetime import date
 from types import MappingProxyType
-from typing import Iterable, Mapping, Optional, Sequence
+from typing import Callable, Iterable, Mapping, Optional, Sequence
 
 from cogno_praxis.coordinator.pay import PayEstimate, _condition_lines, fmt_money
 
@@ -715,20 +728,52 @@ def _line_of(c: EmailClass) -> str:
     return f"{stamp} — {c.subject} — {c.turma}"
 
 
+def _ordered_classes(classes: "Iterable[EmailClass]") -> "list[EmailClass]":
+    """The month's classes in the order ``[aulas]`` lists them — by day, then hour (a class with no
+    hour after the timed ones of its day). ONE definition: the text and the HTML table read it."""
+    return sorted(classes, key=lambda c: (c.when, c.time or "99:99"))
+
+
+def _subjects(classes: "Iterable[EmailClass]") -> "list[str]":
+    """``[disciplinas]``: each discipline once, case-folded alphabetical — for the text and the
+    HTML list alike."""
+    return sorted({c.subject for c in classes}, key=lambda s: (s.casefold(), s))
+
+
+def _bonus_rows(est: PayEstimate) -> "list[tuple[str, str, bool]]":
+    """``(label, value, applied)`` per line of ``[valores_por_bonus]``: «Sem bônus», then one per
+    DECLARED band. ``applied`` only when the bonus is DETERMINED (``below`` marks «Sem bônus»,
+    ``applied`` its band; ``not_found``/``gap`` mark nothing). The text and the HTML table read
+    these rows, so the two cannot list different figures."""
+    base, hours, state = est.base, est.hours, est.bonus_state
+    applied = est.matched_tier if state == "applied" else None
+    rows = [("Sem bônus", fmt_money(base), state == "below")]
+    for t in est.tiers:
+        rows.append((t.label, fmt_money(base + hours * t.per_hour),
+                     applied is not None and t == applied))
+    return rows
+
+
+def _bonus_mark(est: PayEstimate) -> str:
+    pct = f"{est.ibope_pct:g}" if est.ibope_pct is not None else ""
+    return f" ← apurado (IBOPE {pct}%)"
+
+
+def _bonus_condition(est: PayEstimate) -> "list[str]":
+    """The response-rate condition the bands hang on, as its non-empty lines (``[]`` when the
+    rules declare none)."""
+    return [ln for ln in _condition_lines(est) if ln]
+
+
 def _bonus_value(est: PayEstimate) -> str:
     """``[valores_por_bonus]``: «Sem bônus» and one line per DECLARED band, always — the levels
     the rules declare, not the hypotheses (which are empty once the result was read). The
     applied band is marked only when the bonus is DETERMINED; with ``not_found``/``gap`` no line
     is marked and none is chosen."""
-    base, hours, state = est.base, est.hours, est.bonus_state
-    pct = f"{est.ibope_pct:g}" if est.ibope_pct is not None else ""
-    applied = est.matched_tier if state == "applied" else None
-    mark = f" ← apurado (IBOPE {pct}%)"
-    lines = [f"Sem bônus: {fmt_money(base)}" + (mark if state == "below" else "")]
-    for t in est.tiers:
-        lines.append(f"{t.label}: {fmt_money(base + hours * t.per_hour)}"
-                     + (mark if applied is not None and t == applied else ""))
-    cond = [ln for ln in _condition_lines(est) if ln]
+    mark = _bonus_mark(est)
+    lines = [f"{label}: {value}" + (mark if applied else "")
+             for label, value, applied in _bonus_rows(est)]
+    cond = _bonus_condition(est)
     return "\n".join(lines + ([""] + cond if cond else []))
 
 
@@ -872,11 +917,9 @@ def _fill_schedule_field(name, context, who, month_num, values, miss) -> None:
         return
     est = context.estimate
     if name == "aulas":
-        ordered = sorted(context.classes, key=lambda c: (c.when, c.time or "99:99"))
-        values[name] = "\n".join(_line_of(c) for c in ordered)
+        values[name] = "\n".join(_line_of(c) for c in _ordered_classes(context.classes))
     elif name == "disciplinas":
-        subjects = {c.subject for c in context.classes}
-        values[name] = "\n".join(sorted(subjects, key=lambda s: (s.casefold(), s)))
+        values[name] = "\n".join(_subjects(context.classes))
     elif name == "valor_por_aula" and est is not None:
         values[name] = fmt_money(est.hours_per_class * est.rate)
     elif name == "valores_por_bonus" and est is not None:
@@ -919,6 +962,163 @@ def render_email(subject: str, body: str, values: "Mapping[str, str]") -> "tuple
     return out_subject.strip(), sub(body)
 
 
+# ── the HTML form (2026-10-22) ────────────────────────────────────────────────────────────────
+#
+# The owner's order: an e-mail that carries specific data goes out in a table a person can read
+# at a glance. The TEXT above stays what it was, byte for byte: it is what the requester was shown
+# and confirmed, and the digest is taken of it. The HTML is a second dress for the SAME e-mail,
+# sent beside the text as ``multipart/alternative`` — never a second text.
+
+#: The only CSS of the document, written inline: a style sheet or a ``<style>`` block is dropped by
+#: several mail clients, and the document loads nothing at all.
+_FONT = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+_BODY_STYLE = f"margin:0;padding:16px;background:#ffffff;color:#1f2328;{_FONT};font-size:15px;line-height:1.5"
+_WRAP_STYLE = "max-width:640px;margin:0 auto"
+_TABLE_STYLE = "border-collapse:collapse;width:100%;margin:8px 0;font-size:14px"
+_TH_STYLE = ("text-align:left;background:#f2f4f7;border:1px solid #d0d7de;padding:6px 10px;"
+             "font-weight:600")
+_TD_STYLE = "border:1px solid #d0d7de;padding:6px 10px;vertical-align:top"
+_STRONG_ROW_STYLE = "font-weight:700"
+_LIST_STYLE = "margin:8px 0;padding-left:20px"
+_P_STYLE = "margin:8px 0"
+
+
+def _esc(text: str) -> str:
+    return html.escape(text, quote=True)
+
+
+def _text_html(text: str) -> str:
+    """Plain text as HTML: escaped, every line break a ``<br>``."""
+    return _esc(text.replace("\r\n", "\n").replace("\r", "\n")).replace("\n", "<br>\n")
+
+
+def _table(head: "Sequence[str]", rows: "Sequence[Sequence[str]]",
+           strong: "frozenset[int]" = frozenset()) -> str:
+    th = "".join(f'<th style="{_TH_STYLE}">{_esc(h)}</th>' for h in head)
+    body = "".join(
+        (f'<tr style="{_STRONG_ROW_STYLE}">' if i in strong else "<tr>")
+        + "".join(f'<td style="{_TD_STYLE}">{_esc(cell)}</td>' for cell in row) + "</tr>"
+        for i, row in enumerate(rows))
+    return (f'<table style="{_TABLE_STYLE}"><thead><tr>{th}</tr></thead>'
+            f"<tbody>{body}</tbody></table>")
+
+
+def _aulas_html(value: str, context: EmailContext) -> "Optional[str]":
+    """``[aulas]``: one row per class — Data · Horário (only when some class has an hour; a
+    class without one gets an empty cell, never a guessed hour) · Disciplina · Turma."""
+    ordered = _ordered_classes(context.classes)
+    if not ordered or "\n".join(_line_of(c) for c in ordered) != value:
+        return None
+    timed = any(c.time for c in ordered)
+    head = ["Data"] + (["Horário"] if timed else []) + ["Disciplina", "Turma"]
+    rows = [[c.when.strftime("%d/%m")] + ([c.time] if timed else []) + [c.subject, c.turma]
+            for c in ordered]
+    return _table(head, rows)
+
+
+def _disciplinas_html(value: str, context: EmailContext) -> "Optional[str]":
+    """``[disciplinas]``: a list, one discipline per item, in the text's order."""
+    subjects = _subjects(context.classes)
+    if not subjects or "\n".join(subjects) != value:
+        return None
+    items = "".join(f"<li>{_esc(s)}</li>" for s in subjects)
+    return f'<ul style="{_LIST_STYLE}">{items}</ul>'
+
+
+def _bonus_html(value: str, context: EmailContext) -> "Optional[str]":
+    """``[valores_por_bonus]``: a two-column table (Faixa · Valor), the determined band in bold
+    with the text's own mark, then the response-rate condition the bands hang on."""
+    est = context.estimate
+    if est is None or not est.tiers or _bonus_value(est) != value:
+        return None
+    rows, mark = _bonus_rows(est), _bonus_mark(est)
+    out = _table(["Faixa", "Valor"],
+                 [[label, money + (mark if applied else "")] for label, money, applied in rows],
+                 frozenset(i for i, (_, _, applied) in enumerate(rows) if applied))
+    return out + "".join(f'<p style="{_P_STYLE}">{_esc(c)}</p>' for c in _bonus_condition(est))
+
+
+def _strong_html(value: str, context: EmailContext) -> "Optional[str]":
+    """``[total]``, ``[valor_por_aula]``: the figure, in bold — the text's own value."""
+    return f"<strong>{_text_html(value)}</strong>"
+
+
+#: The markers that have an HTML form, and whether that form is a BLOCK (a table or a list, which
+#: takes a line of its own) or INLINE. Every provider's marker is here and no generic one is — a
+#: test derives it both ways — so the e-mails that go out as HTML are exactly the ones that carry
+#: a persona's specific data. A form answers ``None`` when the context does not rebuild the very
+#: value the text carries; the value is then shown as escaped text.
+_HTML_FORMS: "Mapping[str, tuple[Callable[[str, EmailContext], Optional[str]], bool]]" = (
+    MappingProxyType({
+        "aulas": (_aulas_html, True),
+        "disciplinas": (_disciplinas_html, True),
+        "valores_por_bonus": (_bonus_html, True),
+        "valor_por_aula": (_strong_html, False),
+        "total": (_strong_html, False),
+    }))
+
+
+def render_email_html(subject: str, body: str, values: "Mapping[str, str]",
+                      context: EmailContext) -> str:
+    """The e-mail's HTML form — a whole document — or ``""`` when it has none.
+
+    ``""`` unless the BODY uses a marker with an HTML form (a persona's data: the classes, the
+    disciplines, the pay values, the total). A template of generic markers or company tags has no
+    table to draw, and an HTML part would only repeat its text in another dress: it goes out as
+    the text it always was. A data marker in the SUBJECT alone draws nothing either.
+
+    The HTML is the SAME e-mail as :func:`render_email` with the same ``values``, never another
+    one:
+
+    * one pass over the template, as the text render: a marker typed inside a value stays text;
+    * the template's own text and every value are escaped (``html.escape``), so only what this
+      function writes can be a tag — and it writes no script, no style sheet, no image, no link
+      and no URL: the styles are inline and the document loads nothing;
+    * a table is drawn only from rows of ``context`` whose text IS that marker's value in
+      ``values`` — the value the text part carries. Rows that rebuild another text (``values`` came from another read)
+      draw no table: the value is shown as escaped text;
+    * a line break of the text is a ``<br>``; a table or a list takes a line of its own, so one
+      line break on each side of it is the block's own.
+
+    Raises ``ValueError`` exactly when :func:`render_email` does (a marker with no value, a
+    subject that spans lines): the caller never gets here with a ``missing``.
+    """
+    rendered_subject, _ = render_email(subject, body, values)
+    body = (body or "").replace("\r\n", "\n").replace("\r", "\n")
+    if not any(m.group(1) in _HTML_FORMS for m in _MARKER.finditer(body)):
+        return ""
+    # ("text" | "inline" | "block", html) — literal text is escaped once its neighbours are known.
+    parts: "list[tuple[str, str]]" = []
+    pos = 0
+    for m in _MARKER.finditer(body):
+        parts.append(("text", body[pos:m.start()]))
+        name, value = m.group(1), values[m.group(1)]
+        form, block = _HTML_FORMS.get(name, (None, False))
+        drawn = form(value, context) if form is not None else None
+        if drawn is None:
+            parts.append(("inline", _text_html(value)))
+        else:
+            parts.append(("block" if block else "inline", drawn))
+        pos = m.end()
+    parts.append(("text", body[pos:]))
+    out: "list[str]" = []
+    for i, (kind, piece) in enumerate(parts):
+        if kind != "text":
+            out.append(piece)
+            continue
+        if i > 0 and parts[i - 1][0] == "block" and piece.startswith("\n"):
+            piece = piece[1:]
+        if i + 1 < len(parts) and parts[i + 1][0] == "block" and piece.endswith("\n"):
+            piece = piece[:-1]
+        out.append(_text_html(piece))
+    return ("<!DOCTYPE html>\n"
+            '<html lang="pt-BR">\n<head>\n<meta charset="utf-8">\n'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+            f"<title>{_esc(rendered_subject)}</title>\n</head>\n"
+            f'<body style="{_BODY_STYLE}">\n<div style="{_WRAP_STYLE}">\n'
+            f"{''.join(out)}\n</div>\n</body>\n</html>\n")
+
+
 def email_digest(subject: str, body: str) -> str:
     """The digest a proposal records and a confirmation compares: SHA-256 of
     ``subject + "\\n" + body``, hex. One definition, so the two sides cannot hash differently."""
@@ -937,7 +1137,7 @@ __all__ = [
     "MAX_CONTEUDO_CHARS", "EmailClass", "EmailContext", "Missing", "known_markers",
     "fields_for", "provider_for", "provider_of", "provider_fields", "template_needs_month",
     "markers_cited", "template_fields", "validate_template", "fill_email_fields",
-    "render_email", "email_digest", "missing_question", "is_email_month", "month_words",
+    "render_email", "render_email_html", "email_digest", "missing_question", "is_email_month", "month_words",
     "date_words", "CUSTOM_TAG_NAME", "MAX_CUSTOM_TAG_CHARS", "MAX_CUSTOM_TAGS",
     "CUSTOM_TAG_SOURCE", "CUSTOM_TAG_REMOVED", "is_custom_tag_name", "custom_tag_problems",
     "normalise_custom_tags", "parse_custom_tags", "CUSTOM_TAG_FREE_SOURCE",
