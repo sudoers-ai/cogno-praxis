@@ -6,10 +6,12 @@ glance — HTML beside a text part that says the same — and, from his model e-
 table PER CLASS GROUP with the weekday, a colour per discipline, the tenant's text as paragraphs,
 lists and section titles, and the tenant's signature block. What is pinned here, one line each:
 
-* the TEXT render moves ONLY in ``[aulas]``: with ``[aulas]`` rendered the parent tree's way, the
-  corpus digests are the ones taken on ``f1fc1e9`` (identical on ``5d0dc7c``), with a control;
-  the new ``[aulas]`` text (a «Turma X» block per class group, «06/10 (ter) 19:00 —
-  Disciplina») is pinned by value;
+* R-T13 (2026-10-22): the coordination's values are the tenant's FREE tags, filled from records
+  the coordination COPIES from its tools — every context here is built that way (``_ctx``: the
+  real tools, then the scripted executor of ``test_the_coordination_by_the_generic_path.py``,
+  which also holds the corpus proof that the generic path is the provider's text byte for byte);
+  the ``[aulas]`` text (a «Turma X» block per class group, «06/10 (ter) 19:00 — Disciplina») is
+  pinned by value;
 * ``[aulas]`` is one table per class group under its title, in code order, Mês · Dia · Data ·
   Horário (when the group has an hour) · Disciplina; a discipline's colour is the same everywhere
   in the e-mail, by order of first appearance, the tenant's accent first;
@@ -17,7 +19,8 @@ lists and section titles, and the tenant's signature block. What is pinned here,
   the tenant's URLs as links — and nothing else becomes markup;
 * the appearance's SAVE door refuses every URL that is not ``http``/``https`` (``javascript:``,
   ``data:`` …), with a control; the signature is drawn in the HTML and written in the text alike;
-* a template with no data marker in its body renders NO HTML (``""``): the send stays plain text;
+* a template whose body carries no list of records renders NO HTML (``""``): the send stays
+  plain text — a figure alone, bold by its name until R-T13, included;
 * the document's elements and attributes are a closed alphabet; the only images are the ones the
   appearance configured, and every link is ``http``/``https``/``mailto``.
 
@@ -27,7 +30,6 @@ Everything here is synthetic: invented professors, an invented school, invented 
 from __future__ import annotations
 
 import dataclasses
-import hashlib
 import html
 import random
 import re
@@ -38,14 +40,13 @@ import pytest
 
 import cogno_praxis.email_fields as ef
 from cogno_praxis.coordinator import CoordinatorConfig, CoordinatorService, InMemorySpreadsheetStore
+from tests.unit.test_the_coordination_by_the_generic_path import FIVE, _executor, _reads
 from cogno_praxis.email_fields import (
     DEFAULT_PALETTE,
     EmailAppearance,
-    EmailClass,
     EmailContext,
     SocialLink,
     as_records,
-    email_digest,
     email_signature_text,
     fill_email_fields,
     normalise_email_appearance,
@@ -121,11 +122,23 @@ def _svc(*, bonus: bool = True, ibope: "str | None" = None, rules_extra: str = "
 
 def _ctx(svc: "CoordinatorService | None" = None, *, month: str = "2026-09",
          conteudo: str = "", **kw) -> EmailContext:
+    """The context the coordination composes from since R-T13: the tenant declares the five as
+    FREE tags, and the values are what the persona COPIED from its two tools this turn. A test's
+    own ``custom_tags``/``free_tag_values`` are added to those."""
     svc = svc or _svc()
-    c = svc.email_context(professor="", role="EMPLOYEE", identity_label=PROF, period=month)
-    return dataclasses.replace(c, recipient_name=PROF, recipient_email=ADDRESS,
-                               tenant_name=SCHOOL, conteudo=conteudo, today=_TODAY,
-                               persona_name="Coordenação", requester_name="Prof Ubaldo", **kw)
+    sched, pay = _reads(svc, month)
+    values = _executor(sched, pay, month)
+    tags = {n: "" for n in FIVE}
+    tags.update(kw.pop("custom_tags", {}))
+    values.update(kw.pop("free_tag_values", {}))
+    return EmailContext(recipient_name=PROF, recipient_email=ADDRESS, tenant_name=SCHOOL,
+                        month=month, conteudo=conteudo, today=_TODAY, persona_name="Coordenação",
+                        requester_name="Prof Ubaldo", custom_tags=tags, free_tag_values=values,
+                        **kw)
+
+
+def _records(ctx: EmailContext, name: str = "aulas") -> "list[dict[str, str]]":
+    return list(ctx.free_tag_values[name])  # type: ignore[arg-type]
 
 
 # The owner's template SHAPES (2026-10-06), text invented: the class schedule, the invoice e-mail;
@@ -195,248 +208,9 @@ def _corpus():
     return cases
 
 
-def _parent_aulas(classes) -> str:
-    """``[aulas]`` exactly as the parent tree (``f1fc1e9``) wrote it: one chronological line per
-    class, the class group at the end, no weekday."""
-    ordered = sorted(classes, key=lambda c: (c.when, c.time or "99:99"))
-    return "\n".join(c.when.strftime("%d/%m") + (f" {c.time}" if c.time else "")
-                     + f" — {c.subject} — {c.turma}" for c in ordered)
-
-
-def _rendered_digests(*, parent_aulas: bool) -> "dict[str, str]":
-    out = {}
-    for label, tpl, ctx in _corpus():
-        values, missing = fill_email_fields(template_fields(*tpl), ctx)
-        if missing:
-            out[label] = "missing:" + ",".join(sorted(m.field for m in missing))
-            continue
-        if parent_aulas and "aulas" in values:
-            values["aulas"] = _parent_aulas(ctx.classes)
-        out[label] = email_digest(*render_email(*tpl, values))
-    return out
-
-
-#: Taken on ``f1fc1e9`` with this file's corpus, and identical on ``5d0dc7c`` — a landing-time
-#: proof.
-_BASE_DIGESTS: "dict[str, str]" = {
-    "generic":
-        "ee8ff3d4c9f860acca342bb3a5c7f94dec262b658238838e23c91630ba491767",
-    "invoice|ibope=71|cond=False|bonus=True|2026-09":
-        "fc76ea55e3dd4761686132bbc217ca82b1f0055b39ff7f5c1393850de15afa65",
-    "invoice|ibope=71|cond=False|bonus=True|2026-10":
-        "e838e4ee5f3cc16e41c6f0a764c7bb78a93027db7f92320c4e15e2f7ba90fb65",
-    "invoice|ibope=71|cond=True|bonus=True|2026-09":
-        "32ce71c81c808b2f17cd040eff58049e0b842a7bbbba6075df26f0c4e3623200",
-    "invoice|ibope=71|cond=True|bonus=True|2026-10":
-        "bdc22ba7daa416cbc55749588d34a2aba1089b08c0eac89a4d9a640a3d25d096",
-    "invoice|ibope=85|cond=False|bonus=True|2026-09":
-        "3578ff2402dccf1db7f616e9e7f466077b5d90c108b2daf0752f4aa0feff344b",
-    "invoice|ibope=85|cond=False|bonus=True|2026-10":
-        "b3661baf2017f49e9082ccef11c40c5290a58be5de2da85a96fb4c75666d4a64",
-    "invoice|ibope=85|cond=True|bonus=True|2026-09":
-        "0adc1a87ec133b336a93f5d65291ea13f0edd13b8be50f34b0719dbef5849382",
-    "invoice|ibope=85|cond=True|bonus=True|2026-10":
-        "58556956bb801497eea2be9c172200a9628f68811ed1e1d9e093fb4c918c30fc",
-    "invoice|ibope=89,5|cond=False|bonus=True|2026-09":
-        "d4f54a4008504122e1909ee47ef9a6d5f35a0c5dd22d88403874001883866a50",
-    "invoice|ibope=89,5|cond=False|bonus=True|2026-10":
-        "34fe9fbab400998e8f0894099c9a0a05ac553d6d35cb2975b1e484c226471f4f",
-    "invoice|ibope=89,5|cond=True|bonus=True|2026-09":
-        "1d0d3ce94829cd5cf7b63387962f57a39e9f6d043e0ad7a37d846f4ce17cee58",
-    "invoice|ibope=89,5|cond=True|bonus=True|2026-10":
-        "b7f8bf9bd6306c40e746b53e9d6e3f1f268fe780c2a93def056fd189f4d8e100",
-    "invoice|ibope=92|cond=False|bonus=True|2026-09":
-        "e4ddf4090e9adc8f22b8f9943f5140fcfc8afafb7fc7d7b9ec6b401f3080bff5",
-    "invoice|ibope=92|cond=False|bonus=True|2026-10":
-        "cbecf86b7f34a02df9da36b84aa68460a99ebeddd2d865ceb433e29daac65990",
-    "invoice|ibope=92|cond=True|bonus=True|2026-09":
-        "c8d07d14bd376aab27345549eb70395b491074ec30a645fc2bac572000c435ec",
-    "invoice|ibope=92|cond=True|bonus=True|2026-10":
-        "3c959ca493b4adfcf111c5c349c0c42094cc15d5a7e04190c34911f4e9757af7",
-    "invoice|ibope=None|cond=False|bonus=True|2026-09":
-        "d4f54a4008504122e1909ee47ef9a6d5f35a0c5dd22d88403874001883866a50",
-    "invoice|ibope=None|cond=False|bonus=True|2026-10":
-        "34fe9fbab400998e8f0894099c9a0a05ac553d6d35cb2975b1e484c226471f4f",
-    "invoice|ibope=None|cond=True|bonus=True|2026-09":
-        "1d0d3ce94829cd5cf7b63387962f57a39e9f6d043e0ad7a37d846f4ce17cee58",
-    "invoice|ibope=None|cond=True|bonus=True|2026-10":
-        "b7f8bf9bd6306c40e746b53e9d6e3f1f268fe780c2a93def056fd189f4d8e100",
-    "invoice|same-day":
-        "33648c5ba72b87532d0b8c6ac4dc30d8e21734260cfb33773c9611d71d3c026f",
-    "schedule|hour-everywhere":
-        "e0931bf71fa00b8fca486dd430a5e5bff188a9ce844a21fa9291aa1a6e926ddb",
-    "schedule|ibope=71|cond=False|bonus=False|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=71|cond=False|bonus=False|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=71|cond=False|bonus=True|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=71|cond=False|bonus=True|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=71|cond=True|bonus=False|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=71|cond=True|bonus=False|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=71|cond=True|bonus=True|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=71|cond=True|bonus=True|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=85|cond=False|bonus=False|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=85|cond=False|bonus=False|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=85|cond=False|bonus=True|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=85|cond=False|bonus=True|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=85|cond=True|bonus=False|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=85|cond=True|bonus=False|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=85|cond=True|bonus=True|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=85|cond=True|bonus=True|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=89,5|cond=False|bonus=False|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=89,5|cond=False|bonus=False|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=89,5|cond=False|bonus=True|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=89,5|cond=False|bonus=True|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=89,5|cond=True|bonus=False|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=89,5|cond=True|bonus=False|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=89,5|cond=True|bonus=True|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=89,5|cond=True|bonus=True|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=92|cond=False|bonus=False|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=92|cond=False|bonus=False|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=92|cond=False|bonus=True|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=92|cond=False|bonus=True|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=92|cond=True|bonus=False|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=92|cond=True|bonus=False|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=92|cond=True|bonus=True|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=92|cond=True|bonus=True|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=None|cond=False|bonus=False|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=None|cond=False|bonus=False|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=None|cond=False|bonus=True|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=None|cond=False|bonus=True|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=None|cond=True|bonus=False|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=None|cond=True|bonus=False|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|ibope=None|cond=True|bonus=True|2026-09":
-        "0ff72eaf1d3a65e9ad27cd1e4377a15006353315792e71d736c53dc951c743e4",
-    "schedule|ibope=None|cond=True|bonus=True|2026-10":
-        "73b8702ef706c711296d13b3962ddfff62d397f1544865cf63294fced282cf70",
-    "schedule|same-day":
-        "3e7b585e86afa438f25980d7cf7ee6ef41ad24b7f7db45563526149694589d0a",
-    "total|ibope=71|cond=False|bonus=False|2026-09":
-        "d38af4290bdb82bc95f4f019b5099edb6875532a36c050a562fa055a17d48c10",
-    "total|ibope=71|cond=False|bonus=False|2026-10":
-        "f8149b800c2e5f569831b5e4dbb004ab7d428d391fc2993505d6d18ecfec094d",
-    "total|ibope=71|cond=False|bonus=True|2026-09":
-        "d38af4290bdb82bc95f4f019b5099edb6875532a36c050a562fa055a17d48c10",
-    "total|ibope=71|cond=False|bonus=True|2026-10":
-        "f8149b800c2e5f569831b5e4dbb004ab7d428d391fc2993505d6d18ecfec094d",
-    "total|ibope=71|cond=True|bonus=False|2026-09":
-        "d38af4290bdb82bc95f4f019b5099edb6875532a36c050a562fa055a17d48c10",
-    "total|ibope=71|cond=True|bonus=False|2026-10":
-        "f8149b800c2e5f569831b5e4dbb004ab7d428d391fc2993505d6d18ecfec094d",
-    "total|ibope=71|cond=True|bonus=True|2026-09":
-        "d38af4290bdb82bc95f4f019b5099edb6875532a36c050a562fa055a17d48c10",
-    "total|ibope=71|cond=True|bonus=True|2026-10":
-        "f8149b800c2e5f569831b5e4dbb004ab7d428d391fc2993505d6d18ecfec094d",
-    "total|ibope=85|cond=False|bonus=False|2026-09":
-        "d38af4290bdb82bc95f4f019b5099edb6875532a36c050a562fa055a17d48c10",
-    "total|ibope=85|cond=False|bonus=False|2026-10":
-        "f8149b800c2e5f569831b5e4dbb004ab7d428d391fc2993505d6d18ecfec094d",
-    "total|ibope=85|cond=False|bonus=True|2026-09":
-        "5951a94992d6a85ce606189a6cf07ac9637171f184265cade495655aa1e5bed1",
-    "total|ibope=85|cond=False|bonus=True|2026-10":
-        "750d1dcbf907e420f5ed390173422259a2a6292fc68e2e00dc1bdd9cbfc99456",
-    "total|ibope=85|cond=True|bonus=False|2026-09":
-        "d38af4290bdb82bc95f4f019b5099edb6875532a36c050a562fa055a17d48c10",
-    "total|ibope=85|cond=True|bonus=False|2026-10":
-        "f8149b800c2e5f569831b5e4dbb004ab7d428d391fc2993505d6d18ecfec094d",
-    "total|ibope=85|cond=True|bonus=True|2026-09":
-        "5951a94992d6a85ce606189a6cf07ac9637171f184265cade495655aa1e5bed1",
-    "total|ibope=85|cond=True|bonus=True|2026-10":
-        "750d1dcbf907e420f5ed390173422259a2a6292fc68e2e00dc1bdd9cbfc99456",
-    "total|ibope=89,5|cond=False|bonus=False|2026-09":
-        "d38af4290bdb82bc95f4f019b5099edb6875532a36c050a562fa055a17d48c10",
-    "total|ibope=89,5|cond=False|bonus=False|2026-10":
-        "f8149b800c2e5f569831b5e4dbb004ab7d428d391fc2993505d6d18ecfec094d",
-    "total|ibope=89,5|cond=True|bonus=False|2026-09":
-        "d38af4290bdb82bc95f4f019b5099edb6875532a36c050a562fa055a17d48c10",
-    "total|ibope=89,5|cond=True|bonus=False|2026-10":
-        "f8149b800c2e5f569831b5e4dbb004ab7d428d391fc2993505d6d18ecfec094d",
-    "total|ibope=92|cond=False|bonus=False|2026-09":
-        "d38af4290bdb82bc95f4f019b5099edb6875532a36c050a562fa055a17d48c10",
-    "total|ibope=92|cond=False|bonus=False|2026-10":
-        "f8149b800c2e5f569831b5e4dbb004ab7d428d391fc2993505d6d18ecfec094d",
-    "total|ibope=92|cond=False|bonus=True|2026-09":
-        "3f274492bcd951b5502d8ba31c5ca89e8543eab8bc503f2ff8edd629b6777f37",
-    "total|ibope=92|cond=False|bonus=True|2026-10":
-        "c93a5f5ab55b89951a3f28f7352d32302c4c13640bf574df39068e3e834236ae",
-    "total|ibope=92|cond=True|bonus=False|2026-09":
-        "d38af4290bdb82bc95f4f019b5099edb6875532a36c050a562fa055a17d48c10",
-    "total|ibope=92|cond=True|bonus=False|2026-10":
-        "f8149b800c2e5f569831b5e4dbb004ab7d428d391fc2993505d6d18ecfec094d",
-    "total|ibope=92|cond=True|bonus=True|2026-09":
-        "3f274492bcd951b5502d8ba31c5ca89e8543eab8bc503f2ff8edd629b6777f37",
-    "total|ibope=92|cond=True|bonus=True|2026-10":
-        "c93a5f5ab55b89951a3f28f7352d32302c4c13640bf574df39068e3e834236ae",
-    "total|ibope=None|cond=False|bonus=False|2026-09":
-        "d38af4290bdb82bc95f4f019b5099edb6875532a36c050a562fa055a17d48c10",
-    "total|ibope=None|cond=False|bonus=False|2026-10":
-        "f8149b800c2e5f569831b5e4dbb004ab7d428d391fc2993505d6d18ecfec094d",
-    "total|ibope=None|cond=True|bonus=False|2026-09":
-        "d38af4290bdb82bc95f4f019b5099edb6875532a36c050a562fa055a17d48c10",
-    "total|ibope=None|cond=True|bonus=False|2026-10":
-        "f8149b800c2e5f569831b5e4dbb004ab7d428d391fc2993505d6d18ecfec094d",
-}
-#: sha256 of the sorted ``label=digest`` lines (the missing cases included).
-_BASE_CORPUS_SHA = "897738494572dffcb7683593cb67aeb867566192bc76fdef51f862c4a0a274b0"
-
-
-def test_the_text_moves_only_in_aulas():
-    """With ``[aulas]`` written the parent tree's way, every rendering of the corpus is the parent
-    tree's byte for byte: the fill of every other marker, the render and the digest did not move."""
-    got = _rendered_digests(parent_aulas=True)
-    rendered = {k: v for k, v in got.items() if not v.startswith("missing:")}
-    assert rendered == _BASE_DIGESTS
-    assert {k.split("|")[0] for k in rendered} == {"schedule", "invoice", "total", "generic"}
-    lines = "\n".join(f"{k}={v}" for k, v in sorted(got.items()))
-    assert hashlib.sha256(lines.encode()).hexdigest() == _BASE_CORPUS_SHA
-
-
-def test_control_aulas_did_move_and_the_digest_sees_one_byte():
-    """The pair of the test above: the NEW ``[aulas]`` gives other digests for every template that
-    uses it (and the same for the two that do not), and one character changed moves a digest."""
-    new = _rendered_digests(parent_aulas=False)
-    moved = {k for k, v in new.items() if k in _BASE_DIGESTS and v != _BASE_DIGESTS[k]}
-    assert moved == {k for k in _BASE_DIGESTS if k.split("|")[0] in ("schedule", "invoice")}
-    label, tpl, ctx = next(c for c in _corpus() if c[0].startswith("total|ibope=92"))
-    values = _filled(tpl, ctx)
-    values["total"] = values["total"].replace(",", ".", 1)
-    assert email_digest(*render_email(*tpl, values)) != _BASE_DIGESTS[label]
+# The corpus proof that the text did not move — the provider's digests on ``ad935b4`` against the
+# generic path over the real tools — is ``test_the_coordination_by_the_generic_path.py`` (R-T13).
+# The digests this file held, taken on ``f1fc1e9`` over the PROVIDER's context, went with it.
 
 
 def test_aulas_text_is_a_block_per_class_group_with_the_weekday():
@@ -452,13 +226,16 @@ def test_aulas_text_is_a_block_per_class_group_with_the_weekday():
                                "19/09 (sáb) 13:30 — Redes de Computadores")
 
 
+def _free_ctx(records) -> EmailContext:
+    return EmailContext(month="2026-09", recipient_email=ADDRESS, recipient_name="N",
+                        custom_tags={"aulas": ""}, free_tag_values={"aulas": records})
+
+
 def test_the_class_groups_follow_their_code_not_their_first_class():
     """«as turmas por ordem do código»: the group that teaches FIRST is not the group listed
     first — the twin of the fixtures, where the two orders happen to coincide."""
-    classes = (EmailClass(when=date(2026, 9, 1), time="", subject="S1", turma="Turma ZZ_9"),
-               EmailClass(when=date(2026, 9, 20), time="", subject="S2", turma="Turma AA_1"))
-    ctx = EmailContext(month="2026-09", classes=classes, recipient_email=ADDRESS,
-                       recipient_name="N")
+    ctx = _free_ctx([{"data": "01/09", "disciplina": "S1", "turma": "Turma ZZ_9"},
+                     {"data": "20/09", "disciplina": "S2", "turma": "Turma AA_1"}])
     values, _ = fill_email_fields(("aulas",), ctx)
     assert values["aulas"].split("\n")[0] == "Turma AA_1"
     assert _group_titles(render_email_html("A", "[aulas]", values, ctx)) == ["Turma AA_1",
@@ -498,7 +275,8 @@ def test_records_are_split_by_turma_titled_and_ordered_and_a_column_nobody_fills
     a1, b2 = _tables(doc)
     assert _head(a1) == ["Data", "Sala"] and _head(b2) == ["Data"]  # B2 has no sala at all
     assert _rows(b2) == [["02/09/26"], ["03/09/26"]]                 # the order given, kept
-    assert records_text(records) == ("Turma A1\ndata: 01/09/26 · sala: Azul\n\n"
+    # two shown keys, both filled: «first: second» (R-T13); one of them empty: «chave: valor»
+    assert records_text(records) == ("Turma A1\n01/09/26: Azul\n\n"
                                      "Turma B2\ndata: 02/09/26\ndata: 03/09/26")
 
 
@@ -508,7 +286,7 @@ def test_the_dated_line_needs_the_known_keys_only_and_a_date_and_a_discipline():
     extra = [{**dated[0], "sala": "Azul"}]
     assert records_text(extra) == ("Data: 06/10/2026 · Dia: ter · Horário: 19:00 · "
                                    "Disciplina: Química · sala: Azul")
-    assert records_text([{"data": "06/10/26", "dia": "ter"}]) == "data: 06/10/26 · dia: ter"
+    assert records_text([{"data": "06/10/26", "dia": "ter"}]) == "06/10/26: ter"   # two keys
 
 
 def test_a_disciplina_column_is_coloured_by_value_and_the_others_are_narrow():
@@ -539,17 +317,18 @@ def test_as_records_writes_every_value_as_text():
     assert as_records([{"n": 3, "x": None, " k ": " v "}]) == [{"n": "3", "x": "", "k": "v"}]
 
 
-def test_aulas_only_produces_records_for_the_generic_renderer():
-    """[aulas] is the coordinator's PRODUCER: its text and its tables are the generic renderer's,
-    on the list it produces — there is no class-specific drawing."""
+def test_aulas_is_a_list_of_records_drawn_by_the_generic_renderer():
+    """[aulas] is the tenant's free tag; its value is the list the coordination COPIED from its
+    schedule read: its text and its tables are the generic renderer's — no class-specific
+    drawing exists."""
     ctx = _ctx(_svc(ibope="92", extra=_SAME_DAY), conteudo="x")
-    records = ef._aulas_records(ctx.classes)
+    records = _records(ctx)
     assert [list(r) for r in records][0] == ["mês", "dia", "data", "horário", "disciplina", "turma"]
     values = _filled(T_SCHEDULE, ctx)
     assert values["aulas"] == records_text(records)
     doc = render_email_html(*T_SCHEDULE, values, ctx)
     colors = record_colors([records])
-    assert records_html(records, colors=colors) in doc
+    assert records_html(records, colors=colors, month=ctx.month) in doc
 
 
 # ── [aulas] in HTML: a table per class group ────────────────────────────────────────────────
@@ -580,19 +359,20 @@ def test_aulas_is_one_table_per_class_group_under_its_title():
     assert _group_titles(doc) == ["Turma XA_01", "Turma YB_02"]
     xa, yb = _tables(doc)
     assert _head(xa) == ["Mês", "Dia", "Data", "Horário", "Disciplina"]
+    # The read prints dd/mm; the Data column adds the year of the send's month (dd/mm/aa).
     assert _rows(xa) == [["setembro", "sáb", "05/09/26", "08:00", "Redes de Computadores"],
                          ["setembro", "sáb", "12/09/26", "08:00", "Redes de Computadores"],
                          ["setembro", "sáb", "26/09/26", "", "Cálculo Numérico"]]
     assert _rows(yb) == [["setembro", "sáb", "19/09/26", "13:30", "Redes de Computadores"]]
-    assert sum(len(_rows(t)) for t in (xa, yb)) == len(ctx.classes)
+    assert sum(len(_rows(t)) for t in (xa, yb)) == len(_records(ctx))
     assert "Turma" not in _head(xa)                       # the table IS the class group's
 
 
 def test_a_group_title_is_kept_with_a_single_group_and_the_hour_only_when_it_has_one():
     ctx = _ctx(_svc(ibope="92"), month="2026-10", conteudo="x")
-    no_hour = dataclasses.replace(ctx, classes=tuple(dataclasses.replace(c, time="")
-                                                     for c in ctx.classes))
-    assert any(c.time for c in ctx.classes)               # control: October HAS an hour
+    no_hour = dataclasses.replace(ctx, free_tag_values={
+        **ctx.free_tag_values, "aulas": [{**r, "horário": ""} for r in _records(ctx)]})
+    assert any(r.get("horário") for r in _records(ctx))   # control: October HAS an hour
     doc = render_email_html(*T_SCHEDULE, _filled(T_SCHEDULE, no_hour), no_hour)
     assert _group_titles(doc) == ["Turma XA_01"]
     (table,) = _tables(doc)
@@ -601,8 +381,7 @@ def test_a_group_title_is_kept_with_a_single_group_and_the_hour_only_when_it_has
 
 
 def test_a_label_that_does_not_say_turma_is_titled_turma():
-    c = EmailClass(when=date(2026, 9, 5), time="", subject="S", turma="QZ_07")
-    ctx = EmailContext(month="2026-09", classes=(c,), recipient_email=ADDRESS, recipient_name="N")
+    ctx = _free_ctx([{"data": "05/09", "dia": "sáb", "disciplina": "S", "turma": "QZ_07"}])
     values, _ = fill_email_fields(("aulas",), ctx)
     assert values["aulas"] == "Turma QZ_07\n05/09 (sáb) — S"
     assert _group_titles(render_email_html("A", "[aulas]", values, ctx)) == ["Turma QZ_07"]
@@ -637,13 +416,19 @@ def test_each_discipline_has_one_colour_in_the_whole_email_by_first_appearance()
         r'<td style="([^"]*width:1%[^"]*)"', doc))
 
 
-def test_the_colours_do_not_depend_on_the_order_the_classes_arrive_in():
+def test_the_colours_do_not_depend_on_the_order_the_class_groups_arrive_in():
+    """The groups are taken in the order of their CODE, so the records of one group handed over
+    before or after another's give the same colours (inside a group the order is the read's)."""
     ctx = _ctx(_svc(ibope="92", extra=_SAME_DAY), conteudo="x")
-    expected = record_colors([ef._aulas_records(ctx.classes)])
-    shuffled = list(ctx.classes)
+    records = _records(ctx)
+    expected = record_colors([records])
+    groups = {}
+    for r in records:
+        groups.setdefault(r["turma"], []).append(r)
     for seed in range(5):
-        random.Random(seed).shuffle(shuffled)
-        assert record_colors([ef._aulas_records(tuple(shuffled))]) == expected
+        order = list(groups)
+        random.Random(seed).shuffle(order)
+        assert record_colors([[r for g in order for r in groups[g]]]) == expected
 
 
 def test_the_tenants_accent_is_the_first_colour_and_the_palette_cycles():
@@ -666,8 +451,9 @@ def test_valores_por_bonus_is_a_two_column_table_and_the_applied_band_is_marked(
     assert _head(bands) == ["Faixa", "Valor"]
     assert _rows(bands) == [["Sem bônus", "R$ 1.920,00"], ["IBOPE 80–89%", "R$ 2.400,00"],
                             ["IBOPE 90%+", "R$ 2.560,00 ← apurado (IBOPE 92%)"]]
-    seen = html.unescape(doc)
-    assert seen.index("</table>") < seen.index("Condição das regras") < seen.index("Aulas consid")
+    # The response-rate condition is not a record (R-T13): the tenant writes it in the template
+    # or a fixed tag; the provider used to add it after the table.
+    assert "Condição das regras" not in html.unescape(doc)
 
 
 @pytest.mark.parametrize("ibope", ["89,5", None])
@@ -679,15 +465,15 @@ def test_no_band_is_marked_when_the_bonus_is_not_determined(ibope):
     assert "apurado" not in doc
 
 
-def test_figures_are_bold_text_alone_or_inside_a_sentence_never_a_table():
-    """«ou texto»: a figure is bold wherever it stands, and still makes the e-mail HTML."""
+def test_a_figure_is_never_bold_by_its_name_and_alone_makes_no_html():
+    """INVERTED by R-T13 (was: «a figure is bold wherever it stands, and makes the e-mail HTML»):
+    no value is bold by its NAME, and an e-mail with no list of records goes out as text."""
     ctx = _ctx(_svc(ibope="92"))
-    values, _ = fill_email_fields(("total", "valor_por_aula"), ctx)
-    alone = render_email_html("T", "Seu total:\n[total]\n[valor_por_aula]", values, ctx)
-    inline = render_email_html("T", "O total é [total] e a aula custa [valor_por_aula].", values, ctx)
-    for doc in (alone, inline):
-        assert doc and "<table" not in doc
-        assert "<strong>R$ 2.560,00</strong>" in doc and "<strong>R$ 480,00</strong>" in doc
+    values, _ = fill_email_fields(("total", "valor_por_aula", "aulas"), ctx)
+    assert render_email_html("T", "Seu total:\n[total]\n[valor_por_aula]", values, ctx) == ""
+    doc = render_email_html("T", "O total é [total] e a aula custa [valor_por_aula].\n[aulas]",
+                            values, ctx)
+    assert doc and "R$ 2.560,00" in doc and "R$ 480,00" in doc and "<strong>R$" not in doc
 
 
 def test_disciplinas_is_a_list():
@@ -715,7 +501,7 @@ def test_paragraphs_lists_titles_and_links():
     assert titles == ["Sobre as aulas:", "Forma de pagamento:", "O pagamento será realizado:"]
     lists = re.findall(r"<ul [^>]*>(.*?)</ul>", body)
     assert lists[0] == "<li>Chegue 10 minutos antes.</li><li>Traga o diário de classe.</li>"
-    assert lists[1] == "<li>Valor por aula: <strong>R$ 480,00</strong></li>"
+    assert lists[1] == "<li>Valor por aula: R$ 480,00</li>"     # never bold by name (R-T13)
     # «-» stays a line with its dash — never a bullet (the owner's model)
     assert "<p style=\"margin:0 0 12px\">- até o dia 10;<br>\n- por transferência.</p>" in body
     assert len(lists) == 2
@@ -860,7 +646,9 @@ def test_a_data_marker_only_in_the_subject_or_a_company_tag_alone_renders_no_htm
     tpl = ("Total de [mes]: [total]", "Olá, [nome].\n[horario_atendimento]")
     values = _filled(tpl, ctx)
     assert render_email_html(*tpl, values, ctx) == ""
-    assert render_email_html("Total", "Olá. Total: [total].", values, ctx) != ""   # control
+    assert render_email_html("Total", "Olá. Total: [total].", values, ctx) == ""   # R-T13
+    assert render_email_html("Aulas", "Olá.\n[aulas]", _filled(("A", "[aulas]"), ctx),
+                             ctx) != ""                                          # control
 
 
 # ── safe by construction ────────────────────────────────────────────────────────────────────
@@ -990,9 +778,10 @@ def test_every_figure_class_and_discipline_of_the_text_is_in_the_html():
     seen = _visible(render_email_html(*T_INVOICE, values, ctx))
     money = re.compile(r"R\$ [\d.]+,\d{2}")
     assert sorted(money.findall(text)) == sorted(money.findall(seen))
-    for c in ctx.classes:
-        assert c.when.strftime("%d/%m/%y") in seen and c.subject in seen
-        assert _filled(("t", "[aulas]"), ctx)["aulas"].count(c.subject) <= seen.count(c.subject)
+    for r in _records(ctx):
+        assert r["data"] in seen and r["disciplina"] in seen
+        assert _filled(("t", "[aulas]"), ctx)["aulas"].count(r["disciplina"]) <= \
+            seen.count(r["disciplina"])
     assert "Turma XA_01" in seen and "Turma YB_02" in seen
 
 
@@ -1037,11 +826,18 @@ def test_it_is_deterministic_and_exported():
         assert name in ef.__all__, name
 
 
-def test_the_markers_that_make_html_are_the_providers_derived_and_no_generic_one():
-    provided = {f for p in ef.FIELD_PROVIDERS.values() for f in p.field_names}
-    assert set(ef._DATA_MARKERS) == provided and provided
-    assert not set(ef._DATA_MARKERS) & set(ef.GENERIC_FIELDS)
-    assert set(ef._BLOCK_FORMS) <= provided
+def test_what_makes_html_is_a_list_in_a_free_tag_never_a_name():
+    """R-T13: the markers that made an e-mail HTML were the provider's, by NAME. Now it is the
+    VALUE: a free tag holding a list of records — and nothing else, whatever its name."""
+    for name in ("aulas", "lista_qualquer"):
+        ctx = _free_ctx([{"a": "1", "b": "2", "c": "3"}])
+        ctx = dataclasses.replace(ctx, custom_tags={name: ""},
+                                  free_tag_values={name: [{"a": "1", "b": "2", "c": "3"}]})
+        values, _ = fill_email_fields((name,), ctx)
+        assert "<table" in render_email_html("A", f"[{name}]", values, ctx)
+        text = dataclasses.replace(ctx, free_tag_values={name: "1 2 3"})
+        assert render_email_html("A", f"[{name}]", fill_email_fields((name,), text)[0], text) == ""
+    assert not hasattr(ef, "_DATA_MARKERS") and not hasattr(ef, "_BLOCK_FORMS")
 
 
 def test_the_html_document_is_a_mobile_friendly_shell():

@@ -1,115 +1,116 @@
-"""Templated e-mail fields — the CLOSED list of markers, and the pure code that fills them.
+"""Templated e-mail fields — the CLOSED list of markers, the tenant's own tags, and the pure code
+that fills them.
 
 A tenant writes an e-mail template (a subject and a body) for a persona, with markers such as
-``[nome]``, ``[aulas]`` or ``[valores_por_bonus]``. When somebody asks for that e-mail to be sent,
-the host resolves the recipient and the month, and this module fills every marker **in code**.
-The model writes exactly one of them, ``[conteudo]`` — the free text from the request — and nothing
-else: a figure, a date or an address copied by a model is the copy that goes wrong.
+``[nome]``, ``[mes]`` or ``[conteudo]`` and tags of its own (``[horario_atendimento]``,
+``[aulas]``). When somebody asks for that e-mail to be sent, the host resolves the recipient and
+the month, and this module fills every marker **in code**. The model writes the free text of the
+request (``[conteudo]``) and the values of the tenant's FREE tags, copied from what the user said,
+the persona's rules or a tool it read this turn — and nothing else.
 
 **One definition, many consumers.** :data:`EMAIL_FIELDS` is the list. The template validator, the
 fill, the render, the host's tool description and the admin UI's help all read it; nobody keeps a
-second copy. A marker outside it is REFUSED when the template is saved
-(:func:`validate_template`), and so is any ``[`` that does not open a known marker — that is what
-catches a typo like ``[nmoe]`` before it ships as literal text to a professor.
+second copy. A marker outside it — and outside the tenant's own tags — is REFUSED when the
+template is saved (:func:`validate_template`), and so is any ``[`` that does not open a known
+marker: that is what catches a typo like ``[nmoe]`` before it ships as literal text to a person.
 
-**The DEFAULT markers are the eight that serve every persona; a persona's own are added only to
-its template (2026-10-22).** The owner's rule: «vamos deixar somente as tags que servem para
-todos, tags especificas precisam ser adicionadas». :data:`GENERIC_FIELDS` are the default list —
-filled from what every turn has (the tenant's records, the tenant itself, the request, the
-clock): ``[nome]``, ``[email]``, ``[empresa]``, ``[mes]``, ``[data]``, ``[assinatura]``,
-``[solicitante]``, ``[conteudo]`` — and :func:`known_markers` with no persona answers them.
-Everything else is read by ONE persona and is declared by that persona's
-:class:`FieldProvider`: today only the coordinator's (``[aulas]``, ``[disciplinas]``,
-``[valor_por_aula]``, ``[valores_por_bonus]``, ``[total]``). Those are valid in THAT persona's
-template and in no other: :func:`validate_template` refuses one anywhere else — and in a template
-saved with no persona — with a sentence that names the marker and the persona it belongs to
-(«[aulas] é uma tag da coordenação (COORDINATOR): só pode ser usada no template dessa
-persona»).
-:data:`EMAIL_FIELDS` is the union, derived — never typed: every name the fill knows, and every
-name a company tag may never take. From 2026-10-21 until this rule the thirteen were valid in
-every persona's template (a marker the persona could not fill was asked at the send); from E3
-(2026-10-07) until 2026-10-21 they were refused by persona, as now.
-
-**Validating and filling with NO persona answer different lists, on purpose.** The save asks
-«which markers may a template use», and a template nobody owns has only the default list: no
-persona's read stands behind a coordination figure there. The fill asks «what can be filled from
-THIS context», and with no persona it fills every marker the context carries, byte for byte as it
-always did — a caller that built the context itself (a test, a doc check, a host from before
-personas) is the reader of everything in it. A host that knows the persona passes it to both.
-
-A provider DECLARES fields; it does not read them. Which service answers for a provider's
-fields is the host's wiring (:func:`provider_fields` tells it which providers a template needs,
-and a template of generic markers alone needs none). This module imports no service.
+**The markers are the eight that serve every persona, and a persona's own values are the TENANT's
+tags (R-T13, 2026-10-22).** The owner's rule: «preciso de algo genérico. Quando entrar uma persona
+nova, faço via tags personalizadas, senão teria que fazer via código». :data:`EMAIL_FIELDS` is
+:data:`GENERIC_FIELDS` — ``[nome]``, ``[email]``, ``[empresa]``, ``[mes]``, ``[data]``,
+``[assinatura]``, ``[solicitante]``, ``[conteudo]``, filled from what every turn has (the tenant's
+records, the tenant itself, the request, the clock) — and :func:`validate_template` answers the
+same for every persona. :data:`FIELD_PROVIDERS` is EMPTY and stays empty: a persona never gets
+markers of its own in code. Until this rule the coordination had five, filled by a provider from
+its schedule read (``[aulas]``, ``[disciplinas]``, ``[valor_por_aula]``, ``[valores_por_bonus]``,
+``[total]``); those names are now ordinary company-tag names, and a tenant that wants them declares
+them as FREE tags whose hints point at the coordination's tools (``get_professor_schedule``,
+``estimate_professor_pay``), which PRINT every value the e-mail copies. The arithmetic stays in
+the tools; this module renders. The provider machinery (:class:`FieldProvider`,
+:func:`provider_for`, :func:`fields_for`, :func:`provider_fields`, :func:`template_needs_month`) is
+kept as the generic code it always was, over an empty registry.
 
 **The tenant's own markers — company tags with a FIXED value (2026-10-21).** Beside the
 markers above, a tenant may declare tags of its own: ``{name: value}``, valid in EVERY persona's
 template (a fixed value of the tenant serves every persona). The name is
 :data:`CUSTOM_TAG_NAME` (``[a-z][a-z0-9_]{1,30}``) and is never a marker of
-:data:`EMAIL_FIELDS` — the UNION, so the coordination's five stay reserved in every persona
-although the default list is the eight — nor a name of :data:`REFUSED_FIELDS`; the value is plain text, one line or
+:data:`EMAIL_FIELDS` nor a name of :data:`REFUSED_FIELDS`; the value is plain text, one line or
 several, at most :data:`MAX_CUSTOM_TAG_CHARS` characters — the business's DATA, never an
 instruction. :func:`normalise_custom_tags` is the SAVE door (every refusal named) and
 :func:`parse_custom_tags` the TURN's (tolerant: it drops what the save would refuse). The value
-is filled deterministically by :func:`fill_email_fields`, from ``EmailContext.custom_tags``,
-before any provider and in any persona: a value is the tenant's, not a persona's read.
-:func:`validate_template` accepts the tenant's tag names (``custom_tags=``); a template whose tag
-was removed after it was saved is refused by the save and kept by the turn, which is handed the
-names the tenant REMOVED (``removed_tags=``), and the fill returns it as a :class:`Missing` —
-«tag personalizada removida» — so the send asks the requester instead of sending. A name the
-tenant never declared (a typo) is refused at both doors, as any unknown marker always was. Tags
-filled by data (a provider, code), tags of one persona only and HTML values are not here: a tag's
-value is plain text, and the HTML form of an e-mail (below) shows it escaped.
+is filled deterministically by :func:`fill_email_fields`, from ``EmailContext.custom_tags``, in
+any persona: a value is the tenant's, not a persona's read. :func:`validate_template` accepts the
+tenant's tag names (``custom_tags=``); a template whose tag was removed after it was saved is
+refused by the save and kept by the turn, which is handed the names the tenant REMOVED
+(``removed_tags=``), and the fill returns it as a :class:`Missing` — «tag personalizada
+removida» — so the send asks the requester instead of sending. A name the tenant never declared
+(a typo) is refused at both doors, as any unknown marker always was.
 
 **FREE company tags — no fixed value, filled from the CONVERSATION (2026-10-22).** The owner:
 «preciso q seja flexivel e chamada pelo usuario»; «o template terá tags que devem ser preenchidas
 conforme as mensagens com o agente». A company tag whose stored value is EMPTY (``""`` after the
-normalisation) is FREE: :func:`custom_tag_problems` no longer refuses it, and the map keeps it as
+normalisation) is FREE: :func:`custom_tag_problems` does not refuse it, and the map keeps it as
 ``{name: ""}`` — ONE map, so every string the G package stored (never empty: its save door
 refused that) still reads as the FIXED tag it was. :func:`free_tags` names them. The value comes
-from what the person who asked SAID: ``EmailContext.free_tag_values``, which the host takes from
-the executor's call. :func:`fill_email_fields` fills a free tag from it as ONE line of plain text
-(every run of blanks and line breaks becomes one space, so it never breaks a subject; at most
-:data:`MAX_CUSTOM_TAG_CHARS` characters, no control character); a free tag the conversation did
-not fill is a :class:`Missing` — :data:`CUSTOM_TAG_FREE_MISSING`, from
-:data:`CUSTOM_TAG_FREE_SOURCE` — so the send ASKS, the path that already existed. A value the
-conversation gives for a FIXED tag, a standard marker or a name that is no tag changes nothing:
-a fixed tag stays fixed. The free tag is a company tag in every other respect: the same name
-grammar and the same reservation (the thirteen of :data:`EMAIL_FIELDS`, the reserved names), the
-same removed path. A free tag may carry a HINT for the person filling it («a disciplina da aula
-remarcada»): plain text of the tenant, ONE line, at most :data:`MAX_CUSTOM_TAG_HINT_CHARS`
-characters, only for a free tag — :func:`normalise_custom_tag_hints` (the save door),
-:func:`parse_custom_tag_hints` (the turn's), ``EmailContext.custom_tag_hints`` — and the question
-names it. A host that puts a hint in a prompt shapes and fences it like any text of the tenant.
+from the conversation: ``EmailContext.free_tag_values``, which the host takes from the executor's
+call. It is one of two shapes:
+
+* TEXT — filled as ONE line of plain text (every run of blanks and line breaks becomes one
+  space, so it never breaks a subject; at most :data:`MAX_CUSTOM_TAG_CHARS` characters, no
+  control character);
+* a LIST OF RECORDS (R-T13) — ``[{key: value}, …]``, simple keys and one-line text cells
+  (:func:`free_records`, :func:`free_records_problems`): the rows a tool printed, a timetable or a
+  table of values. Its text is :func:`records_text`, and in the HTML form it is a TABLE drawn by
+  :func:`records_html`. A list of records never goes in a subject.
+
+A free tag the conversation did not fill is a :class:`Missing` — :data:`CUSTOM_TAG_FREE_MISSING`,
+from :data:`CUSTOM_TAG_FREE_SOURCE` — so the send ASKS, the path that already existed. A value the
+conversation gives for a FIXED tag, a standard marker or a name that is no tag changes nothing.
+The free tag is a company tag in every other respect: the same name grammar and the same
+reservation, the same removed path. A free tag may carry a HINT for the person filling it («a
+disciplina da aula remarcada»): plain text of the tenant, ONE line, at most
+:data:`MAX_CUSTOM_TAG_HINT_CHARS` characters, only for a free tag —
+:func:`normalise_custom_tag_hints` (the save door), :func:`parse_custom_tag_hints` (the turn's),
+``EmailContext.custom_tag_hints`` — and the question names it. A host that puts a hint in a prompt
+shapes and fences it like any text of the tenant.
+
+**Where a cell came from is checked by the HOST, with a rule written here.** A record's cell is
+the executor's copy of a tool's read; the host owns the reads of the turn and the fold a «literal»
+is compared under. :func:`record_cells_unverified` is the record grammar's half: a cell passes
+when the host's ``is_literal`` says it is in a successful read of this turn, or when it is a
+DERIVATION this module checks — ``dia`` the weekday of the record's ``data``, ``mês`` its month
+(the year from the send's month when the date carries none). A record with no ``data`` has its
+``dia``/``mês`` held to the literal rule like every other cell.
 
 **A field with no value STOPS the send.** :func:`fill_email_fields` returns ``(values, missing)``
 and never raises; each :class:`Missing` names the field, where it should have come from and why
-it is not there, in the vertical's own words. The host turns a non-empty ``missing`` into a
-QUESTION to the requester instead of a proposal. :func:`render_email` refuses to run with a
-marker that has no value — it is never reached with one.
+it is not there. The host turns a non-empty ``missing`` into a QUESTION to the requester instead
+of a proposal. :func:`render_email` refuses to run with a marker that has no value — it is never
+reached with one.
 
 **The HTML form — tables for an e-mail that carries data (2026-10-22).** The owner's order:
 «qdo for enviar cronograma ou algum dado especifico, colocar em formato tabular e visualmente
 agradavel», and his model e-mail. :func:`render_email_forms` gives ``(subject, text, html)``.
-:func:`render_email_html` renders the SAME e-mail as an HTML document:
-- the classes as one table PER CLASS GROUP under its «Turma X» title, each discipline's cell in a
-  colour that is the same across the whole e-mail (:func:`record_colors`) — drawn by the
-  GENERIC renderer, :func:`records_html`, from a list of records the coordinator produces;
-- the pay values as two-column tables, the disciplines as a list;
+:func:`render_email_html` renders the SAME e-mail as an HTML document when its body carries a
+free tag whose value is a list of records:
+- that tag alone on a line of the template is its TABLE, drawn by the GENERIC renderer,
+  :func:`records_html` — one table per ``turma`` under its «Turma X» title, a colour per
+  ``disciplina`` value that is the same across the whole e-mail (:func:`record_colors`), and a
+  list (not a table) for records of one key;
 - the tenant's text as simple rich text (paragraphs, «•»/«·» lists, short «…:» titles, its URLs as
   links);
 - a header with the sender's name and, when the tenant configured one, its signature block
   (:class:`EmailAppearance`, saved through :func:`normalise_email_appearance`).
 
 The host sends it beside the text as ``multipart/alternative``. The TEXT is what the requester was
-shown and confirmed, and :func:`email_digest` is taken of it. It moved in one place only: ``[aulas]``
-is a «Turma X» block per class group, its lines with the weekday. It also gains the configured
-signature's lines when the e-mail goes out as HTML.
+shown and confirmed, and :func:`email_digest` is taken of it; it gains the configured signature's
+lines when the e-mail goes out as HTML.
 
-A template whose body uses no provider's marker renders no HTML at all (``""``) and its e-mail
+A template whose body carries no list of records renders no HTML at all (``""``) and its e-mail
 goes out as the text it always was. Every value and the template's own text are escaped and the
 styles are inline. The only images are the logo and the icons the tenant configured
-(``http``/``https``, with ``alt``); nothing else is loaded. A table is drawn only from rows whose
-text IS the value the text part carries.
+(``http``/``https``, with ``alt``); nothing else is loaded. A table is drawn only from records
+whose text IS the value the text part carries.
 
 What deliberately is NOT here, by the owner's decisions of 2026-10-06:
 
@@ -121,8 +122,7 @@ What deliberately is NOT here, by the owner's decisions of 2026-10-06:
   sends and ``[solicitante]`` the name of the person who asked. Neither is the From of the
   tenant's mailbox, and no marker quotes a third person's data.
 
-Pure, deterministic, no I/O. The strings a person reads are Brazilian Portuguese, like the pay
-block they sit beside (:mod:`cogno_praxis.coordinator.pay`).
+Pure, deterministic, no I/O. The strings a person reads are Brazilian Portuguese.
 """
 
 from __future__ import annotations
@@ -137,8 +137,6 @@ from datetime import date
 from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
-from cogno_praxis.coordinator.pay import (PayEstimate, _condition_lines, bonus_band_rows, bonus_mark,
-                                          fmt_money)
 
 # ── the closed list ──────────────────────────────────────────────────────────────────────────
 
@@ -213,30 +211,25 @@ def _registry(generic: "Mapping[str, FieldSpec]", providers: "Iterable[FieldProv
     return MappingProxyType(by_persona), MappingProxyType(fields)
 
 
-#: The persona-specific markers, by the persona that supplies them. A persona absent from here
-#: has the generic ones and nothing else.
+#: The persona-specific markers, by the persona that supplies them — EMPTY, by the owner's rule
+#: (R-T13, 2026-10-22): «quando entrar uma persona nova, faço via tags personalizadas, senão
+#: teria que fazer via código». A persona's own values are the tenant's FREE tags, filled from
+#: the persona's tools; no persona has markers in code. The coordination's five lived here until
+#: then (``[aulas]``, ``[disciplinas]``, ``[valor_por_aula]``, ``[valores_por_bonus]``,
+#: ``[total]``); a test pins the registry empty.
 FIELD_PROVIDERS: "Mapping[str, FieldProvider]"
-#: EVERY marker that exists — the generic ones, then each provider's. Derived.
+#: EVERY marker that exists — the generic ones (and each provider's, of which there is none).
 EMAIL_FIELDS: "Mapping[str, FieldSpec]"
-FIELD_PROVIDERS, EMAIL_FIELDS = _registry(GENERIC_FIELDS, (
-    FieldProvider(persona="COORDINATOR", name="coordinator", label="coordenação",
-                  needs_month=True, fields=(
-        FieldSpec("disciplinas", "as aulas do mês na agenda da coordenação", multiline=True),
-        FieldSpec("aulas", "as aulas do mês na agenda da coordenação", multiline=True),
-        FieldSpec("valor_por_aula", "as regras da persona (HOURS_PER_CLASS × PAY_RATE_PER_HOUR)"),
-        FieldSpec("valores_por_bonus", "as regras da persona (IBOPE_BONUS) e as aulas do mês",
-                  multiline=True),
-        FieldSpec("total", "o resultado do IBOPE e as regras da persona"),
-    )),
-))
+FIELD_PROVIDERS, EMAIL_FIELDS = _registry(GENERIC_FIELDS, ())
 
 #: The phase a REFUSED field becomes available in. ``cpf_cnpj`` has none: it is not coming back.
 _FIELD_PHASE: "Mapping[str, str]" = MappingProxyType({"contrato": "E3"})
 _PHASES = ("E1", "E2", "E3")
 
 #: Markers that may not appear in the SUBJECT: multi-line values, or free text the model writes.
-SUBJECT_FORBIDDEN: "frozenset[str]" = frozenset({"conteudo", "aulas", "disciplinas",
-                                                 "valores_por_bonus"})
+#: (A FREE tag's value is one line of text, or a list of records — refused in a subject by the
+#: fill, :func:`fill_email_fields`'s ``in_subject``.)
+SUBJECT_FORBIDDEN: "frozenset[str]" = frozenset({"conteudo"})
 
 #: Ceilings. The body's is the template's (what the tenant wrote); the free text's is the model's.
 MAX_BODY_CHARS = 10_000
@@ -269,8 +262,9 @@ def provider_of(field: str) -> "Optional[FieldProvider]":
 
 
 def fields_for(persona: "Optional[str]") -> "Mapping[str, FieldSpec]":
-    """The markers ``persona`` can FILL: the generic ones and its own provider's — for a persona,
-    also the markers its template may use (:func:`known_markers`).
+    """The markers ``persona`` can FILL: the generic ones and its own provider's (there is no
+    provider: :data:`FIELD_PROVIDERS` is empty, so every persona fills the eight) — for a
+    persona, also the markers its template may use (:func:`known_markers`).
 
     A host composing an e-mail asks it, and a marker outside it comes out as ``missing``.
 
@@ -295,9 +289,9 @@ def _template_fields_for(persona: "Optional[str]") -> "Mapping[str, FieldSpec]":
 def known_markers(persona: "Optional[str]" = None) -> "tuple[str, ...]":
     """``("[nome]", "[email]", …)`` — the markers a template of ``persona`` may use, as a person
     reads them, generic markers first. With no ``persona``, the DEFAULT list: the eight generic
-    markers that serve every persona. With one, the generic ones and that persona's own (the
-    COORDINATOR's thirteen) — exactly what :func:`validate_template` accepts for it and lists in
-    its refusals."""
+    markers that serve every persona. With one, the generic ones and that persona's own provider's
+    — none, since :data:`FIELD_PROVIDERS` is empty (R-T13): the eight, for every persona, exactly
+    what :func:`validate_template` accepts and lists in its refusals."""
     return tuple(f"[{n}]" for n in _template_fields_for(persona))
 
 
@@ -316,8 +310,8 @@ def provider_fields(fields: "Iterable[str]") -> "dict[str, tuple[str, ...]]":
 
 def template_needs_month(fields: "Iterable[str]") -> bool:
     """Whether a template using ``fields`` cannot be composed without the month of the request:
-    it says ``[mes]``, or it uses a field of a provider whose figures are about one month. A
-    template that needs none must never make anybody invent one."""
+    it says ``[mes]`` (or uses a field of a provider whose figures are about one month — there is
+    no provider). A template that needs none must never make anybody invent one."""
     names = set(fields)
     return "mes" in names or any(p.needs_month and names & p.field_names
                                  for p in FIELD_PROVIDERS.values())
@@ -384,9 +378,8 @@ def custom_tag_problems(name: object, value: object) -> "tuple[str, ...]":
         return (f"«{shown}» não serve como nome de tag: só letras minúsculas sem acento, "
                 "algarismos e «_», a começar por uma letra, de 2 a 31 caracteres",)
     if name in EMAIL_FIELDS:
-        # Every name of the UNION is refused — never only the default list's, or a tag named
-        # [aulas] would collide with what the coordination computes. Only the WORDS differ: a
-        # persona's own marker is not «padrão» (2026-10-22).
+        # Every marker's name is refused. Only the WORDS would differ for a persona's own
+        # marker, and there is none (R-T13): the coordination's five are free names now.
         owner = provider_of(name)
         kind = f"uma tag da {owner.label}" if owner is not None else "um marcador padrão"
         return (f"[{name}] já é {kind} ({EMAIL_FIELDS[name].source}); escolha outro nome",)
@@ -598,12 +591,11 @@ def validate_template(subject: str, body: str, *, phase: str = "E1",
     Never raises. Each reason is a sentence the tenant's admin reads (the host answers 400 with
     the list), so it names what is wrong and where, and lists the markers that DO exist.
 
-    ``persona`` — the persona the template is saved for. Its template may use the default list
-    (the eight generic markers) and that persona's own (:func:`known_markers`); a marker of
-    another persona's provider is refused, naming the persona it belongs to (the owner's rule,
-    2026-10-22). ``None`` — a template nobody owns — may use the default list only; the fill with
-    no persona still reads every marker (the module docstring says why the two differ). Any
-    string, the empty one included, is a persona, compared as written (:func:`provider_for`).
+    ``persona`` — the persona the template is saved for. Every persona may use the eight generic
+    markers and the tenant's own tags, and the verdict is the same for every one of them
+    (R-T13, 2026-10-22: :data:`FIELD_PROVIDERS` is empty, so no persona has markers of its own).
+    The parameter stays, read through :func:`known_markers`, so a caller that passes it keeps
+    working.
 
     ``custom_tags`` — the tenant's company tags: a mapping ``{name: value}`` or just the names.
     Each is a marker of this template beside the persona's, in any persona; a name that cannot be
@@ -649,52 +641,34 @@ def validate_template(subject: str, body: str, *, phase: str = "E1",
 # ── the context it is filled from ────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
-class EmailClass:
-    """One PAYABLE class of the month: the date, the hour (``""`` when the sheet has none — never
-    a guessed one), the discipline and the class group (the spreadsheet's own label)."""
-    when: date
-    time: str
-    subject: str
-    turma: str
-
-
-@dataclass(frozen=True)
 class EmailContext:
-    """Everything a template is filled from. The coordinator's half comes from ONE read
-    (``CoordinatorService.email_context``); the recipient, the tenant, the clock (``today``, in
-    the tenant's zone), the persona that sends (``persona_name``) and the person who asked
-    (``requester_name``) come from the host. A generic marker is filled from the host's half
-    alone, so a context no persona read anything into still composes a generic template.
-
-    ``schedule_error`` — the schedule could not be read for this person (access refused, a sheet
-    that failed): every schedule-derived field is missing, with this sentence. ``pay_error`` —
-    the rules do not declare the pay: the pay fields are missing, with this sentence. Both are the
-    vertical's own words and are never wrapped in another.
+    """Everything a template is filled from — all of it the host's: the recipient, the tenant,
+    the month of the request, the clock (``today``, in the tenant's zone), the persona that sends
+    (``persona_name``), the person who asked (``requester_name``) and the tenant's tags. No
+    persona reads anything into it (R-T13, 2026-10-22: until then the coordinator's half — the
+    month's classes and its pay estimate — came from ``CoordinatorService.email_context``; those
+    values are now the tenant's FREE tags, which the persona fills from its tools).
 
     ``custom_tags`` — the tenant's company tags, ``{name: value}`` (:func:`parse_custom_tags`),
     from the host: a FIXED value of the tenant, the same for every persona and every recipient;
     an EMPTY value is a FREE tag (:func:`free_tags`).
 
-    ``free_tag_values`` — what the CONVERSATION said for the free tags, ``{name: text}``: the
-    host takes it from the executor's call. Read for a free tag only; anything else in it is
-    ignored. ``custom_tag_hints`` — the tenant's hints for its free tags
-    (:func:`parse_custom_tag_hints`), named in the question when a value is missing.
+    ``free_tag_values`` — what the CONVERSATION said for the free tags, ``{name: value}``: the
+    host takes it from the executor's call. A value is TEXT or a LIST OF RECORDS
+    (:func:`free_records`). Read for a free tag only; anything else in it is ignored.
+    ``custom_tag_hints`` — the tenant's hints for its free tags (:func:`parse_custom_tag_hints`),
+    named in the question when a value is missing.
     """
     recipient_name: str = ""
     recipient_email: str = ""
     tenant_name: str = ""
     month: str = ""
     conteudo: str = ""
-    professor: str = ""
-    classes: "tuple[EmailClass, ...]" = ()
-    estimate: Optional[PayEstimate] = None
-    schedule_error: str = ""
-    pay_error: str = ""
     today: Optional[date] = None
     persona_name: str = ""
     requester_name: str = ""
     custom_tags: "Mapping[str, str]" = field(default_factory=dict)
-    free_tag_values: "Mapping[str, str]" = field(default_factory=dict)
+    free_tag_values: "Mapping[str, Any]" = field(default_factory=dict)
     custom_tag_hints: "Mapping[str, str]" = field(default_factory=dict)
 
 
@@ -720,41 +694,35 @@ def month_words(raw: str) -> str:
     return f"{_PT_MONTHS[int(m.group(2))]}/{m.group(1)}" if m else ""
 
 
-def _month_numeric(raw: str) -> str:
-    m = _MONTH.match((raw or "").strip())
-    return f"{m.group(2)}/{m.group(1)}" if m else (raw or "")
-
-
 def date_words(day: date) -> str:
     """``date(2026, 10, 7)`` → «7 de outubro de 2026»; the first of a month is «1º de …», as a
     Brazilian letter writes it. ``[data]``'s value."""
     return f"{'1º' if day.day == 1 else day.day} de {_PT_MONTHS[day.month]} de {day.year}"
 
 
-#: The fields the coordinator's schedule read produces (its provider's, derived), and the ones
-#: that need the pay rules.
-_SCHEDULE_FIELDS = FIELD_PROVIDERS["COORDINATOR"].field_names
-_PAY_FIELDS = frozenset({"valor_por_aula", "valores_por_bonus", "total"})
-#: The fields that are a figure about the MONTH'S classes — meaningless with none.
-_NEEDS_CLASSES = frozenset({"disciplinas", "aulas", "valores_por_bonus", "total"})
-
-
 # ── records: the one shape a table is drawn from (2026-10-22) ──────────────────────────────────
 #
-# The owner's rule: «preciso de algo genérico» — a new persona's e-mail is made with tags, never
+# The owner's rule: «preciso de algo genérico» — a persona's e-mail is made with tags, never
 # with code. So nothing here draws «the classes»: it draws a LIST OF RECORDS, each a mapping of
-# simple keys to text, and the coordinator's [aulas] is just one producer of such a list
-# (:func:`_aulas_records`). Three keys have a meaning, compared folded (case and accents aside):
+# simple keys to text, which a FREE tag's value may be (R-T13) — the rows a tool printed, copied
+# by the persona. Three keys have a meaning, compared folded (case and accents aside):
 #
 # * ``turma`` — the records are split into one block per value, titled «Turma <value>», the blocks
 #   in the order of the value (a list without it is one block, untitled);
 # * ``disciplina`` — in the HTML, each distinct value has one colour across the whole e-mail;
 # * a record whose keys are all among ``mes``/``dia``/``data``/``horario``/``disciplina``/``turma``
 #   and that has ``data`` and ``disciplina`` is written as a dated line, «06/10 (ter) 19:00 —
-#   Disciplina»; any other record as «chave: valor · …».
+#   Disciplina».
+#
+# Any other record is one line by how many keys it shows (the group key aside): ONE key → its
+# value («Redes»: a list of values is a list); TWO keys, both filled → «first: second» («Sem bônus:
+# R$ 2.880,00»: a two-column table reads as label and value); more → «chave: valor · …».
 
 #: A runaway guard: the most records one list may carry.
 MAX_RECORDS = 500
+#: The most keys one record of the CONVERSATION may carry, and the longest key (R-T13).
+MAX_RECORD_KEYS = 12
+MAX_RECORD_KEY_CHARS = 40
 _GROUP_KEY = "turma"
 _COLOR_KEY = "disciplina"
 _DATED_KEYS = frozenset({"mes", "dia", "data", "horario", "disciplina", "turma"})
@@ -769,7 +737,10 @@ def _fold_key(key: str) -> str:
 def as_records(value: object) -> "Optional[list[dict[str, str]]]":
     """``value`` as a list of records — each a ``{key: text}`` with non-blank string keys, a
     value that is not text written as text (``None`` as empty) — or ``None`` when it is not a
-    non-empty list of mappings (or holds more than :data:`MAX_RECORDS`). Never raises."""
+    non-empty list of mappings (or holds more than :data:`MAX_RECORDS`). Never raises.
+
+    The RENDERER's reading, tolerant. What the conversation may hand a free tag is narrower:
+    :func:`free_records`."""
     if not isinstance(value, (list, tuple)) or not value or len(value) > MAX_RECORDS:
         return None
     out: "list[dict[str, str]]" = []
@@ -812,9 +783,15 @@ def _record_groups(records: "Sequence[Mapping[str, str]]"
     return sorted(groups.items(), key=lambda kv: (_fold_key(_group_title(kv[0])), kv[0]))
 
 
+def _shown_items(record: "Mapping[str, str]") -> "list[tuple[str, str]]":
+    """The record's ``(key, value)`` pairs a line shows — every key but the group key."""
+    return [(k, v) for k, v in record.items() if _fold_key(k) != _GROUP_KEY]
+
+
 def _record_line(record: "Mapping[str, str]") -> str:
-    """One record as a line of text: the dated form when its keys are the known ones, else
-    «chave: valor · …» (the group key and the empty values left out)."""
+    """One record as a line of text: the dated form when its keys are the known ones; else by how
+    many keys it shows — one: its value; two, both filled: «first: second»; otherwise «chave:
+    valor · …» (the group key and the empty values left out)."""
     keys = {_fold_key(k) for k in record}
     if keys <= _DATED_KEYS and _field(record, "data") and _field(record, "disciplina"):
         date_text = _field(record, "data")
@@ -823,7 +800,12 @@ def _record_line(record: "Mapping[str, str]") -> str:
         stamp += f" ({_field(record, 'dia')})" if _field(record, "dia") else ""
         stamp += f" {_field(record, 'horario')}" if _field(record, "horario") else ""
         return f"{stamp} — {_field(record, 'disciplina')}"
-    return " · ".join(f"{k}: {v}" for k, v in record.items() if v and _fold_key(k) != _GROUP_KEY)
+    shown = _shown_items(record)
+    if len(shown) == 1:
+        return shown[0][1]
+    if len(shown) == 2 and shown[0][1] and shown[1][1]:
+        return f"{shown[0][1]}: {shown[1][1]}"
+    return " · ".join(f"{k}: {v}" for k, v in shown if v)
 
 
 def records_text(records: object) -> str:
@@ -840,76 +822,168 @@ def records_text(records: object) -> str:
     return "\n\n".join(blocks)
 
 
+# ── a FREE tag's value as records: the conversation's door (R-T13) ──────────────────────────────
+
+def free_records_problems(name: str, value: object) -> "tuple[str, ...]":
+    """Every reason ``value`` cannot fill the free tag ``name`` as a LIST OF RECORDS — ``()``
+    when it can. Never raises. The shape: a non-empty list of objects (at most
+    :data:`MAX_RECORDS`), each with at most :data:`MAX_RECORD_KEYS` keys — a key non-blank text of
+    at most :data:`MAX_RECORD_KEY_CHARS` characters — and each cell text, a number (as written) or
+    empty, ONE line of plain text of at most :data:`MAX_CUSTOM_TAG_CHARS` characters. A cell that
+    is a yes/no, a list or an object is not a cell: the rows are copied from a read, not built."""
+    if not isinstance(value, (list, tuple)) or not value:
+        return (f"o valor de [{name}] tem de ser texto ou uma lista de registos",)
+    if len(value) > MAX_RECORDS:
+        return (f"[{name}] tem {len(value)} registos; o máximo é {MAX_RECORDS}",)
+    for i, item in enumerate(value, 1):
+        if not isinstance(item, Mapping) or not item:
+            return (f"o registo {i} de [{name}] tem de ser um objeto {{chave: valor}}",)
+        if len(item) > MAX_RECORD_KEYS:
+            return (f"o registo {i} de [{name}] tem {len(item)} chaves; o máximo é "
+                    f"{MAX_RECORD_KEYS}",)
+        for k, v in item.items():
+            if (not isinstance(k, str) or not k.strip() or len(k.strip()) > MAX_RECORD_KEY_CHARS
+                    or any(ord(c) < 32 or ord(c) == 127 for c in k)):
+                return (f"o registo {i} de [{name}] tem uma chave que não serve: texto simples, "
+                        f"de 1 a {MAX_RECORD_KEY_CHARS} caracteres",)
+            if v is not None and (isinstance(v, bool) or not isinstance(v, (str, int, float))):
+                return (f"o registo {i} de [{name}] tem um valor que não é texto",)
+            cell = free_value(v if isinstance(v, str) else ("" if v is None else str(v)))
+            if any(ord(c) < 32 or ord(c) == 127 for c in cell):
+                return (f"o registo {i} de [{name}] tem um caractere de controle",)
+            if len(cell) > MAX_CUSTOM_TAG_CHARS:
+                return (f"o registo {i} de [{name}] tem um valor de {len(cell)} caracteres; o "
+                        f"máximo é {MAX_CUSTOM_TAG_CHARS}",)
+    return ()
+
+
+def free_records(value: object) -> "Optional[list[dict[str, str]]]":
+    """``value`` as the records a FREE tag is filled with — each key stripped, each cell ONE line
+    (:func:`free_value`; a number as written, ``None`` as empty) — or ``None`` when it is not one
+    (:func:`free_records_problems`). Never raises."""
+    if not isinstance(value, (list, tuple)) or free_records_problems("", value):
+        return None
+    return [{k.strip(): free_value(v if isinstance(v, str) else ("" if v is None else str(v)))
+             for k, v in item.items()} for item in value]
+
+
+# ── where a record's cell came from: literal, or a derivation this module checks (R-T13) ────────
+
 #: ``date.weekday()`` → the abbreviated weekday a Brazilian timetable writes (2026-10-22: the
 #: owner's model e-mail has a «Dia» column, and the text line carries it too).
 _WEEKDAYS = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
+_WEEKDAY_NAMES = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")
+_RECORD_DATE = re.compile(r"(\d{1,2})/(\d{1,2})(?:/(\d{2}|\d{4}))?")
 
 
-def _weekday(day: date) -> str:
-    return _WEEKDAYS[day.weekday()]
+def _record_date(record: "Mapping[str, str]", month: str) -> "Optional[date]":
+    """The date of ``record`` — its ``data`` cell (``dd/mm``, ``dd/mm/aa`` or ``dd/mm/aaaa``), the
+    year from the cell when it carries one, else from ``month`` (``YYYY-MM``, the send's) — or
+    ``None`` (no ``data``, a cell that is no such date, no year anywhere)."""
+    m = _RECORD_DATE.fullmatch(_field(record, "data").strip())
+    if m is None:
+        return None
+    year_text = m.group(3)
+    if year_text:
+        year = int(year_text) + (2000 if len(year_text) == 2 else 0)
+    elif _MONTH.match((month or "").strip()):
+        year = int(month.strip()[:4])
+    else:
+        return None
+    try:
+        return date(year, int(m.group(2)), int(m.group(1)))
+    except ValueError:
+        return None
 
 
-def _aulas_records(classes: "Iterable[EmailClass]") -> "list[dict[str, str]]":
-    """``[aulas]`` as a list of records — the coordinator's classes, in order, keyed by the
-    convention above: ``mês``, ``dia``, ``data`` (dd/mm/aa), ``horário`` (when any class has an
-    hour; ``""`` for one without — never a guessed hour), ``disciplina`` and ``turma``. The text
-    and the tables are drawn from this list by the GENERIC renderer; nothing here is particular to
-    classes."""
-    ordered = _ordered_classes(classes)
-    timed = any(c.time for c in ordered)
-    return [{"mês": _PT_MONTHS[c.when.month], "dia": _weekday(c.when),
-             "data": c.when.strftime("%d/%m/%y"), **({"horário": c.time} if timed else {}),
-             "disciplina": c.subject, "turma": c.turma} for c in ordered]
+def _in_send_month(day: date, month: str) -> bool:
+    """Whether ``day`` falls in ``month`` (``YYYY-MM``, the send's) — the one condition under which
+    a record's date may carry a year this module did not read: an e-mail about ONE month."""
+    m = _MONTH.match((month or "").strip())
+    return m is not None and (day.year, day.month) == (int(m.group(1)), int(m.group(2)))
 
 
-def _aulas_text(classes: "Iterable[EmailClass]") -> str:
-    """``[aulas]`` as text: :func:`records_text` of :func:`_aulas_records`."""
-    return records_text(_aulas_records(classes))
+def _date_with_year(cell: str, month: str) -> str:
+    """A ``data`` cell as the HTML column shows it: ``dd/mm`` with the year of the send's month
+    appended (``dd/mm/aa``) when the date falls IN that month — the owner's model writes
+    «08/10/26» — else the cell as written (a cell that already carries a year, one that is no
+    such date, one of another month, no month at all). The TEXT never carries it."""
+    m = _RECORD_DATE.fullmatch(cell.strip())
+    if m is None or m.group(3) or not _MONTH.match((month or "").strip()):
+        return cell
+    day = _record_date({"data": cell}, month)
+    if day is None or not _in_send_month(day, month):
+        return cell
+    return f"{cell.strip()}/{month.strip()[2:4]}"
 
 
-def _ordered_classes(classes: "Iterable[EmailClass]") -> "list[EmailClass]":
-    """The month's classes in the order ``[aulas]`` lists them — by day, then hour (a class with no
-    hour after the timed ones of its day). ONE definition: the text and the HTML table read it."""
-    return sorted(classes, key=lambda c: (c.when, c.time or "99:99"))
+def _derived(key: str, cell: str, day: "Optional[date]") -> bool:
+    """Whether ``cell`` under ``key`` is the DERIVATION of the record's date ``day``: ``dia`` its
+    weekday (abbreviated or named, with or without «-feira»), ``mês`` its month (named, or its
+    three first letters). Folded: case and accents aside."""
+    if day is None:
+        return False
+    folded = _fold_key(cell)
+    if key == "dia":
+        named = _fold_key(_WEEKDAY_NAMES[day.weekday()])
+        return folded in {_fold_key(_WEEKDAYS[day.weekday()]), named, f"{named}-feira"}
+    if key == "mes":
+        name = _fold_key(_PT_MONTHS[day.month])
+        return folded in {name, name[:3]}
+    return False
 
 
-def _subjects(classes: "Iterable[EmailClass]") -> "list[str]":
-    """``[disciplinas]``: each discipline once, case-folded alphabetical — for the text and the
-    HTML list alike."""
-    return sorted({c.subject for c in classes}, key=lambda s: (s.casefold(), s))
+def record_cells_unverified(records: object, *, month: str,
+                            is_literal: "Callable[[str], bool]") -> "tuple[tuple[int, str], ...]":
+    """``((record index, key), …)`` — every non-empty cell of ``records`` that is neither LITERAL
+    nor a DERIVATION checked here — ``()`` when every cell is one of the two. Never raises.
+
+    ``is_literal(cell)`` is the HOST's: whether the cell is written in a successful read of this
+    turn, under the host's fold (the host owns the reads and the fold). A derivation is generic
+    for any record with a ``data`` cell (R-T13, 2026-10-22): ``dia`` must be the weekday of that
+    date and ``mês`` its month, the year taken from the cell or else from ``month`` (the send's,
+    ``YYYY-MM``). A wrong derivation is unverified exactly like a cell nobody read; a record with
+    no ``data`` (or none this reads as a date) has its ``dia``/``mês`` held to the literal rule.
+    Only keys and indexes come back — never a cell: a caller logs and asks with them.
+
+    A ``data`` cell that carries a year (``dd/mm/aa``, ``dd/mm/aaaa``) the read did not print is a
+    derivation too (the Director's correction, 2026-10-22: the owner's model writes «08/10/26»):
+    its ``dd/mm`` must be literal and its date must fall in ``month`` — a wrong year, or a date of
+    another month, is unverified. With no ``month``, only the literal rule.
+
+    A ``records`` that is not a list of records is ``((0, ""),)``: nothing about it is verified."""
+    recs = as_records(records)
+    if recs is None:
+        return ((0, ""),)
+    out: "list[tuple[int, str]]" = []
+    for i, r in enumerate(recs):
+        day = _record_date(r, month)
+        for k, v in r.items():
+            if not v:
+                continue
+            try:
+                ok = (bool(is_literal(v)) or _derived(_fold_key(k), v, day)
+                      or (_fold_key(k) == "data" and _dated_with_year(v, month, is_literal)))
+            except Exception:  # noqa: BLE001 — a predicate that fails verifies nothing
+                ok = False
+            if not ok:
+                out.append((i, k))
+    return tuple(out)
 
 
-def _bonus_rows(est: PayEstimate) -> "list[tuple[str, str, bool]]":
-    """``(label, value, applied)`` per line of ``[valores_por_bonus]`` — the pay block's own rows
-    (:func:`cogno_praxis.coordinator.pay.bonus_band_rows`, ONE definition: the block the tool
-    prints and the e-mail cannot list different figures). The text and the HTML table read them."""
-    return bonus_band_rows(est)
-
-
-def _bonus_mark(est: PayEstimate) -> str:
-    return bonus_mark(est)
-
-
-def _bonus_condition(est: PayEstimate) -> "list[str]":
-    """The response-rate condition the bands hang on, as its non-empty lines (``[]`` when the
-    rules declare none)."""
-    return [ln for ln in _condition_lines(est) if ln]
-
-
-def _bonus_value(est: PayEstimate) -> str:
-    """``[valores_por_bonus]``: «Sem bônus» and one line per DECLARED band, always — the levels
-    the rules declare, not the hypotheses (which are empty once the result was read). The
-    applied band is marked only when the bonus is DETERMINED; with ``not_found``/``gap`` no line
-    is marked and none is chosen."""
-    mark = _bonus_mark(est)
-    lines = [f"{label}: {value}" + (mark if applied else "")
-             for label, value, applied in _bonus_rows(est)]
-    cond = _bonus_condition(est)
-    return "\n".join(lines + ([""] + cond if cond else []))
+def _dated_with_year(cell: str, month: str, is_literal: "Callable[[str], bool]") -> bool:
+    """Whether a ``data`` cell carrying a year is its literal ``dd/mm`` with the year of the send's
+    month: the ``dd/mm`` read, the date in ``month``."""
+    m = _RECORD_DATE.fullmatch(cell.strip())
+    if m is None or not m.group(3):
+        return False
+    day = _record_date({"data": cell}, month)
+    prefix = f"{m.group(1)}/{m.group(2)}"
+    return day is not None and _in_send_month(day, month) and bool(is_literal(prefix))
 
 
 def fill_email_fields(fields: "Iterable[str]", context: EmailContext, *,
-                      persona: "Optional[str]" = None
+                      persona: "Optional[str]" = None, in_subject: "Iterable[str]" = ()
                       ) -> "tuple[dict[str, str], tuple[Missing, ...]]":
     """Fill ``fields`` (a template's markers) from ``context`` — ``(values, missing)``.
 
@@ -920,11 +994,10 @@ def fill_email_fields(fields: "Iterable[str]", context: EmailContext, *,
     for it to be said.
 
     ``persona`` — the persona the e-mail is composed FOR. A marker it cannot fill
-    (:func:`fields_for`: another persona's provider reads it) is a ``Missing`` that names the
-    marker and WHO reads it, and is never taken from ``context`` — a value there was not this
-    persona's to read. ``None`` fills every marker from the context, exactly as before.
+    (:func:`fields_for`) would be a ``Missing`` naming who reads it; with :data:`FIELD_PROVIDERS`
+    empty every persona fills the eight, so the answer is the same for every persona.
 
-    A field that is not one of the thirteen and has a company tag's name
+    A field that is not one of the eight and has a company tag's name
     (:func:`is_custom_tag_name`) is a company tag: filled from ``context.custom_tags`` FIRST and
     in ANY persona, because its value is the tenant's, not a persona's read. One the context does
     not carry was removed after the template was saved — a ``Missing`` with
@@ -933,10 +1006,18 @@ def fill_email_fields(fields: "Iterable[str]", context: EmailContext, *,
 
     A FREE company tag (stored value empty, :func:`free_tags`) is filled from
     ``context.free_tag_values`` — what the conversation said — as one line of plain text
-    (:func:`free_value`). Not said (absent or blank) → a ``Missing`` with
-    :data:`CUSTOM_TAG_FREE_MISSING` and the tenant's hint, from :data:`CUSTOM_TAG_FREE_SOURCE`;
-    said in a form the rule refuses (:func:`free_value_problems`) → a ``Missing`` with that
-    sentence. A conversation value for anything that is not a free tag is never read.
+    (:func:`free_value`), or — R-T13 — from a LIST OF RECORDS, whose text is
+    :func:`records_text` of :func:`free_records`. Not said (absent, blank, an empty list) → a
+    ``Missing`` with :data:`CUSTOM_TAG_FREE_MISSING` and the tenant's hint, from
+    :data:`CUSTOM_TAG_FREE_SOURCE`; said in a form the rule refuses (:func:`free_value_problems`,
+    :func:`free_records_problems`) → a ``Missing`` with that sentence. A conversation value for
+    anything that is not a free tag is never read.
+
+    ``in_subject`` — the markers the template's SUBJECT cites (``markers_cited(subject)``): a
+    list of records for one of them is a ``Missing`` («uma lista não pode ir no assunto»), never a
+    subject broken over lines. Without it, :func:`render_email`'s floor refuses such a subject.
+    Whether a record's cells came from a read is not this function's question: the host asks
+    :func:`record_cells_unverified` before it hands the values over.
     """
     wanted = tuple(dict.fromkeys(f for f in fields
                                  if f in EMAIL_FIELDS or is_custom_tag_name(f)))
@@ -952,8 +1033,23 @@ def fill_email_fields(fields: "Iterable[str]", context: EmailContext, *,
                             else CUSTOM_TAG_SOURCE)
         missing.append(Missing(name, source, reason))
 
+    subject_names = frozenset(in_subject) if not isinstance(in_subject, str) else {in_subject}
+
     def fill_free(name: str) -> None:
         given = said.get(name)
+        if isinstance(given, (list, tuple)):
+            if not given:
+                given = None                     # an empty list is a value nobody said
+            elif free_records_problems(name, given):
+                miss(name, "; ".join(free_records_problems(name, given)), CUSTOM_TAG_FREE_SOURCE)
+                return
+            elif name in subject_names:
+                miss(name, f"[{name}] está no assunto, e uma lista de registos não pode ir no "
+                           "assunto", CUSTOM_TAG_FREE_SOURCE)
+                return
+            else:
+                values[name] = records_text(free_records(given))
+                return
         if given is None or (isinstance(given, str) and not free_value(given)):
             hint = hints.get(name)
             shown = (hint.strip() if isinstance(hint, str)
@@ -965,8 +1061,7 @@ def fill_email_fields(fields: "Iterable[str]", context: EmailContext, *,
         else:
             values[name] = free_value(given)
 
-    who = context.recipient_name.strip() or context.professor.strip() or "o destinatário"
-    month_num = _month_numeric(context.month)
+    who = context.recipient_name.strip() or "o destinatário"
     if not context.recipient_email.strip():
         miss("email", f"{who} não tem e-mail no cadastro")
     for name in wanted:
@@ -1026,48 +1121,9 @@ def fill_email_fields(fields: "Iterable[str]", context: EmailContext, *,
                 miss(name, f"o texto tem {len(text)} caracteres; o máximo é {MAX_CONTEUDO_CHARS}")
             else:
                 values[name] = text
-        elif name in _SCHEDULE_FIELDS:
-            _fill_schedule_field(name, context, who, month_num, values, miss)
     if "conteudo" not in wanted and context.conteudo.strip():
         miss("conteudo", "este template não tem espaço para texto livre")
     return values, tuple(missing)
-
-
-def _fill_schedule_field(name, context, who, month_num, values, miss) -> None:
-    if not is_email_month(context.month):
-        miss(name, "sem um mês AAAA-MM não há aulas a ler")
-        return
-    if context.schedule_error:
-        miss(name, context.schedule_error)
-        return
-    if name in _NEEDS_CLASSES and not context.classes:
-        miss(name, f"não encontro aulas de {who} em {month_num} na agenda; confirma o mês?")
-        return
-    if name in _PAY_FIELDS and (context.pay_error or context.estimate is None):
-        miss(name, context.pay_error or "a estimativa de remuneração não foi lida")
-        return
-    est = context.estimate
-    if name == "aulas":
-        values[name] = _aulas_text(context.classes)
-    elif name == "disciplinas":
-        values[name] = "\n".join(_subjects(context.classes))
-    elif name == "valor_por_aula" and est is not None:
-        values[name] = fmt_money(est.hours_per_class * est.rate)
-    elif name == "valores_por_bonus" and est is not None:
-        if not est.tiers:
-            miss(name, "as regras não declaram faixas de bônus (IBOPE_BONUS)")
-        else:
-            values[name] = _bonus_value(est)
-    elif name == "total" and est is not None:
-        state = est.bonus_state
-        if not est.tiers:
-            values[name] = fmt_money(est.base)          # no bonus scheme: the base IS the total
-        elif state == "applied" and est.matched_tier is not None:
-            values[name] = fmt_money(est.base + est.hours * est.matched_tier.per_hour)
-        elif state == "below":
-            values[name] = fmt_money(est.base)
-        else:
-            miss(name, "o bônus ainda não está apurado; use [valores_por_bonus]")
 
 
 # ── the render ───────────────────────────────────────────────────────────────────────────────
@@ -1410,7 +1466,8 @@ def _header(key: str) -> str:
     return text[:1].upper() + text[1:]
 
 
-def records_html(records: object, *, colors: "Optional[Mapping[str, str]]" = None) -> str:
+def records_html(records: object, *, colors: "Optional[Mapping[str, str]]" = None,
+                 month: str = "") -> str:
     """A list of records as HTML TABLES — the generic renderer every table of an e-mail is drawn
     by. ``""`` for anything that is not a list of records.
 
@@ -1420,6 +1477,10 @@ def records_html(records: object, *, colors: "Optional[Mapping[str, str]]" = Non
       value, and no ``turma`` column (the table IS the class group's).
     * With a ``disciplina`` key: that cell has the value's colour (``colors``, from
       :func:`record_colors`), the other cells are white and narrow, the discipline's wide.
+    * Records that show ONE key (the group key aside) are a LIST, one item per record — a list
+      of values is a list, not a one-column table (R-T13: the shape ``[disciplinas]`` always had).
+    * A ``data`` cell ``dd/mm`` whose date falls in ``month`` (``YYYY-MM``, the send's) is shown
+      ``dd/mm/aa`` (:func:`_date_with_year`); with no ``month``, as written.
     * Every value and every header is escaped."""
     recs = as_records(records)
     if recs is None:
@@ -1427,6 +1488,12 @@ def records_html(records: object, *, colors: "Optional[Mapping[str, str]]" = Non
     colors = colors or {}
     out: "list[str]" = []
     for value, group in _record_groups(recs):
+        title = (f'<p style="{_GROUP_TITLE_STYLE}">{_esc(_group_title(value))}</p>'
+                 if value else "")
+        if all(len(_shown_items(r)) == 1 for r in group):
+            items = "".join(f"<li>{_esc(_shown_items(r)[0][1])}</li>" for r in group)
+            out.append(title + f'<ul style="{_LIST_STYLE}">{items}</ul>')
+            continue
         keys: "list[str]" = []
         for r in group:
             keys += [k for k in r if k not in keys and _fold_key(k) != _GROUP_KEY]
@@ -1440,72 +1507,42 @@ def records_html(records: object, *, colors: "Optional[Mapping[str, str]]" = Non
                 if colored and _fold_key(k) == _COLOR_KEY:
                     row.append((cell, f"background:{colors.get(cell, '#ffffff')}"))
                 else:
-                    row.append((cell, _NARROW if colored else ""))
+                    shown = _date_with_year(cell, month) if _fold_key(k) == "data" else cell
+                    row.append((shown, _NARROW if colored else ""))
             rows.append(row)
-        title = (f'<p style="{_GROUP_TITLE_STYLE}">{_esc(_group_title(value))}</p>'
-                 if value else "")
         out.append(title + _table([_header(k) for k in keys], rows))
     return "".join(out)
 
 
-def _aulas_html(value: str, context: EmailContext, look: _Look) -> "Optional[str]":
-    """``[aulas]``: :func:`records_html` of :func:`_aulas_records` — the coordinator only PRODUCES
-    the list; the tables are the generic renderer's."""
-    records = _aulas_records(context.classes)
+def _structured(name: str, context: EmailContext) -> "Optional[list[dict[str, str]]]":
+    """The records ``name`` is filled with — when it is a FREE tag of ``context.custom_tags`` and
+    the conversation gave it a list of records (:func:`free_records`) — else ``None``. The ONE
+    reading of what makes a marker a table: the HTML trigger, its block and its colours ask it."""
+    tags = context.custom_tags if isinstance(context.custom_tags, Mapping) else {}
+    said = context.free_tag_values if isinstance(context.free_tag_values, Mapping) else {}
+    stored = tags.get(name)
+    if not (is_custom_tag_name(name) and isinstance(stored, str) and not _custom_value(stored)):
+        return None
+    return free_records(said.get(name))
+
+
+def _records_block(name: str, value: str, context: EmailContext,
+                   look: _Look) -> "Optional[str]":
+    """A marker ALONE on a line whose value is a list of records: its tables
+    (:func:`records_html`) — or ``None`` when it has no records, or when they do not rebuild the
+    very text the e-mail carries (``value``); the value is then text."""
+    records = _structured(name, context)
     if not records or records_text(records) != value:
         return None
-    return records_html(records, colors=look.colors)
-
-
-def _disciplinas_html(value: str, context: EmailContext, look: _Look) -> "Optional[str]":
-    """``[disciplinas]``: a list, one discipline per item, in the text's order."""
-    subjects = _subjects(context.classes)
-    if not subjects or "\n".join(subjects) != value:
-        return None
-    items = "".join(f"<li>{_esc(s)}</li>" for s in subjects)
-    return f'<ul style="{_LIST_STYLE}">{items}</ul>'
-
-
-def _bonus_html(value: str, context: EmailContext, look: _Look) -> "Optional[str]":
-    """``[valores_por_bonus]``: a list of PAIRS through :func:`records_html` — a two-column table
-    (Faixa · Valor), the determined band carrying the text's own mark — then the response-rate
-    condition the bands hang on."""
-    est = context.estimate
-    if est is None or not est.tiers or _bonus_value(est) != value:
-        return None
-    mark = _bonus_mark(est)
-    pairs = [{"faixa": label, "valor": money + (mark if applied else "")}
-             for label, money, applied in _bonus_rows(est)]
-    return records_html(pairs) + "".join(f'<p style="{_P_STYLE}">{_esc(c)}</p>'
-                                         for c in _bonus_condition(est))
-
-
-#: The block forms: a marker ALONE on a line of the template draws its block — the classes as
-#: tables, the disciplines as a list, the bands as a two-column table. A form answers ``None``
-#: when the context does not rebuild the very value the text carries; the value is then text.
-_BLOCK_FORMS: "Mapping[str, Callable[[str, EmailContext, _Look], Optional[str]]]" = (
-    MappingProxyType({
-        "aulas": _aulas_html,
-        "disciplinas": _disciplinas_html,
-        "valores_por_bonus": _bonus_html,
-    }))
-#: The markers that make an e-mail go out as HTML: every provider's marker — a persona's
-#: specific data — and no generic one. DERIVED from :data:`FIELD_PROVIDERS`.
-_DATA_MARKERS: "frozenset[str]" = frozenset(f for p in FIELD_PROVIDERS.values()
-                                            for f in p.field_names)
-#: The producers of a list of records, by marker — what the colours of an e-mail are counted over.
-_RECORD_SOURCES: "Mapping[str, Callable[[EmailContext], list[dict[str, str]]]]" = (
-    MappingProxyType({"aulas": lambda context: _aulas_records(context.classes)}))
-#: Figures that are bold wherever they stand (2026-10-22: «ou texto» — a figure is not a table).
-_BOLD_INLINE = frozenset({"total", "valor_por_aula"})
+    return records_html(records, colors=look.colors, month=context.month)
 
 
 def _value_html(name: str, value: str, context: EmailContext) -> str:
     """A marker's value inside a line: escaped, line breaks as ``<br>``. A FIXED company tag is
     the tenant's own text, so its URLs become links like the template's. No other value's do — a
-    FREE tag's value is what the conversation said (``free_tag_values``), not the tenant's."""
-    if name in _BOLD_INLINE:
-        return f"<strong>{_text_html(value)}</strong>"
+    FREE tag's value is what the conversation said (``free_tag_values``), not the tenant's. No
+    value is bold by its NAME: emphasis is the template's (R-T13; until then ``[total]`` and
+    ``[valor_por_aula]`` were, by name)."""
     tags = context.custom_tags if isinstance(context.custom_tags, Mapping) else {}
     fixed = isinstance(tags.get(name), str) and bool(_custom_value(tags[name]))
     if name not in EMAIL_FIELDS and is_custom_tag_name(name) and fixed:
@@ -1543,7 +1580,8 @@ def _body_html(body: str, values: "Mapping[str, str]", context: EmailContext, lo
       section title in bold;
     * an ``http(s)://`` URL in the tenant's text is a link.
 
-    A data marker alone on its line is its block (:data:`_BLOCK_FORMS`). Everything is escaped."""
+    A marker alone on its line whose value is a list of records is its tables
+    (:func:`_records_block`). Everything is escaped."""
     out: "list[str]" = []
     para: "list[str]" = []
     items: "list[str]" = []
@@ -1563,9 +1601,9 @@ def _body_html(body: str, values: "Mapping[str, str]", context: EmailContext, lo
         if not stripped:
             flush()
             continue
-        if alone and alone.group(1) in _BLOCK_FORMS:
+        if alone:
             name = alone.group(1)
-            drawn = _BLOCK_FORMS[name](values[name], context, look)
+            drawn = _records_block(name, values[name], context, look)
             if drawn is not None:
                 flush()
                 out.append(drawn)
@@ -1629,12 +1667,17 @@ def _signature_html(appearance: "Optional[EmailAppearance]", context: EmailConte
 
 def render_email_html(subject: str, body: str, values: "Mapping[str, str]",
                       context: EmailContext, *,
-                      appearance: "Optional[EmailAppearance]" = None) -> str:
+                      appearance: "Optional[EmailAppearance]" = None,
+                      force_html: bool = False) -> str:
     """The e-mail's HTML form — a whole document — or ``""`` when it has none.
 
-    ``""`` unless the BODY uses a marker with an HTML form (a persona's data: the classes, the
-    disciplines, the pay values, the total). A template of generic markers or company tags goes
-    out as the text it always was. A data marker in the SUBJECT alone draws nothing either.
+    ``""`` unless the BODY carries a FREE tag whose value is a LIST OF RECORDS (R-T13: data
+    copied from a read — a timetable, a table of values). A template of generic markers, fixed
+    tags or free tags of text goes out as the text it always was (until R-T13 a provider's
+    figure, alone, made an e-mail HTML too). ``force_html=True`` draws the document anyway — for
+    a PREVIEW only (the host's ``email-preview``): the tenant's rich text, the header and the
+    signature, the free tags as whatever placeholder ``values`` carries, and no row invented. A
+    send never sets it.
 
     The HTML is the SAME e-mail as the text :func:`render_email_forms` gives with the same
     ``values``, never another one:
@@ -1643,7 +1686,7 @@ def render_email_html(subject: str, body: str, values: "Mapping[str, str]",
     * the template's own text and every value are escaped (``html.escape``); the template's body
       is simple rich text (:func:`_body_html`: paragraphs, «•»/«·» lists, short «…:» titles, URLs
       as links) and nothing else of the tenant's becomes markup;
-    * a table is drawn only from rows of ``context`` whose text IS that marker's value in
+    * a table is drawn only from records of ``context`` whose text IS that marker's value in
       ``values`` — the value the text part carries; otherwise the value is shown as text;
     * the styles are inline. The ONLY images are the logo and the social icons the tenant
       configured in its ``appearance`` (``http``/``https``, escaped, with ``alt``); nothing else
@@ -1658,10 +1701,9 @@ def render_email_html(subject: str, body: str, values: "Mapping[str, str]",
     rendered_subject, _ = render_email(subject, body, values)
     body = (body or "").replace("\r\n", "\n").replace("\r", "\n")
     used = [m.group(1) for m in _MARKER.finditer(body)]
-    if not any(name in _DATA_MARKERS for name in used):
+    lists = [r for r in (_structured(name, context) for name in dict.fromkeys(used)) if r]
+    if not lists and not force_html:
         return ""
-    lists = [_RECORD_SOURCES[name](context) for name in dict.fromkeys(used)
-             if name in _RECORD_SOURCES]
     look = _Look(palette=_palette(appearance), colors=record_colors(lists, appearance))
     accent = (appearance.accent_color if appearance is not None else "") or _NAVY
     sender = ((appearance.sender_name if appearance is not None else "")
@@ -1680,18 +1722,20 @@ def render_email_html(subject: str, body: str, values: "Mapping[str, str]",
 
 def render_email_forms(subject: str, body: str, values: "Mapping[str, str]",
                        context: EmailContext, *,
-                       appearance: "Optional[EmailAppearance]" = None
-                       ) -> "tuple[str, str, str]":
+                       appearance: "Optional[EmailAppearance]" = None,
+                       force_html: bool = False) -> "tuple[str, str, str]":
     """``(subject, text, html)`` — the ONE place the two forms of an e-mail are joined.
 
     ``text`` is :func:`render_email`'s body and, when the e-mail goes out as HTML and the tenant
     configured a signature, a blank line and :func:`email_signature_text` — the same lines the
     HTML's signature block draws. It is what the requester is shown and confirms, and what
     :func:`email_digest` is taken of. ``html`` is :func:`render_email_html`, ``""`` for an e-mail
-    with no data marker in its body (its ``text`` is then :func:`render_email`'s, byte for byte).
+    with no list of records in its body (its ``text`` is then :func:`render_email`'s, byte for
+    byte) — unless ``force_html`` (a PREVIEW's, never a send's: :func:`render_email_html`).
     """
     out_subject, text = render_email(subject, body, values)
-    doc = render_email_html(subject, body, values, context, appearance=appearance)
+    doc = render_email_html(subject, body, values, context, appearance=appearance,
+                            force_html=force_html)
     signature = email_signature_text(appearance, context) if doc else ""
     return out_subject, (f"{text}\n\n{signature}" if signature else text), doc
 
@@ -1711,7 +1755,7 @@ def missing_question(missing: "Sequence[Missing]") -> str:
 __all__ = [
     "EMAIL_FIELDS", "GENERIC_FIELDS", "FIELD_PROVIDERS", "FieldSpec", "FieldProvider",
     "REFUSED_FIELDS", "SUBJECT_FORBIDDEN", "MAX_BODY_CHARS",
-    "MAX_CONTEUDO_CHARS", "EmailClass", "EmailContext", "Missing", "known_markers",
+    "MAX_CONTEUDO_CHARS", "EmailContext", "Missing", "known_markers",
     "fields_for", "provider_for", "provider_of", "provider_fields", "template_needs_month",
     "markers_cited", "template_fields", "validate_template", "fill_email_fields",
     "render_email", "render_email_html", "render_email_forms", "email_digest", "missing_question", "is_email_month", "month_words",
@@ -1725,5 +1769,6 @@ __all__ = [
     "APPEARANCE_URL_SCHEMES", "MAX_SOCIAL_LINKS", "DEFAULT_PALETTE", "LIST_BULLETS",
     "MAX_HEADING_CHARS", "normalise_email_appearance", "parse_email_appearance",
     "email_signature_text", "record_colors", "records_html", "records_text", "as_records",
-    "MAX_RECORDS",
+    "MAX_RECORDS", "MAX_RECORD_KEYS", "MAX_RECORD_KEY_CHARS", "free_records",
+    "free_records_problems", "record_cells_unverified",
 ]

@@ -1,22 +1,24 @@
-"""GENERIC markers and per-persona FIELD PROVIDERS (``cogno_praxis.email_fields``, E3).
+"""GENERIC markers and the (EMPTY) registry of per-persona FIELD PROVIDERS (``email_fields``).
 
-A template may use the eight generic markers and its OWN persona's (the owner's rule, 2026-10-22
-— see ``test_email_markers_by_persona.py``); a persona's provider decides what its template may
-use AND what it can FILL. Everything here is synthetic — invented names, an invented school, an invented persona id. What
-is pinned, one line each:
+E3 (2026-10-07) gave a persona markers of its own through a field provider; the coordination had
+five. R-T13 (2026-10-22), the owner's rule — «preciso de algo genérico. Quando entrar uma persona
+nova, faço via tags personalizadas, senão teria que fazer via código» — empties the registry:
+every persona's template may use the eight generic markers and the tenant's own tags, and the
+coordination's five are ordinary company-tag names. The provider MACHINERY stays, generic, over
+an empty registry. Everything here is synthetic — invented names, an invented school, an invented
+persona id. What is pinned, one line each:
 
-* the list has two halves and the union is DERIVED: no marker in both, none lost, and a registry
-  that could answer two ways is refused when it is built;
-* every marker in use before E3 still validates and fills in the persona it was used in (one
-  test per marker), and the three template SHAPES in use render byte for byte;
-* a marker another persona supplies is REFUSED for this one, naming the persona it belongs to
-  (as from E3 until 2026-10-21; between the two it was valid), and only the persona that
-  supplies it can FILL it (:func:`fields_for`);
+* the list is the eight generic markers, the registry is EMPTY, and a registry that could answer
+  two ways is still refused when it is built;
+* every marker in use before E3 still validates — the generic ones as markers, the coordination's
+  five as the tenant's tags — and the three template SHAPES in use, for EVERY persona alike;
+* the verdict never depends on the persona: a coordination name with no tag declared is an
+  unknown marker everywhere, listing the same eight, naming no persona;
 * the new generic markers — ``[data]``, ``[assinatura]``, ``[solicitante]`` — fill from the
   host's half of the context alone, and each is a named ``Missing`` when that half is empty;
-* a template of generic markers alone needs NO provider and NO month;
-* the adversarial spellings: a specific marker in another case or spelling, another persona's
-  id in another case, a persona with no provider, a marker that was deliberately not created.
+* a template needs a month only when it says ``[mes]``, and no template needs a provider;
+* the adversarial spellings: a marker in another case or spelling, a persona id in another case,
+  a marker that was deliberately not created.
 """
 
 from __future__ import annotations
@@ -67,6 +69,8 @@ OTHERS = ("SECRETARY", "BOOKKEEPER", "ARCHIVIST")
 #: regression list (what existed must go on existing), so it is not derived from the code.
 LEGACY_GENERIC = ("nome", "email", "empresa", "mes", "conteudo")
 LEGACY_COORDINATOR = ("disciplinas", "aulas", "valor_por_aula", "valores_por_bonus", "total")
+#: The coordination's five as the tenant declares them since R-T13: FREE tags.
+FREE = {n: "" for n in LEGACY_COORDINATOR}
 NEW_GENERIC = ("data", "assinatura", "solicitante")
 
 #: The three template SHAPES in use (text invented): a class schedule, the invoice notice, and
@@ -86,7 +90,7 @@ T_GENERIC = ("Recado de [solicitante]",
 
 
 def _host_half(**kw) -> EmailContext:
-    """The context a host builds with NO persona read: nothing of the coordinator's in it."""
+    """The context a host builds — all of it the host's (no persona reads anything into it)."""
     base = dict(recipient_name=ME, recipient_email=ADDRESS, tenant_name=SCHOOL, month="2026-10",
                 conteudo="Reunião na sexta.", today=TODAY, persona_name=SIGNER,
                 requester_name=ASKER)
@@ -108,12 +112,10 @@ def test_the_union_is_the_two_halves_and_no_marker_is_in_both():
         assert all(EMAIL_FIELDS[f.name] is f for f in p.fields)
 
 
-def test_the_halves_are_exactly_the_ones_decided():
+def test_the_list_is_the_eight_and_no_persona_has_markers_in_code():
     assert tuple(GENERIC_FIELDS) == ("nome", "email", "empresa", "mes", "data", "assinatura",
                                      "solicitante", "conteudo")
-    assert set(FIELD_PROVIDERS) == {COORD}
-    assert FIELD_PROVIDERS[COORD].field_names == frozenset(LEGACY_COORDINATOR)
-    assert FIELD_PROVIDERS[COORD].name == "coordinator"
+    assert dict(FIELD_PROVIDERS) == {} and list(EMAIL_FIELDS) == list(GENERIC_FIELDS)
     assert set(LEGACY_GENERIC) | set(NEW_GENERIC) == set(GENERIC_FIELDS)
 
 
@@ -128,48 +130,54 @@ def test_no_two_markers_differ_only_by_spelling():
 def test_every_multiline_marker_is_kept_out_of_the_subject():
     assert {n for n, f in EMAIL_FIELDS.items() if f.multiline} <= SUBJECT_FORBIDDEN
     assert SUBJECT_FORBIDDEN <= set(EMAIL_FIELDS)
-    assert ef._PAY_FIELDS <= ef._SCHEDULE_FIELDS and ef._NEEDS_CLASSES <= ef._SCHEDULE_FIELDS
-    assert ef._SCHEDULE_FIELDS == FIELD_PROVIDERS[COORD].field_names
+
+
+_OTHER = FieldProvider("CURATOR", "curate", "curadoria", (FieldSpec("acervo", "x"),))
 
 
 @pytest.mark.parametrize("clash, words", [
     (FieldProvider("ARCHIVIST", "archive", "arquivo", (FieldSpec("nome", "x"),)), "[nome]"),
     (FieldProvider("ARCHIVIST", "archive", "arquivo", (FieldSpec("cpf_cnpj", "x"),)), "[cpf_cnpj]"),
-    (FieldProvider("ARCHIVIST", "archive", "arquivo", (FieldSpec("aulas", "x"),)), "[aulas]"),
-    (FieldProvider("COORDINATOR", "archive", "arquivo", (FieldSpec("pasta", "x"),)), "twice"),
+    (FieldProvider("ARCHIVIST", "archive", "arquivo", (FieldSpec("acervo", "x"),)), "[acervo]"),
+    (FieldProvider("CURATOR", "archive", "arquivo", (FieldSpec("pasta", "x"),)), "twice"),
     (FieldProvider(" ", "archive", "arquivo", (FieldSpec("pasta", "x"),)), "blank"),
 ])
 def test_a_registry_that_could_answer_two_ways_is_refused_when_built(clash, words):
-    shipped = tuple(FIELD_PROVIDERS.values())
+    """The machinery stays generic over the empty registry: a registry built with providers is
+    still refused when two of them, or one and a generic marker, could answer the same name."""
     with pytest.raises(ValueError) as err:
-        ef._registry(GENERIC_FIELDS, shipped + (clash,))
+        ef._registry(GENERIC_FIELDS, (_OTHER, clash))
     assert words in str(err.value)
     # CONTROL — the same builder accepts a provider that clashes with nothing.
     ok = FieldProvider("ARCHIVIST", "archive", "arquivo", (FieldSpec("pasta", "x"),))
-    by_persona, fields = ef._registry(GENERIC_FIELDS, shipped + (ok,))
-    assert set(by_persona) == {COORD, "ARCHIVIST"} and "pasta" in fields
+    by_persona, fields = ef._registry(GENERIC_FIELDS, (_OTHER, ok))
+    assert set(by_persona) == {"CURATOR", "ARCHIVIST"} and "pasta" in fields
 
 
 # ── regression: what was in use still validates and fills where it was used ──────────────────
 
 @pytest.mark.parametrize("marker", LEGACY_GENERIC + LEGACY_COORDINATOR)
-def test_each_marker_in_use_before_E3_is_still_valid_for_the_coordinator(marker):
-    assert marker in fields_for(COORD)
-    assert validate_template("Aviso", f"Texto: [{marker}]", persona=COORD) == ()
-    # …and for a caller that gives no persona, only the default list (2026-10-22): a generic
-    # marker is valid, a coordination one is refused naming the coordination
-    reasons = validate_template("Aviso", f"Texto: [{marker}]")
+@pytest.mark.parametrize("persona", (COORD,) + OTHERS + (None,))
+def test_each_marker_in_use_before_E3_is_still_valid_as_a_marker_or_the_tenants_tag(marker,
+                                                                                      persona):
+    """A generic marker as itself; a coordination one as the tenant's tag (R-T13). Without the
+    tag it is an unknown marker — for every persona alike, naming no persona."""
+    assert validate_template("Aviso", f"Texto: [{marker}]", persona=persona,
+                             custom_tags=FREE) == ()
+    reasons = validate_template("Aviso", f"Texto: [{marker}]", persona=persona)
     if marker in LEGACY_GENERIC:
         assert reasons == ()
     else:
-        assert len(reasons) == 1 and "é uma tag da coordenação (COORDINATOR)" in reasons[0]
+        assert len(reasons) == 1 and f"[{marker}] não é um marcador" in reasons[0]
+        assert "coordenação" not in reasons[0]
 
 
 @pytest.mark.parametrize("template", [T_SCHEDULE, T_INVOICE, T_NOTICE])
-def test_the_three_template_shapes_in_use_are_valid_for_the_coordinator(template):
-    assert validate_template(*template, persona=COORD) == ()
-    # with no persona, only the shape of generic markers alone (2026-10-22)
-    assert (validate_template(*template) == ()) is (template is T_NOTICE)
+@pytest.mark.parametrize("persona", (COORD,) + OTHERS + (None,))
+def test_the_three_template_shapes_in_use_are_valid_for_every_persona(template, persona):
+    assert validate_template(*template, persona=persona, custom_tags=FREE) == ()
+    # without the tenant's tags, only the shape of generic markers alone
+    assert (validate_template(*template, persona=persona) == ()) is (template is T_NOTICE)
 
 
 @pytest.mark.parametrize("marker", LEGACY_GENERIC + NEW_GENERIC)
@@ -184,7 +192,6 @@ def test_the_generic_notice_renders_byte_for_byte_from_the_hosts_half_alone():
     fields = template_fields(*T_NOTICE)
     assert provider_fields(fields) == {}
     ctx = _host_half()
-    assert ctx.classes == () and ctx.estimate is None
     values, missing = fill_email_fields(fields, ctx)
     assert missing == ()
     out = render_email(*T_NOTICE, values)
@@ -193,41 +200,20 @@ def test_the_generic_notice_renders_byte_for_byte_from_the_hosts_half_alone():
     assert email_digest(*out) == email_digest(*render_email(*T_NOTICE, values))
 
 
-# ── the persona decides what its template may use, and what it can FILL ──────────────────────
-
-#: The refusal's words, typed here — the expectation, not a copy of the code.
-_OF_THE_COORDINATION = ("é uma tag da coordenação (COORDINATOR): só pode ser usada no template "
-                        "dessa persona")
-
+# ── the persona never changes the verdict (R-T13) ─────────────────────────────────────────────
 
 @pytest.mark.parametrize("marker", LEGACY_COORDINATOR)
-@pytest.mark.parametrize("persona", OTHERS)
-def test_a_coordinator_marker_is_refused_for_another_persona_naming_the_coordination(
-        marker, persona):
-    """Inverted (was: valid for another persona, 2026-10-21). Refused, naming the persona the
-    marker belongs to, and listing the markers THIS persona's template may use — the generic
-    ones, no specific one. TWIN: the same template for the COORDINATOR."""
-    (reason,) = validate_template("Aviso", f"Texto: [{marker}]", persona=persona)
-    assert reason.startswith(f"no corpo, [{marker}] {_OF_THE_COORDINATION}; os marcadores são ")
-    offered = reason.split("os marcadores são ", 1)[1]
-    assert offered == ", ".join(f"[{n}]" for n in GENERIC_FIELDS)
-    assert validate_template("Aviso", f"Texto: [{marker}]", persona=COORD) == ()
-    assert marker not in fields_for(persona) and marker in fields_for(COORD)
-
-
-def test_the_schedule_template_is_refused_at_the_front_desk_and_saved_by_the_coordinator():
-    """Inverted (was: saved at the front desk too)."""
-    reasons = validate_template(*T_SCHEDULE, persona="SECRETARY")
-    assert [r.split(f" {_OF_THE_COORDINATION}", 1)[0] for r in reasons] == [
-        "no corpo, [aulas]", "no corpo, [disciplinas]"]
-    assert validate_template(*T_SCHEDULE, persona=COORD) == ()
-
-
-def test_a_coordinator_marker_in_the_subject_is_refused_for_another_persona_too():
-    """Inverted (was: valid for another persona too)."""
-    (reason,) = validate_template("Total: [total]", "corpo", persona="BOOKKEEPER")
-    assert reason.startswith(f"no assunto, [total] {_OF_THE_COORDINATION};")
-    assert validate_template("Total: [total]", "corpo", persona=COORD) == ()
+def test_a_coordination_name_is_one_verdict_for_every_persona(marker):
+    """Inverted twice: valid everywhere (2026-10-21), the coordinator's only (2026-10-22), and
+    now the tenant's tag — so the verdict is ONE, whatever the persona: an unknown marker listing
+    the eight without the tag, valid with it."""
+    verdicts = {p: validate_template("Aviso", f"Texto: [{marker}]", persona=p)
+                for p in (COORD,) + OTHERS + (None,)}
+    assert len(set(verdicts.values())) == 1
+    (reason,) = verdicts[COORD]
+    assert reason == (f"no corpo, [{marker}] não é um marcador; os marcadores são "
+                      + ", ".join(f"[{n}]" for n in GENERIC_FIELDS))
+    assert all(marker not in fields_for(p) for p in (COORD,) + OTHERS)
 
 
 @pytest.mark.parametrize("persona", (COORD,) + OTHERS + (None,))
@@ -244,9 +230,9 @@ def test_a_removed_marker_stays_refused_for_every_persona(persona):
 def test_an_unknown_marker_stays_refused_for_every_persona_listing_its_markers(persona):
     (reason,) = validate_template("Aviso", "Olá [nmoe]", persona=persona)
     assert "[nmoe] não é um marcador; os marcadores são " in reason
-    # THIS persona's list (2026-10-22): the coordinator's thirteen, everybody else's eight
+    # the same eight for every persona (R-T13)
     assert reason.endswith(", ".join(known_markers(persona)))
-    assert ("[aulas]" in reason) is (persona == COORD)
+    assert "[aulas]" not in reason and known_markers(persona) == known_markers()
 
 
 # ── adversarial: spellings and ids that are NOT the case ─────────────────────────────────────
@@ -273,14 +259,11 @@ def test_a_near_miss_of_a_marker_is_not_that_marker(body, words, persona):
 
 @pytest.mark.parametrize("persona", ["coordinator", "Coordinator", "COORDINATORS", "COORD",
                                      "COORDINATOR ", "", "   ", "ARCHIVIST"])
-def test_a_persona_id_is_compared_as_written(persona):
-    """An id that merely resembles the coordinator's does not inherit its markers — except for
-    surrounding blanks, which are not part of an id."""
-    exact = persona.strip() == COORD
-    assert (provider_for(persona) is FIELD_PROVIDERS[COORD]) is exact
-    assert ("aulas" in fields_for(persona)) is exact
-    # what a template may USE follows the same id (2026-10-22): only the coordinator's own
-    assert (validate_template("Aviso", "[aulas]", persona=persona) == ()) is exact
+def test_no_persona_id_has_markers_of_its_own(persona):
+    """Not the coordinator's either, however it is written (R-T13)."""
+    assert provider_for(persona) is None
+    assert "aulas" not in fields_for(persona)
+    assert validate_template("Aviso", "[aulas]", persona=persona) != ()
     assert validate_template("Aviso", "[nome] [data]", persona=persona) == ()
 
 
@@ -290,7 +273,7 @@ def test_only_None_is_the_reading_with_no_persona():
     assert known_markers() == tuple(f"[{n}]" for n in GENERIC_FIELDS)
     assert set(fields_for("")) == set(GENERIC_FIELDS)
     assert provider_for(None) is None and provider_for(7) is None  # type: ignore[arg-type]
-    assert provider_of("aulas") is FIELD_PROVIDERS[COORD]
+    assert provider_of("aulas") is None
     assert provider_of("nome") is None and provider_of("nmoe") is None
 
 
@@ -357,20 +340,13 @@ def test_a_marker_the_template_does_not_use_is_never_asked_for():
     ((), False),
     (("mes",), True),
     (("nome", "mes"), True),
-    (("aulas",), True),
-    (("total",), True),
-    (("nome", "valor_por_aula"), True),
+    (("aulas",), False),                  # a tenant's tag (R-T13): the month is [mes]'s to ask
+    (("total",), False),
+    (("nome", "valor_por_aula"), False),
+    (("aulas", "mes"), True),
 ])
 def test_a_template_needs_a_month_only_when_it_says_one_or_uses_a_monthly_figure(fields, needs):
     assert template_needs_month(fields) is needs
-
-
-@pytest.mark.parametrize("marker", LEGACY_COORDINATOR)
-def test_every_coordinator_figure_is_about_one_month(marker):
-    assert template_needs_month((marker,))
-    _, missing = fill_email_fields((marker,), _host_half(month="", conteudo=""))
-    assert [m.field for m in missing] == [marker]
-    assert "sem um mês AAAA-MM" in missing[0].reason
 
 
 def test_a_template_with_no_month_marker_never_asks_for_a_month():
@@ -385,24 +361,22 @@ def test_a_template_with_no_month_marker_never_asks_for_a_month():
 @pytest.mark.parametrize("template, wanted", [
     (T_NOTICE, {}),
     (T_GENERIC, {}),
-    (T_SCHEDULE, {"coordinator": ("aulas", "disciplinas")}),
-    (T_INVOICE, {"coordinator": ("valor_por_aula", "valores_por_bonus", "total", "aulas")}),
+    (T_SCHEDULE, {}),
+    (T_INVOICE, {}),
 ])
-def test_provider_fields_names_the_reads_a_template_needs(template, wanted):
+def test_no_template_needs_a_providers_read(template, wanted):
     assert provider_fields(template_fields(*template)) == wanted
 
 
 def test_provider_fields_ignores_what_is_not_a_marker():
-    assert provider_fields(("nome", "nmoe", "cpf_cnpj", "aulas", "aulas")) == {
-        "coordinator": ("aulas",)}
+    assert provider_fields(("nome", "nmoe", "cpf_cnpj", "aulas", "aulas")) == {}
 
 
-def test_a_coordinator_marker_on_a_context_nobody_read_is_missing_never_blank():
-    """The floor under the host's wiring: a specific marker filled from the host's half alone
-    stops the send with a question — it never renders as an empty list."""
+def test_a_coordination_name_on_a_context_with_no_such_tag_is_missing_never_blank():
+    """The floor under the host's wiring: a name the tenant did not declare is a removed tag —
+    the send stops with a question; it never renders as an empty list."""
     _, missing = fill_email_fields(("nome", "aulas"), _host_half(conteudo=""))
-    assert [m.field for m in missing] == ["aulas"]
-    assert f"não encontro aulas de {ME} em 10/2026" in missing[0].reason
+    assert [(m.field, m.reason) for m in missing] == [("aulas", ef.CUSTOM_TAG_REMOVED)]
     with pytest.raises(ValueError):
         render_email("Aviso", "[aulas]", {"nome": ME})
 
@@ -410,14 +384,14 @@ def test_a_coordinator_marker_on_a_context_nobody_read_is_missing_never_blank():
 # ── structure: a provider declares, it does not read ─────────────────────────────────────────
 
 def test_the_module_imports_no_service():
-    """``email_fields`` declares what a persona supplies; reading it is the host's wiring. Its
-    only import inside the package is the coordinator's PURE pay formatting."""
+    """``email_fields`` imports nothing of the package (R-T13: the pay formatting it imported
+    for the coordination's provider went with the provider — the arithmetic is the tools')."""
     tree = ast.parse(pathlib.Path(ef.__file__).read_text(encoding="utf-8"))
     inside = sorted({n.module for n in ast.walk(tree)
                      if isinstance(n, ast.ImportFrom) and (n.module or "").startswith("cogno_")}
                     | {a.name for n in ast.walk(tree) if isinstance(n, ast.Import)
                        for a in n.names if a.name.startswith("cogno_")})
-    assert inside == ["cogno_praxis.coordinator.pay"]
+    assert inside == []
 
 
 def test_the_readme_documents_both_halves_and_the_new_markers():

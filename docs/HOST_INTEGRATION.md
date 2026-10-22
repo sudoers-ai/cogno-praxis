@@ -257,10 +257,9 @@ The e-mail templates (`cogno_praxis.email_fields`) split the same way: the modul
 markers exist, refuses a bad template or a bad company tag in words, and fills every value in
 code; storing the templates and the tenant's company tags, the admin API, the send, the
 confirmation and the audit are yours (README, «Templated e-mail fields»). A host passes the
-persona a template is saved for to `validate_template(…, persona=…)` — its template may use the
-eight generic markers and that persona's own (`known_markers(persona)`), and a template saved with
-no persona gets the eight only — and the tenant's tags as `custom_tags=` when a template is
-SAVED, adds
+persona a template is saved for to `validate_template(…, persona=…)` — every persona's template may
+use the eight generic markers (`known_markers(persona)`: no persona has markers of its own since
+R-T13, 2026-10-22) — and the tenant's tags as `custom_tags=` when a template is SAVED, adds
 the names of the tags the tenant removed (`removed_tags=`) when the turn reads the stored
 ones — so a template whose tag was removed is kept and its send asks — and hands the same tags to
 `EmailContext.custom_tags` when it composes. A tag stored EMPTY is FREE (2026-10-22): the host
@@ -270,8 +269,24 @@ asks its executor for the value from the conversation and hands it over as
 Storing the hints, offering the free tags to the executor and fencing the hint in its prompt are
 yours.
 
-An e-mail whose body uses a provider's marker (the coordinator's classes, pay values or total)
-also has an HTML form. Compose with `render_email_forms(subject, body, values, context,
+**A free tag's value may be a LIST OF RECORDS (R-T13)** — the rows a tool printed, copied by the
+executor (`[{key: value}, …]`; the rule is `free_records_problems`). This is how a persona's own
+data reaches an e-mail: the coordination's five former markers are free tags the tenant declares,
+whose hints point at `get_professor_schedule` and `estimate_professor_pay`, and the executor
+passes their rows. Two things are yours:
+- **The cells' provenance.** Before you hand a list over, ask
+  `record_cells_unverified(records, month=<the send's YYYY-MM>, is_literal=<yours>)`: your
+  predicate says whether a cell is written in a SUCCESSFUL read of this turn (under your fold);
+  the function adds the derivations it checks (`dia`, `mês` of a record's `data`, and a `data`
+  carrying the year of the send's month) and returns the
+  `(index, key)` of every cell that is neither. Anything back → treat the tag as missing and ask;
+  never compose a cell nobody read. Log keys and counts, never a cell.
+- **The subject.** Pass `in_subject=markers_cited(subject)` to `fill_email_fields`, so a list for
+  a tag the subject cites comes back `missing` instead of breaking the subject.
+`CoordinatorService.email_context` is gone: nothing reads a persona's data into an e-mail but the
+persona, through its tools, in the turn.
+
+An e-mail whose body carries a free tag holding a list of records also has an HTML form. Compose with `render_email_forms(subject, body, values, context,
 appearance=…)` → `(subject, text, html)`: the same `values` and the SAME `EmailContext` the fill
 read, and the tenant's appearance from `parse_email_appearance(<what you stored>)`.
 - **Sending.** Send `html` beside `text` as `multipart/alternative`

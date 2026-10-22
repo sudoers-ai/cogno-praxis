@@ -1,24 +1,26 @@
 """The TENANT's own markers — company tags with a FIXED value (``cogno_praxis.email_fields``).
 
-The owner (2026-10-21) asked for a field to create tags of one's own beside the thirteen standard
-markers; the Director's design keeps only tags with a FIXED value, the tenant's, valid in EVERY
-persona («tags padrão para tudo»). A tag is ``{name: value}``: the name is
-``[a-z][a-z0-9_]{1,30}`` and never one of the thirteen nor a reserved name; the value is plain
-text, one line or several, at most 500 characters. What is pinned, one line each:
+The owner (2026-10-21) asked for a field to create tags of one's own beside the standard markers
+(thirteen then; the eight generic ones since R-T13, 2026-10-22, when the coordination's five became
+the tenant's tags); the Director's design keeps only tags with a FIXED value, the tenant's, valid
+in EVERY persona («tags padrão para tudo»). A tag is ``{name: value}``: the name is
+``[a-z][a-z0-9_]{1,30}`` and never a standard marker nor a reserved name; the value is plain text,
+one line or several, at most 500 characters. What is pinned, one line each:
 
 * the twin — a template with ``[horario_atendimento]`` SAVES when the tenant has that tag, and
   is filled with its value (on the base it was refused as «não é um marcador»);
 * the control — without the tag the refusal is byte for byte the base's, and a template that
   uses no company tag validates, fills and renders the same with or without the tenant's tags;
-* a collision with any of the thirteen and with the reserved names is refused, and a tag can
-  never unlock a reserved marker nor override a standard one;
+* a collision with a standard marker and with the reserved names is refused, and a tag can
+  never unlock a reserved marker nor override a standard one; the coordination's five names are
+  ordinary tag names since R-T13 (inverted: they were reserved);
 * a tag removed after the template was saved: the save door refuses the template, the turn door
   keeps it because the host names the tags the tenant REMOVED (``removed_tags=``), and the fill
   says ``missing`` — «tag personalizada removida» — so the send asks the requester instead of
   sending. A name the tenant never declared (a typo) is refused at BOTH doors, as before;
 * PER PERSONA: the company tag fills in EVERY row of the per-persona matrix
-  (``test_email_fill_by_persona.py``'s, derived from :data:`FIELD_PROVIDERS`), and leaves the
-  rest of each row exactly as it was. A provider persona without a row fails here too;
+  (``test_email_fill_by_persona.py``'s ``ROWS``), and leaves the rest of each row exactly as it
+  was;
 * the name grammar and the value limits, with the adversarial spellings that must NOT pass;
 * a multi-line value never reaches a subject, and a value is never read as a template.
 
@@ -35,7 +37,6 @@ import pytest
 import cogno_praxis.email_fields as ef
 from cogno_praxis.email_fields import (
     EMAIL_FIELDS,
-    FIELD_PROVIDERS,
     GENERIC_FIELDS,
     REFUSED_FIELDS,
     EmailContext,
@@ -46,7 +47,8 @@ from cogno_praxis.email_fields import (
     template_fields,
     validate_template,
 )
-from tests.unit.test_email_fill_by_persona import EXPECTED_FILLS, T_ALL, _full_context
+from tests.unit.test_email_fields import FREE
+from tests.unit.test_email_fill_by_persona import ROWS, T_ALL, _full_context
 
 TAG = "horario_atendimento"
 VALUE = "de segunda a sexta, das 8h às 18h"
@@ -95,18 +97,22 @@ def test_the_tenants_other_tags_do_not_open_it():
     assert reason.startswith("no corpo, [horario_atendimento] não é um marcador;")
 
 
+#: The eight markers alone — a template that cites no company tag.
+T_GENERIC = ("Aviso de [mes] — [empresa] — [nome] — [email] — [data] — [assinatura] — "
+             "[solicitante]", "[conteudo]")
+
+
 def test_control_a_template_without_company_tags_is_unchanged_by_the_tenants_tags():
-    fields = template_fields(*T_ALL)
-    # T_ALL cites the coordination's five: valid for the COORDINATOR only (2026-10-22)
-    assert validate_template(*T_ALL, persona="COORDINATOR", custom_tags=TAGS) == \
-        validate_template(*T_ALL, persona="COORDINATOR") == ()
-    plain = fill_email_fields(fields, _full_context(), persona="COORDINATOR")
+    fields = template_fields(*T_GENERIC)
+    assert validate_template(*T_GENERIC, persona="COORDINATOR", custom_tags=TAGS) == \
+        validate_template(*T_GENERIC, persona="COORDINATOR") == ()
+    plain = fill_email_fields(fields, _with_tags(_full_context(), {}), persona="COORDINATOR")
     tagged = fill_email_fields(fields, _with_tags(_full_context(), TAGS), persona="COORDINATOR")
     assert plain == tagged
-    assert render_email(*T_ALL, plain[0]) == render_email(*T_ALL, tagged[0])
+    assert render_email(*T_GENERIC, plain[0]) == render_email(*T_GENERIC, tagged[0])
 
 
-def test_the_refusal_lists_the_tenants_tags_beside_the_thirteen():
+def test_the_refusal_lists_the_tenants_tags_beside_the_eight():
     (reason,) = validate_template("Aviso", "Olá [nmoe]", custom_tags=TAGS)
     assert reason == ("no corpo, [nmoe] não é um marcador; os marcadores são "
                       + ", ".join(known_markers()) + "; e os da empresa: [horario_atendimento]")
@@ -116,17 +122,12 @@ def test_the_refusal_lists_the_tenants_tags_beside_the_thirteen():
 
 @pytest.mark.parametrize("name", sorted(EMAIL_FIELDS))
 def test_a_tag_named_like_a_standard_marker_is_refused(name):
-    """Every name of the union is refused. The sentence of a GENERIC marker is the one of before,
-    byte for byte; a coordination marker is no longer «padrão» (2026-10-22: the default list is
-    the eight), so its sentence says whose tag it is — the verdict is the same."""
+    """Every standard marker's name is refused, with the sentence of before, byte for byte."""
+    assert name in GENERIC_FIELDS
     stored, refusals = ef.normalise_custom_tags({name: "valor"})
     assert stored == {}
-    if name in GENERIC_FIELDS:
-        assert refusals == (f"[{name}] já é um marcador padrão ({EMAIL_FIELDS[name].source}); "
-                            "escolha outro nome",)
-    else:
-        assert refusals == (f"[{name}] já é uma tag da coordenação ({EMAIL_FIELDS[name].source}); "
-                            "escolha outro nome",)
+    assert refusals == (f"[{name}] já é um marcador padrão ({EMAIL_FIELDS[name].source}); "
+                        "escolha outro nome",)
 
 
 def test_the_sentence_of_a_generic_collision_is_the_bases_byte_for_byte():
@@ -136,37 +137,25 @@ def test_the_sentence_of_a_generic_collision_is_the_bases_byte_for_byte():
         "[nome] já é um marcador padrão (o nome do destinatário no cadastro); escolha outro nome",)
 
 
-def test_the_sentence_of_a_coordination_collision_says_whose_tag_it_is():
-    """A TEXT change of the company tags, not a behaviour one: the name is refused as before, and
-    the sentence no longer calls it «padrão» — the default list is the eight (2026-10-22)."""
-    assert ef.custom_tag_problems("aulas", "x") == (
-        "[aulas] já é uma tag da coordenação (as aulas do mês na agenda da coordenação); "
-        "escolha outro nome",)
-
-
-#: The coordination's five — typed here: the names the risk below is about.
+#: The coordination's five — typed here: the names the inversion below is about.
 COORDINATION = ("disciplinas", "aulas", "valor_por_aula", "valores_por_bonus", "total")
 
 
 @pytest.mark.parametrize("name", COORDINATION)
 @pytest.mark.parametrize("persona", ("COORDINATOR", "SECRETARY", None))
-def test_a_coordination_name_stays_reserved_as_a_company_tag_after_the_list_shrank(name, persona):
-    """The risk of 2026-10-22: the DEFAULT list became the eight generic markers, so a collision
-    check that read it would now ACCEPT a company tag named ``aulas`` or ``total`` — a tag that
-    collides with what the COORDINATOR computes. The reservation reads the UNION
-    (:data:`EMAIL_FIELDS`), never the default list, in every persona."""
-    assert f"[{name}]" not in known_markers()             # the condition: the list shrank…
-    assert not ef.is_custom_tag_name(name)                 # …and the name is still no tag
-    stored, refusals = ef.normalise_custom_tags({name: "valor"})
-    assert stored == {} and len(refusals) == 1 and refusals[0].startswith(f"[{name}] já é ")
-    assert ef.parse_custom_tags({name: "valor"}) == {}
-    # a "tag" of that name unlocks nothing and fills nothing, whoever the template is for
+def test_a_coordination_name_is_an_ordinary_company_tag_name_now(name, persona):
+    """INVERTED by R-T13 (was: «stays reserved as a company tag after the list shrank»). The owner:
+    «quando entrar uma persona nova, faço via tags personalizadas» — the coordination's five are
+    the tenant's tags, so the names are saved, opened and filled like any tag, in every persona."""
+    assert f"[{name}]" not in known_markers() and ef.is_custom_tag_name(name)
+    assert ef.custom_tag_problems(name, "x") == ()
+    assert ef.normalise_custom_tags({name: "valor"}) == ({name: "valor"}, ())
+    assert ef.parse_custom_tags({name: "valor"}) == {name: "valor"}
     assert validate_template("Aviso", f"Texto: [{name}]", persona=persona,
-                             custom_tags={name: "valor"}) == \
-        validate_template("Aviso", f"Texto: [{name}]", persona=persona)
+                             custom_tags={name: "valor"}) == ()
     values, _ = fill_email_fields((name,), _with_tags(_host_half(), {name: "VALOR DA TAG"}),
                                   persona=persona)
-    assert values.get(name) != "VALOR DA TAG"
+    assert values.get(name) == "VALOR DA TAG"
 
 
 def test_control_a_company_tag_that_collides_with_nothing_still_passes():
@@ -220,42 +209,29 @@ def test_a_name_never_declared_is_refused_at_the_turn_as_at_the_save():
 def test_removed_names_open_nothing_but_a_tag_name():
     """A «removed» name that cannot be a tag (a reserved marker, a capital, one letter, a digit
     first, a standard marker) changes no verdict."""
-    junk = {"cpf_cnpj", "Nome", "x", "1abc", "nome", "aulas"}
+    junk = {"cpf_cnpj", "Nome", "x", "1abc", "nome"}
     for subject, body in (("NF", "[cpf_cnpj]"), ("Aviso", "Olá [Nome]"), ("Aviso", "[x]"),
-                          ("Aviso", "[1abc]"), ("Total [aulas]", "corpo"), ("Aviso", "[nmoe]")):
+                          ("Aviso", "[1abc]"), ("Total [nome]", "corpo"), ("Aviso", "[nmoe]")):
         assert validate_template(subject, body, removed_tags=junk) == \
             validate_template(subject, body), (subject, body)
 
 
 # ── per persona ──────────────────────────────────────────────────────────────────────────────
 
-def test_every_provider_persona_has_a_row():
-    """The rows are the per-persona matrix's (derived from FIELD_PROVIDERS + a persona with no
-    provider): a provider persona that arrives without a row fails here, by name."""
-    assert set(FIELD_PROVIDERS) <= set(EXPECTED_FILLS), set(FIELD_PROVIDERS) - set(EXPECTED_FILLS)
-    assert any(p not in FIELD_PROVIDERS for p in EXPECTED_FILLS)
-
-
-@pytest.mark.parametrize("persona", sorted(EXPECTED_FILLS))
+@pytest.mark.parametrize("persona", ROWS)
 def test_the_company_tag_fills_in_every_persona_and_leaves_the_row_as_it_was(persona):
     subject, body = T_ALL[0], T_ALL[1] + "\n\nAtendimento: [horario_atendimento]"
     fields = template_fields(subject, body)
-    reasons = validate_template(subject, body, persona=persona, custom_tags=TAGS)
-    if EXPECTED_FILLS[persona] == frozenset(EMAIL_FIELDS):
-        assert reasons == ()
-    else:
-        # only the coordination's markers are refused (2026-10-22); the company tag never is
-        assert reasons and all("é uma tag da coordenação (COORDINATOR)" in r for r in reasons)
-        assert not any(f"[{TAG}]" in r.split(";", 1)[0] for r in reasons)
-    values, missing = fill_email_fields(fields, _with_tags(_full_context(), TAGS),
+    tags = {**FREE, **TAGS}
+    assert validate_template(subject, body, persona=persona, custom_tags=tags) == ()
+    row, _ = fill_email_fields(template_fields(*T_ALL), _full_context(), persona=persona)
+    values, missing = fill_email_fields(fields, _with_tags(_full_context(), tags),
                                         persona=persona)
-    assert values[TAG] == VALUE
-    assert set(values) == EXPECTED_FILLS[persona] | {TAG}
-    assert {m.field for m in missing} == set(EMAIL_FIELDS) - EXPECTED_FILLS[persona]
+    assert missing == () and values[TAG] == VALUE
+    assert {k: v for k, v in values.items() if k != TAG} == row
     # …and with the tag removed, the same row plus the one question about it
-    _, gone = fill_email_fields(fields, _with_tags(_full_context(), {}), persona=persona)
-    assert {m.field for m in gone} == (set(EMAIL_FIELDS) - EXPECTED_FILLS[persona]) | {TAG}
-    assert [m.reason for m in gone if m.field == TAG] == ["tag personalizada removida"]
+    _, gone = fill_email_fields(fields, _with_tags(_full_context(), FREE), persona=persona)
+    assert [(m.field, m.reason) for m in gone] == [(TAG, "tag personalizada removida")]
 
 
 # ── the name, the value, the whole map ───────────────────────────────────────────────────────

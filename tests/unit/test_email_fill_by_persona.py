@@ -1,20 +1,17 @@
-"""The fill, PER PERSONA: a template with all thirteen markers, filled FOR each persona.
+"""The fill, PER PERSONA: one template — the eight markers and the coordination's five as the
+tenant's tags — filled the SAME for every persona (R-T13, 2026-10-22).
 
 The owner's order (2026-10-21): «essa parte do template do e-mail precisa estar bem feita e
-validada com testes por persona». Since 2026-10-22 a template may use the eight generic markers
-and its OWN persona's (``validate_template`` refuses another persona's, so only the COORDINATOR's
-template saves with all thirteen); what a persona can FILL is :func:`fields_for`, and the fill is
-unchanged — it is asked here with every marker, as a host whose stored template predates the rule
-would ask it. ``fill_email_fields(…, persona=X)``
-fills, for X, the markers X has somewhere to read from, and returns each other one as a
-:class:`Missing` that names the marker and WHO reads it — never a value taken from a context X was
-not the reader of.
+validada com testes por persona»; and (2026-10-22) «preciso de algo genérico. Quando entrar uma
+persona nova, faço via tags personalizadas, senão teria que fazer via código». From E3 until R-T13
+the coordination's five were filled by its field provider and only for the COORDINATOR; they are
+the tenant's FREE tags now, filled from what the persona copied from its tools, and
+``fill_email_fields(…, persona=X)`` answers the same for every X.
 
-The matrix is DERIVED: its rows are every persona :data:`FIELD_PROVIDERS` declares plus «a persona
-with no provider», and the test fails when a provider's persona arrives without a row. The praxis
+The rows are DERIVED: every persona :data:`FIELD_PROVIDERS` declares (none — the test fails the
+day one arrives without a row), the persona that had a provider, and one nobody ships. The praxis
 does not know the host's persona catalogue (it does not import the host); the matrix over that
-catalogue — every business persona the host ships — is the host's
-(``tests/unit/test_send_email_by_persona.py`` in cogno-host), and it reads these same rows.
+catalogue is the host's (``hostbench``'s ``email_templates_por_persona``).
 
 Everything here is invented.
 """
@@ -24,86 +21,50 @@ from __future__ import annotations
 import pytest
 
 from cogno_praxis.email_fields import (
-    EMAIL_FIELDS,
     FIELD_PROVIDERS,
     GENERIC_FIELDS,
     fill_email_fields,
     template_fields,
     validate_template,
 )
-from tests.unit.test_email_fields import _ctx, _svc
+from tests.unit.test_email_fields import FIVE, FREE, _ctx
 
-#: All thirteen markers: the multi-line and free-text ones in the body only.
+#: The eight markers and the five tags: the multi-line and free-text ones in the body only.
 T_ALL = ("Aviso de [mes] — [empresa] — [nome] — [email] — [data] — [assinatura] — [solicitante] "
          "— [valor_por_aula] — [total]",
          "[conteudo]\n\n[aulas]\n\n[disciplinas]\n\n[valores_por_bonus]")
 
-#: A persona with NO provider: what any of the host's other business personas is, here.
-NO_PROVIDER = "PERSONA_ZETA_SEM_PROVIDER"
-
-#: The expected row per persona: the markers it FILLS. Everything else must come out `missing`.
-#: A key per provider persona, plus the row of a persona with none.
-EXPECTED_FILLS: "dict[str, frozenset[str]]" = {
-    "COORDINATOR": frozenset(EMAIL_FIELDS),
-    NO_PROVIDER: frozenset(GENERIC_FIELDS),
-}
+#: The persona that HAD a provider, and one nobody ships.
+ROWS = ("COORDINATOR", "PERSONA_ZETA_SEM_PROVIDER", *FIELD_PROVIDERS)
 
 
 def _full_context():
-    """A context that HOLDS every value — the coordinator's read included — so a marker that
-    comes out missing is missing because of the persona, never because the data was absent."""
-    return _ctx(_svc(ibope="92"), conteudo="Bom mês!", today=__import__("datetime").date(2026, 9, 7),
+    return _ctx(conteudo="Bom mês!", today=__import__("datetime").date(2026, 9, 7),
                 persona_name="Assistente Vexa", requester_name="Coord Gama")
 
 
-#: The coordination's sentence for each of its markers in :data:`T_ALL`, where it is cited.
-_REFUSED_OUTSIDE = ("no assunto, [valor_por_aula]", "no assunto, [total]", "no corpo, [aulas]",
-                    "no corpo, [disciplinas]", "no corpo, [valores_por_bonus]")
+def test_the_template_uses_the_eight_and_the_five_and_is_valid_for_every_row():
+    assert set(template_fields(*T_ALL)) == set(GENERIC_FIELDS) | set(FIVE)
+    for persona in ROWS:
+        assert validate_template(*T_ALL, persona=persona, custom_tags=FREE) == (), persona
 
 
-def test_the_template_uses_all_thirteen_and_is_valid_only_for_the_row_that_fills_them():
-    """Inverted (was: «valid for every row»): only the persona whose provider declares the five
-    may SAVE a template that uses them; every other row is refused once per coordination marker,
-    each sentence naming the coordination."""
-    assert set(template_fields(*T_ALL)) == set(EMAIL_FIELDS) and len(EMAIL_FIELDS) == 13
-    for persona, fills in EXPECTED_FILLS.items():
-        reasons = validate_template(*T_ALL, persona=persona)
-        if fills == frozenset(EMAIL_FIELDS):
-            assert reasons == (), (persona, reasons)
-            continue
-        assert [r.split(" é uma tag da coordenação (COORDINATOR):", 1)[0] for r in reasons] == \
-            list(_REFUSED_OUTSIDE), (persona, reasons)
+def test_no_persona_has_a_provider():
+    assert dict(FIELD_PROVIDERS) == {}
 
 
-def test_every_provider_persona_has_a_row():
-    """Derived: a persona that gains a provider without a row here fails, by name."""
-    assert set(FIELD_PROVIDERS) <= set(EXPECTED_FILLS), set(FIELD_PROVIDERS) - set(EXPECTED_FILLS)
-    assert NO_PROVIDER not in FIELD_PROVIDERS
-
-
-@pytest.mark.parametrize("persona", sorted(EXPECTED_FILLS))
-def test_the_thirteen_markers_filled_for_each_persona(persona):
+@pytest.mark.parametrize("persona", ROWS)
+def test_every_row_fills_everything_and_the_same_bytes(persona):
     values, missing = fill_email_fields(template_fields(*T_ALL), _full_context(), persona=persona)
-    fills = EXPECTED_FILLS[persona]
-    assert set(values) == fills
-    assert {m.field for m in missing} == set(EMAIL_FIELDS) - fills
-    for m in missing:
-        owner = next(p for p in FIELD_PROVIDERS.values() if m.field in p.field_names)
-        # the reason names the marker and WHO reads it
-        assert m.reason == (f"o template usa [{m.field}], que esta persona não consegue "
-                            f"preencher: só a {owner.label} ({owner.persona}) o lê")
-        assert m.source == EMAIL_FIELDS[m.field].source
+    assert missing == ()
+    assert values == fill_email_fields(template_fields(*T_ALL), _full_context())[0]
 
 
-def test_a_marker_the_persona_cannot_fill_is_never_taken_from_the_context():
-    """The context holds the classes; a persona that is not their reader still gets them missing."""
-    values, _ = fill_email_fields(("aulas", "nome"), _full_context(), persona=NO_PROVIDER)
-    assert "aulas" not in values and values["nome"]
-
-
-def test_control_no_persona_fills_from_the_context_as_before():
-    values, missing = fill_email_fields(template_fields(*T_ALL), _full_context())
-    assert missing == () and set(values) == set(EMAIL_FIELDS)
-    # …and the persona that reads everything gets byte for byte the same values
-    same, _ = fill_email_fields(template_fields(*T_ALL), _full_context(), persona="COORDINATOR")
-    assert same == values
+def test_control_without_the_tenants_tags_every_row_asks_the_same():
+    """The same template on a tenant that declared none of the five: each is a removed tag for
+    every row, alike — never filled from anywhere."""
+    ctx = _full_context()
+    ctx = type(ctx)(**{**ctx.__dict__, "custom_tags": {}})
+    answers = {p: fill_email_fields(template_fields(*T_ALL), ctx, persona=p)[1] for p in ROWS}
+    assert len(set(answers.values())) == 1
+    assert {m.field for m in answers["COORDINATOR"]} == set(FIVE)
