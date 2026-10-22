@@ -287,7 +287,7 @@ path.
       <value>», in the order of the code;
     - `disciplina` colours each distinct value with ONE colour across the e-mail
       (`record_colors`: by first appearance, the tenant's accent first, `DEFAULT_PALETTE`
-      cycled);
+      cycled), in HTML on the discipline's cell and on its row's `data` cell (R-T18);
     - a record whose keys are only `mes`/`dia`/`data`/`horario`/`disciplina`/`turma`, with a
       `data` and a `disciplina`, is the dated line «06/10 (ter) 19:00 — Disciplina».
   - **Any other record is one line by how many keys it shows** (the group key aside, R-T13): ONE
@@ -298,8 +298,16 @@ path.
   - A free tag whose value is a list of records, ALONE on a line of the template, is its tables
     (`records_html`), the colours counted over every list of the e-mail. The coordination's
     `[aulas]` is one table per class group, Mês · Dia · Data · Horário (when the group has one) ·
-    Disciplina, the discipline coloured; its `[valores_por_bonus]` a two-column table (Faixa ·
-    Valor); its `[disciplinas]` a list. No value is bold by its NAME (until R-T13 `[total]` and
+    Disciplina, the discipline's colour on its cell and on the Data cell, Mês and Dia white.
+    **Mês and Dia are derived when the records do not bring them** (R-T18): a TIMETABLE — a table
+    whose columns are only the dated keys, with a `data` and a `disciplina` — leads with Mês · Dia
+    · Data, and a record without `mês`/`dia` (or with it empty) gets «out.-26» and «ter.» from the
+    date its Data cell shows. A record that brings them shows its own (the sheet's). A date that
+    does not read, or is shown with no year (a `dd/mm` of another month than the send's), leaves
+    both cells empty and the row goes on; a derived column empty in every row is not drawn. The
+    words are the module's own pt-BR tables, the language of every word the renderer writes. The
+    TEXT never carries a derived cell: it is what the requester confirms, byte for byte as before.
+    Its `[valores_por_bonus]` is a two-column table (Faixa · Valor); its `[disciplinas]` a list. No value is bold by its NAME (until R-T13 `[total]` and
     `[valor_por_aula]` were): emphasis is the template's.
   - **The tenant's text is simple rich text — four rules, nothing else of Markdown.** A blank
     line separates paragraphs. A line opened by «•» or «·» is a list item, and a line opened by

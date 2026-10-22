@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+### Changed — the class table derives Mês and Dia from the date, and the discipline's colour paints the Data cell too (R-T18, 2026-10-22)
+
+- **Why.** The owner sent the e-mail he expects: one table per class group with the columns Mês ·
+  Dia · Data · Disciplina, and the discipline's colour on the Data cell as well. `records_html`
+  drew Mês and Dia only when the RECORDS carried them, and the records are what the executor
+  copies from a read that prints `dd/mm · turma · disciplina`. In the send that passed, the
+  records carried Turma, Data and Disciplina only. When the template's hint asked the model for
+  the two columns, it dropped the class key, and with no class key there is no table per class.
+  The model's «Dia» was also the day of the month, not the weekday.
+- **What** (`records_html`, HTML only):
+  - A TIMETABLE (`_is_timetable`) is a table whose columns are only the dated keys and include a
+    `data` and a `disciplina`. It leads with Mês · Dia · Data, whatever order the records bring
+    the keys in. The other columns follow in the order they came (Horário keeps its place).
+  - A record without `mês`/`dia`, or with one of them empty, gets it DERIVED from the date its
+    Data cell shows (`_shown_date`): Mês «out.-26», Dia «ter.». A record that brings its own
+    shows its own, because it is the sheet's data.
+  - A date that does not read (`dia cinco`, `2026-10-06`, `31/02/26`) leaves both cells empty and
+    the row goes on. So does a date shown with no year: a `dd/mm` of another month than the
+    send's, or any `dd/mm` with no month, has no weekday, and nothing is invented. A derived
+    column empty in every row is not drawn, like an hour nobody has.
+  - The Data cell takes its row's discipline colour, by the same lookup as the discipline's own
+    cell. Mês, Dia and Horário stay white.
+  - **Language:** the words come from the module's own tables (`_PT_MONTHS`, `_WEEKDAYS`), the
+    ones `record_cells_unverified` already checks a brought Mês/Dia against. The text's «07/10
+    (qua.)» is the record's own `dia` cell (`_record_line`) and never a derivation, so there was
+    nothing else to reuse. They are pt-BR, the language of every word the
+    renderer writes («Turma», `month_words`, `<html lang="pt-BR">`). A tenant in another language
+    gets pt-BR abbreviations too; a sheet that brings its own Mês or Dia, in any language, is
+    shown as it brings them.
+- **Unchanged.** The TEXT part (`records_text`, `render_email_forms`'s `text`): it is what the
+  proposal shows and the «sim» compares (`email_digest`). It is pinned by digests taken on the
+  base for three record shapes. Every table that is not a timetable keeps its columns and order.
+  `MAX_HEADING_CHARS`, the signature and the appearance are untouched.
+- **Tests.** `tests/unit/test_email_table_month_and_weekday.py` (26), red on the base: 16 of 26.
+  The 10 that pass there are the text pins and their control, the adverse probes and the text-only
+  check, which must hold in both worlds. `test_email_html.py`: «Mês · Dia · Data stay white»
+  became «Data takes its row's colour», red on the base.
+- **Docs.** README (the colour, the derivation), `docs/HOST_INTEGRATION.md` (tables for other
+  data: no need to ask the model for the weekday).
+
 ### Added — the SCOPE of a company tag: every persona, or the ones the tenant names (R-T16, 2026-10-22)
 
 - **Why.** The owner: «são por persona. Mas no caso as que existem são só do coordinator». The

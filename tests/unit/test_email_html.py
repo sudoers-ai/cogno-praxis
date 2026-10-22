@@ -14,7 +14,9 @@ lists and section titles, and the tenant's signature block. What is pinned here,
   pinned by value;
 * ``[aulas]`` is one table per class group under its title, in code order, Mês · Dia · Data ·
   Horário (when the group has an hour) · Disciplina; a discipline's colour is the same everywhere
-  in the e-mail, by order of first appearance, the tenant's accent first;
+  in the e-mail, by order of first appearance, the tenant's accent first, and paints the Data cell
+  of its row too (R-T18 — the derivation of Mês and Dia is
+  ``test_email_table_month_and_weekday.py``);
 * the body is simple rich text: paragraphs, «•»/«·» lists («-» stays a line), short «…:» titles,
   the tenant's URLs as links — and nothing else becomes markup;
 * the appearance's SAVE door refuses every URL that is not ``http``/``https`` (``javascript:``,
@@ -411,9 +413,15 @@ def test_each_discipline_has_one_colour_in_the_whole_email_by_first_appearance()
     assert list(colours) == ["Redes de Computadores", "Zoologia Aplicada", "banco de dados",
                              "Cálculo Numérico"]
     assert list(colours.values()) == list(DEFAULT_PALETTE[:4])
-    # Mês · Dia · Data stay white
-    assert all("background:#ffffff" in td for td in re.findall(
-        r'<td style="([^"]*width:1%[^"]*)"', doc))
+    # Mês · Dia · Horário stay white; Data takes its row's discipline colour (R-T18, the owner's
+    # model — tests/unit/test_email_table_month_and_weekday.py)
+    for table in _tables(doc):
+        assert _head(table)[:3] == ["Mês", "Dia", "Data"]
+        for row in re.findall(r"<tr>(.*?)</tr>", table.split("<tbody>", 1)[1], flags=re.S):
+            styles = re.findall(r'<td style="([^"]*)">', row)
+            backs = [re.search(r"background:(#[0-9a-f]{6})", s).group(1) for s in styles]
+            assert backs[2] == backs[-1] != "#ffffff"
+            assert [b for i, b in enumerate(backs[:-1]) if i != 2] == ["#ffffff"] * (len(backs) - 2)
 
 
 def test_the_colours_do_not_depend_on_the_order_the_class_groups_arrive_in():
