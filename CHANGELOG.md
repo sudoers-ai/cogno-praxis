@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Fixed — a dark accent colour no longer paints table cells nobody can read (2026-10-22)
+
+- **Why.** The tenant's accent colour (`EmailAppearance.accent_color`) is the FIRST colour of the
+  discipline palette (`_palette`), so it paints the first discipline's cells and, since R-T18, that
+  row's Data cell too. The ink of every cell was the body's near-black (`_INK`), and the panel
+  accepts any `#RRGGBB`. Measured on `8ee7cbd`: a navy accent (`#1f3a5f`) gave 1.38:1 and
+  `#123456` gave 1.24:1, against 4.5:1 for WCAG AA body text. Nobody saw it: the six default
+  colours and the light accents in use read at 9.4:1 or more (the owner's is a light yellow).
+- **What** (`records_html`, HTML only): a painted cell goes through `_paint`. When the body's ink
+  reads under `MIN_CELL_CONTRAST` (4.5) on its background and white reads better, the cell gets
+  `color:#ffffff`; otherwise nothing is added. The contrast is the WCAG 2.x formula
+  (`_luminance`, `_contrast`).
+- **What does not move.** A light accent, and an e-mail with no appearance, render the bytes they
+  rendered on `8ee7cbd` (digests taken there). No default colour gets an ink of its own. A white
+  cell never does. The text part does not move: the colour is HTML only.
+- **Tests:** `tests/unit/test_email_cell_ink_contrast.py`.
+  - Red on `8ee7cbd`: 4 dark accents and the sweep over the 4096 `#RGB` accents.
+  - Green there and after: the controls (5 light-accent digests with their sensitivity check, the
+    default colours, the white cell, the text part).
+  - The contrast is computed in the test, not imported, so a mutated formula cannot agree with
+    it.
+
 ### Changed — the class table derives Mês and Dia from the date, and the discipline's colour paints the Data cell too (R-T18, 2026-10-22)
 
 - **Why.** The owner sent the e-mail he expects: one table per class group with the columns Mês ·
