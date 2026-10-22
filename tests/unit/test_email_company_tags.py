@@ -276,8 +276,6 @@ def test_names_that_are_not(name):
 
 
 @pytest.mark.parametrize("value, words", [
-    ("", "está vazio"),
-    ("   \n  ", "está vazio"),
     ("x" * 501, "tem 501 caracteres; o máximo é 500"),
     ("linha\x00com nulo", "caractere de controle"),
     ("sino\x07", "caractere de controle"),
@@ -295,6 +293,10 @@ def test_values_that_are_refused(value, words):
     ("Segunda a sexta\r\nSábado até 12h", "Segunda a sexta\nSábado até 12h"),
     ("coluna\ta\ncoluna\tb", "coluna\ta\ncoluna\tb"),
     ("[nome] fica como texto", "[nome] fica como texto"),
+    # 2026-10-22: an EMPTY value is a FREE tag (``test_email_free_tags.py``) — inverted from
+    # the refusal «está vazio» the G package pinned.
+    ("", ""),
+    ("   \n  ", ""),
 ])
 def test_values_that_are_kept_and_how_they_are_stored(value, stored):
     assert ef.custom_tag_problems(TAG, value) == ()
@@ -314,7 +316,8 @@ def test_the_whole_map_is_refused_by_every_reason_and_stores_nothing():
 
 def test_the_tolerant_reader_drops_what_the_save_would_refuse_and_never_raises():
     raw = {TAG: f"  {VALUE}  ", "nome": "x", "Ruim": "y", "vazia": "  ", "n2": 7}
-    assert ef.parse_custom_tags(raw) == {TAG: VALUE}
+    # 2026-10-22: the blank value is a FREE tag now, kept empty (it was dropped)
+    assert ef.parse_custom_tags(raw) == {TAG: VALUE, "vazia": ""}
     for garbage in (None, "texto", 7, ["a"], {1: "x"}):
         assert ef.parse_custom_tags(garbage) == {}
 
