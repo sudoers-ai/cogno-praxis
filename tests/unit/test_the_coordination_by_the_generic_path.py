@@ -28,6 +28,11 @@ named transformation before the comparison, so the digest proves that it is the 
   provider ended the value with them, the generic value does not. A tenant writes the condition
   in its template (or in a fixed tag).
 * ``[valores_por_bonus]`` in HTML — the condition paragraph after the table, for the same reason.
+* ``[aulas]`` in HTML — the Data cell carries its row's discipline colour (R-T18, the owner's
+  model e-mail); it was white. Undone by :func:`_unpaint_dates` before the comparison, which must
+  find one on every row: the colour is the ONLY difference, and the corpus's records bring their
+  own Mês and Dia, so nothing is derived here
+  (``tests/unit/test_email_table_month_and_weekday.py`` is the derivation).
 * ``[total]`` and ``[valor_por_aula]`` in HTML — the provider made an e-mail with either of them
   HTML, the figure in bold by its NAME. The generic path draws HTML only for an e-mail that
   carries a list of records, and bolds nothing by name: such an e-mail goes out as the text it
@@ -283,6 +288,15 @@ def test_the_text_forms_are_the_providers_byte_for_byte():
         assert _digest(parts) == BASE_FORMS[(tname, "text")], tname
 
 
+_PAINTED_DATE = re.compile(r"(width:1%;white-space:nowrap;background:)#(?!ffffff)[0-9a-f]{6}")
+
+
+def _unpaint_dates(doc: str) -> "tuple[str, int]":
+    """DIVERGENCE (declared, R-T18): the Data cell — the one narrow cell that is painted — back to
+    white; ``(doc, how many)``."""
+    return _PAINTED_DATE.subn(r"\1#ffffff", doc)
+
+
 def test_the_html_tables_are_the_providers_but_for_the_declared_divergences():
     for tname in ("aulas", "disciplinas", "bonus"):
         parts = []
@@ -291,6 +305,10 @@ def test_the_html_tables_are_the_providers_but_for_the_declared_divergences():
                 # DIVERGENCE (declared): the condition paragraph after the table.
                 doc = doc.replace("</table>", '</table><p style="margin:0 0 12px">'
                                   + html.escape(_condition(pay), quote=True) + "</p>", 1)
+            if doc and tname == "aulas":
+                rows = doc.count("<tr><td")
+                doc, painted = _unpaint_dates(doc)
+                assert painted == rows > 0          # one painted Data cell per row, no other
             parts.append("ABSENT" if doc is None else doc)
         assert _digest(parts) == BASE_FORMS[(tname, "html")], tname
 

@@ -318,7 +318,11 @@ read, and the tenant's appearance from `parse_email_appearance(<what you stored>
   carries the configured signature's lines.
 - **Tables for other data.** `records_html(records, colors=record_colors([records],
   appearance))` and `records_text(records)` draw any list of records (`{key: text}`) the same
-  way: one column per key, a table per `turma`, a colour per `disciplina`.
+  way: one column per key, a table per `turma`, a colour per `disciplina` (on its cell and on the
+  row's `data` cell). A timetable — only the dated keys, with a `data` and a `disciplina` — leads
+  with Mês · Dia · Data, the two DERIVED in the HTML from the date when the records do not bring
+  them (R-T18); the text never carries a derived cell, so `email_digest` is unchanged. Hand the
+  records over as the read printed them: there is no need to ask the model for the weekday.
 - **Storing the appearance.** Whose it is — the tenant's, or one per persona — is yours. Save it through
   `normalise_email_appearance` (answer the refusals with a 4xx and store nothing). Read it back
   through `parse_email_appearance`. The logo and the icons are the only images an e-mail loads,

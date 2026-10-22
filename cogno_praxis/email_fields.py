@@ -903,7 +903,9 @@ def date_words(day: date) -> str:
 #
 # * ``turma`` — the records are split into one block per value, titled «Turma <value>», the blocks
 #   in the order of the value (a list without it is one block, untitled);
-# * ``disciplina`` — in the HTML, each distinct value has one colour across the whole e-mail;
+# * ``disciplina`` — in the HTML, each distinct value has one colour across the whole e-mail, on
+#   its cell and on the row's ``data`` cell; a TIMETABLE leads with Mês · Dia · Data, the first two
+#   derived from the date when the records do not bring them (R-T18, :func:`records_html`);
 # * a record whose keys are all among ``mes``/``dia``/``data``/``horario``/``disciplina``/``turma``
 #   and that has ``data`` and ``disciplina`` is written as a dated line, «06/10 (ter) 19:00 —
 #   Disciplina».
@@ -1590,7 +1592,8 @@ _TABLE_STYLE = "border-collapse:collapse;width:100%;margin:4px 0 12px;font-size:
 _TH_STYLE = (f"background:{_HEAD_BG};font-weight:700;text-align:center;"
              f"border:1px solid {_CELL_BORDER};padding:6px 8px")
 _TD_STYLE = f"border:1px solid {_CELL_BORDER};padding:6px 8px;text-align:center"
-_NARROW = "width:1%;white-space:nowrap;background:#ffffff"
+_NARROW_BOX = "width:1%;white-space:nowrap"
+_NARROW = f"{_NARROW_BOX};background:#ffffff"
 _GROUP_TITLE_STYLE = "margin:12px 0 4px;font-size:13px;font-weight:600;color:#57606a"
 #: A section title: a line of the template that ends with «:» and is at most this long, rendered.
 MAX_HEADING_CHARS = 40
@@ -1669,6 +1672,49 @@ def _header(key: str) -> str:
     return text[:1].upper() + text[1:]
 
 
+# ── a timetable's Mês and Dia, derived from the date (R-T18, 2026-10-22) ──────────────────────
+#
+# The owner's model e-mail is a table per class group with the columns Mês · Dia · Data ·
+# Disciplina, and the discipline's colour on the Data cell too. The records are what the executor
+# copies from a read that prints «dd/mm · turma · disciplina» — no month, no weekday — and asking
+# the model for the two columns made it drop the class key (no class key, no table per class).
+# So the HTML DERIVES them, from the date the Data column shows, and the TEXT never does: the text
+# is what the proposal shows and the «sim» compares, and it does not move by a byte.
+#
+# The words are this module's own tables (:data:`_PT_MONTHS`, :data:`_WEEKDAYS`): pt-BR, like every
+# word the renderer writes («Turma», ``month_words``, ``<html lang="pt-BR">``). A tenant writing in
+# another language gets them in pt-BR too; a sheet that brings its own Mês or Dia, in any language,
+# is shown as it brings them.
+
+#: The columns a timetable leads with, in this order; the rest keep the order they came in.
+_TIMETABLE_LEAD = ("mes", "dia", "data")
+#: The lead columns a timetable derives when its records do not bring them, and their headers.
+_DERIVED_HEADERS = {"mes": "Mês", "dia": "Dia"}
+
+
+def _is_timetable(keys: "Iterable[str]") -> bool:
+    """Whether a table of these columns is a TIMETABLE: only the dated keys, with a ``data`` and a
+    ``disciplina`` — the table form of the dated line (:func:`_record_line`)."""
+    folded = {_fold_key(k) for k in keys}
+    return folded <= _DATED_KEYS and {"data", _COLOR_KEY} <= folded
+
+
+def _shown_date(cell: str, month: str) -> "Optional[date]":
+    """The date a ``data`` cell SHOWS in the HTML (:func:`_date_with_year`) — ``None`` when it shows
+    no year (a ``dd/mm`` of another month than ``month``, or no ``month`` at all) or is no such
+    date: without a year a date has no weekday, and nothing is invented."""
+    return _record_date({"data": _date_with_year(cell, month)}, "")
+
+
+def _derived_cell(name: str, day: "Optional[date]") -> str:
+    """``mes`` → «out.-26», ``dia`` → «ter.» (the owner's model) — ``""`` with no ``day``."""
+    if day is None:
+        return ""
+    if name == "mes":
+        return f"{_PT_MONTHS[day.month][:3]}.-{day.year % 100:02d}"
+    return f"{_WEEKDAYS[day.weekday()]}."
+
+
 def records_html(records: object, *, colors: "Optional[Mapping[str, str]]" = None,
                  month: str = "") -> str:
     """A list of records as HTML TABLES — the generic renderer every table of an e-mail is drawn
@@ -1679,7 +1725,15 @@ def records_html(records: object, *, colors: "Optional[Mapping[str, str]]" = Non
     * With a ``turma`` key: ONE table per value, under its «Turma X» title, in the order of the
       value, and no ``turma`` column (the table IS the class group's).
     * With a ``disciplina`` key: that cell has the value's colour (``colors``, from
-      :func:`record_colors`), the other cells are white and narrow, the discipline's wide.
+      :func:`record_colors`), and so has the row's ``data`` cell (R-T18: the owner's model paints
+      both); the other cells are white and narrow, the discipline's wide.
+    * A TIMETABLE (:func:`_is_timetable`: only the dated keys, with a ``data`` and a
+      ``disciplina``) leads with Mês · Dia · Data, the other columns after them in the order they
+      came (R-T18). A record that does not bring ``mês`` or ``dia`` — or brings it empty — gets it
+      DERIVED from the date its Data cell shows (:func:`_shown_date`): «out.-26», «ter.»; one that
+      brings it shows its own, the sheet's. A date that does not read, or is shown with no year,
+      leaves both cells empty and the row goes on; a derived column empty in every row is left
+      out, like any other. The TEXT (:func:`records_text`) never carries a derived cell.
     * Records that show ONE key (the group key aside) are a LIST, one item per record — a list
       of values is a list, not a one-column table (R-T13: the shape ``[disciplinas]`` always had).
     * A ``data`` cell ``dd/mm`` whose date falls in ``month`` (``YYYY-MM``, the send's) is shown
@@ -1701,19 +1755,39 @@ def records_html(records: object, *, colors: "Optional[Mapping[str, str]]" = Non
         for r in group:
             keys += [k for k in r if k not in keys and _fold_key(k) != _GROUP_KEY]
         keys = [k for k in keys if any(r.get(k) for r in group)]
-        colored = any(_fold_key(k) == _COLOR_KEY for k in keys)
+        # (header, the record's key — "" for a derived column —, the lead name it derives, "" none)
+        columns = [(_header(k), k, "") for k in keys]
+        if _is_timetable(keys):
+            lead: "list[tuple[str, str, str]]" = []
+            for name in _TIMETABLE_LEAD:
+                own = [(h, k, name if name in _DERIVED_HEADERS else "")
+                       for h, k, _ in columns if _fold_key(k) == name]
+                lead += own or ([(_DERIVED_HEADERS[name], "", name)]
+                                if name in _DERIVED_HEADERS else [])
+            columns = lead + [c for c in columns if _fold_key(c[1]) not in _TIMETABLE_LEAD]
+        # a record key is never blank (as_records), so "" is "no discipline column"
+        discipline = next((k for k in keys if _fold_key(k) == _COLOR_KEY), "")
+        colored = bool(discipline)
         rows = []
         for r in group:
             row = []
-            for k in keys:
-                cell = r.get(k, "")
+            for _, k, derive in columns:
+                cell = r.get(k, "") if k else ""
+                if not cell and derive:
+                    cell = _derived_cell(derive, _shown_date(_field(r, "data"), month))
                 if colored and _fold_key(k) == _COLOR_KEY:
                     row.append((cell, f"background:{colors.get(cell, '#ffffff')}"))
+                elif _fold_key(k) == "data":
+                    # the row's discipline colour (R-T18) — the same lookup its own cell makes
+                    paint = colors.get(r.get(discipline, ""), "#ffffff") if colored else ""
+                    row.append((_date_with_year(cell, month),
+                                f"{_NARROW_BOX};background:{paint}" if colored else ""))
                 else:
-                    shown = _date_with_year(cell, month) if _fold_key(k) == "data" else cell
-                    row.append((shown, _NARROW if colored else ""))
+                    row.append((cell, _NARROW if colored else ""))
             rows.append(row)
-        out.append(title + _table([_header(k) for k in keys], rows))
+        kept = [i for i in range(len(columns)) if any(row[i][0] for row in rows)]
+        out.append(title + _table([columns[i][0] for i in kept],
+                                  [[row[i] for i in kept] for row in rows]))
     return "".join(out)
 
 
