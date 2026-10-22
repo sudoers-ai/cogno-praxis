@@ -97,10 +97,11 @@ when a request asks for it. This module is the **closed list of markers** and th
 fills them; the host owns the send, the confirmation and the audit. The model writes exactly one
 marker, `[conteudo]` (the free text of the request); every other value is filled in code.
 
-**One list for every persona, in two halves by who can FILL a marker (2026-10-21).** Every
-marker of `EMAIL_FIELDS` is valid in any persona's template; what depends on the persona is
-whether it has somewhere to read the value from. `GENERIC_FIELDS` come from the tenant's records,
-the tenant, the request or the clock, so every persona fills them:
+**The default markers serve every persona; a persona's own are added only to its template
+(2026-10-22).** The owner's rule: «vamos deixar somente as tags que servem para todos, tags
+especificas precisam ser adicionadas». `GENERIC_FIELDS` are the default list — `known_markers()`
+with no persona — and come from the tenant's records, the tenant, the request or the clock, so
+every persona's template may use them and every persona fills them:
 
 | generic marker | value |
 |---|---|
@@ -112,8 +113,9 @@ the tenant, the request or the clock, so every persona fills them:
 | `[solicitante]` | the name of the person who asked for the e-mail |
 | `[conteudo]` | the free text, at most once per template, never in the subject |
 
-Every other marker is **filled by one persona** and is declared by that persona's
-`FieldProvider` in `FIELD_PROVIDERS` (by persona id). Today there is one, the `COORDINATOR`'s:
+Every other marker **belongs to one persona** and is declared by that persona's `FieldProvider`
+in `FIELD_PROVIDERS` (by persona id): it is valid in THAT persona's template only, and only that
+persona fills it. Today there is one, the `COORDINATOR`'s:
 
 | `COORDINATOR` marker | value |
 |---|---|
@@ -122,7 +124,8 @@ Every other marker is **filled by one persona** and is declared by that persona'
 | `[valores_por_bonus]` | «Sem bônus» and one line per DECLARED bonus band, always per month; the applied band is marked only when the bonus is determined |
 | `[total]` | only when the bonus is determined (or the rules declare no band) |
 
-`EMAIL_FIELDS` is the union of the two, derived. A provider **declares** fields; it reads
+`EMAIL_FIELDS` is the union of the two, derived: every name the fill knows, and every name a
+company tag may never take. A provider **declares** fields; it reads
 nothing, and this module imports no service — which service answers for a provider is the
 host's wiring. `provider_fields(fields)` tells the host which providers a template needs (`{}`
 for a template of generic markers alone: nothing persona-specific is read to compose it), and
@@ -136,10 +139,12 @@ what catches `[nmoe]`. There is no marker for the sender's mailbox: `[assinatura
 persona and `[solicitante]` the person who asked, and no marker quotes a third person's data.
 
 **The tenant's own markers — company tags with a FIXED value (2026-10-21).** Beside the
-thirteen, a tenant may declare tags of its own, `{name: value}`, valid in EVERY persona's
+markers above, a tenant may declare tags of its own, `{name: value}`, valid in EVERY persona's
 template: `[horario_atendimento]` → «de segunda a sexta, das 8h às 18h». The name is
 `CUSTOM_TAG_NAME` (`[a-z][a-z0-9_]{1,30}`: lowercase, no accent, no space) and is never one of
-the thirteen nor a reserved name (`[cpf_cnpj]`, `[contrato]`). The value is plain text, one line
+the thirteen of `EMAIL_FIELDS` — the coordination's five included, in every persona, although the
+default list is the eight («[aulas] já é uma tag da coordenação (…); escolha outro nome») — nor a
+reserved name (`[cpf_cnpj]`, `[contrato]`). The value is plain text, one line
 or several (line breaks and tabs are the only control characters), at most
 `MAX_CUSTOM_TAG_CHARS` (500) characters, and a tenant holds at most `MAX_CUSTOM_TAGS` (50). It is
 the business's DATA and never an instruction: a host that lets it into a prompt fences it like
@@ -150,7 +155,7 @@ any other text of the tenant.
   keep, the rest dropped, never a refusal. `custom_tag_problems(name, value)` is the one rule
   both apply.
 - `validate_template(…, custom_tags=…)` accepts the tenant's tags (a mapping, or just the names)
-  beside the thirteen, in any persona; with the values, a tag that spans lines is refused in the
+  beside the persona's markers, in any persona; with the values, a tag that spans lines is refused in the
   subject. A name that cannot be a tag is ignored, so it unlocks nothing. With no `custom_tags`
   the verdict is the one of before, byte for byte. `removed_tags=` is the turn's reading: the
   names of tags the tenant REMOVED, so a template whose tag was removed after it was saved still
@@ -161,13 +166,20 @@ any other text of the tenant.
   «as tags personalizadas da empresa»), so the send asks the requester instead of sending.
 - Tags filled by data (a provider, code), tags of one persona only and HTML are not here.
 
-- `validate_template(subject, body, persona=…)` → the refusals in words, `()` when valid. The
-  verdict is the same for every persona: `persona=` is still accepted and changes nothing. A
-  template of the front desk that says `[aulas]` saves. From E3 (2026-10-07) until 2026-10-21 it
-  was refused there.
+- `validate_template(subject, body, persona=…)` → the refusals in words, `()` when valid. A
+  template may use `known_markers(persona)`: the eight generic markers and that persona's own
+  (the id is compared as written). A marker of another persona is refused naming it — a template
+  of the front desk that says `[aulas]` is refused with «[aulas] é uma tag da coordenação
+  (COORDINATOR): só pode ser usada no template dessa persona; os marcadores são …». With no `persona`, the
+  default list only. (From 2026-10-21 until 2026-10-22 the thirteen were valid in every persona.)
+- `known_markers(persona=None)` → the markers a template of that persona may use, as a person
+  reads them: with no persona the DEFAULT list (the eight generic markers), with the
+  `COORDINATOR` its thirteen. Every refusal that lists the markers lists exactly these.
 - `fields_for(persona)` → the markers that persona can FILL: the generic ones and its own
   provider's (the id is compared as written). A host composing an e-mail reads a provider only for
-  the markers in it.
+  the markers in it. With no persona it answers EVERY marker: the fill with no persona reads
+  everything its context carries, byte for byte as before, while the save with no persona offers
+  the default list — two questions, deliberately two answers.
 - `CoordinatorService.email_context(professor=…, role=…, identity_label=…, period="YYYY-MM")` →
   the classes AND the pay estimate from ONE read of the schedule, so the classes listed are the
   classes paid (past days of the month included). An access refusal or an unreadable sheet
