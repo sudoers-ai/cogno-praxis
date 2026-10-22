@@ -24,8 +24,8 @@ Two layers of "business rules" stay separate: **orchestration** rules live in th
 |---|---|---|
 | **scheduler** | the agenda capability — ships the **SECRETARY** persona, the universal reception/scheduling front door for any client | `list_schedulable_hosts`, `resolve_date`, `check_availability`, `book_appointment`, `block_schedule`, `list_appointments`, `reschedule_appointment`, `confirm_appointment`, `complete_appointment`, `cancel_appointment`, `get_schedule_settings`, `set_schedule_settings`, `set_auto_confirm` |
 | **bookkeeper** | the financial capability — ships the **BOOKKEEPER** persona (parent SaaS ANALYST): records income/expenses, tracks clients, produces summaries. See [`docs/BOOKKEEPER.md`](docs/BOOKKEEPER.md) | `add_income`, `add_outcome`, `get_summary`, `list_clients`, `search`, `remove_by_search`, `get_usage`, `math`, `help` |
-| **coordinator** | the academic capability — ships the **COORDINATOR** persona: reads class schedules across a tenant's course spreadsheets, checks grade/attendance deadlines, estimates a professor's OWN pay from tenant-declared figures (a coordinator/supervisor: any professor's, or every professor's one block each), finds open slots, swaps a class, and mails a professor their classes as a calendar. See [`docs/COORDINATOR.md`](docs/COORDINATOR.md) | `get_professor_schedule`, `get_professor_info`, `check_deadlines`, `get_weekly_briefing`, `check_ibope_status`, `daily_checks`, `estimate_professor_pay`, `find_replacement_slot`, `confirm_swap`, `preview_schedule_to_calendar`, `send_schedule_to_calendar`, `record_class_response` |
-| **companies** | the brand-registration capability — **transversal**: it belongs to no persona's domain, and a front-desk persona carries it beside its own vertical. Rows are keyed by the accent-folded company name (a frozen key fold, deliberately not the ecosystem's `casefold`: changing it needs a key migration), so registering one again UPDATES it — and a field a registration or an update is not given is left exactly as it was. Scoped by identity: staff see the business's companies, anyone else sees the ones they registered | `company_registration`, `company_search`, `list_companies`, `company_update`, `company_delete` |
+| **coordinator** | the academic capability — ships the **COORDINATOR** persona: reads class schedules across a tenant's course spreadsheets, checks grade/attendance deadlines, estimates a professor's OWN pay from tenant-declared figures (a coordinator/supervisor: any professor's, or every professor's one block each), finds open slots, swaps a class, and mails a professor their classes as a calendar. See [`docs/COORDINATOR.md`](docs/COORDINATOR.md) | `get_professor_schedule`, `get_professor_info`, `check_deadlines`, `get_weekly_briefing`, `check_ibope_status`, `daily_checks`, `estimate_professor_pay`, `find_replacement_slot`, `preview_schedule_to_calendar`, `send_schedule_to_calendar`, `confirm_swap`, `record_class_response` |
+| **companies** | the brand-registration capability — **transversal**: it belongs to no persona's domain, and a front-desk persona carries it beside its own vertical. Rows are keyed by the accent-folded company name (a frozen key fold, deliberately not the ecosystem's `casefold`: changing it needs a key migration), so registering one again UPDATES it — and a field a registration or an update is not given is left exactly as it was. Scoped by identity: staff see the business's companies, anyone else sees the ones they registered | `company_registration`, `list_companies`, `company_search`, `company_update`, `company_delete` |
 
 The tool lists are the `@mcp.tool` functions of each vertical's `server.py`, in the order the
 server registers them; a host's RBAC decides which of them a given reader is offered.
@@ -46,7 +46,8 @@ More verticals (restaurant, veterinary, …) follow the same shape.
 
 ### The calendar export (`send_schedule_to_calendar`)
 
-The coordinator's second write, and the only one that leaves the house: it reads the
+One of the coordinator's three writes (with `confirm_swap` and `record_class_response`), and the
+only one that leaves the house: it reads the
 professor's upcoming classes — through the very same `get_professor_schedule` and therefore the
 same role scoping — and e-mails them as **one** `.ics` with **one `VEVENT` per class**. One
 message with every class in it, because that is what a calendar imports in a single action.
@@ -64,7 +65,8 @@ Three things about it are worth knowing before you wire it:
   calendar tool call**, which is what a process serving more than one tenant needs.
   `coordinator/mailer.py` is the SMTP adapter over
   [`cogno-herald`](https://github.com/sudoers-ai/cogno-herald) — an **optional** dependency
-  (install it from git; it is not on PyPI yet, so it is not declarable as an extra). The mailbox
+  (not declared as an extra: install it from git, as CI does; PyPI has herald 0.1.0, which
+  predates the CRLF line ends a strict SMTP server needs for a message over about 1 KB). The mailbox
   is **only ever what THIS tenant declared** (`COGNO_COORDINATOR_SMTP`, or whatever `sender_for`
   answers): nothing declared → **no sender**, and the tool refuses honestly and sends
   **nothing**. It deliberately does **not** fall back to the deployment's `SMTP_*` — a booking
@@ -199,11 +201,11 @@ path.
   DERIVATION checked here, generic for any record with a `data` cell: `dia` must be the weekday of
   that date and `mês` its month, the year from the cell or else from `month` (the send's). A wrong
   derivation is unverified like a cell nobody read; a record with no `data` holds `dia`/`mês` to
-  the literal rule. A `data` cell carrying a year passes only as its literal `dd/mm` with the year
-  of the send's month (a wrong year is unverified); in the HTML, a `data` cell `dd/mm` of the
-  send's month is shown `dd/mm/aa` (`records_html(…, month=…)`), never in the text. Only keys come
-  back, never a cell. The host asks it before handing a list to
-  the fill, and asks the requester instead of composing when anything comes back.
+  the literal rule. A `data` cell carrying a year the read did not print passes only as its literal
+  `dd/mm` with the year of the send's month (a wrong year is unverified); in the HTML, a `data`
+  cell `dd/mm` of the send's month is shown `dd/mm/aa` (`records_html(…, month=…)`), never in the
+  text. Only keys come back, never a cell. The host asks it before handing a list to the fill, and
+  asks the requester instead of composing when anything comes back.
 - Not said → `missing`, with «o pedido não disse o que pôr nesta tag» (its source:
   «o que o solicitante disser na conversa»), so the send ASKS. With the tenant's hint the reason ends
   with it: «… nesta tag: a disciplina da aula remarcada».
@@ -254,8 +256,8 @@ path.
     - `disciplina` colours each distinct value with ONE colour across the e-mail
       (`record_colors`: by first appearance, the tenant's accent first, `DEFAULT_PALETTE`
       cycled);
-    - a record whose keys are only `mes`/`dia`/`data`/`horario`/`disciplina`/`turma` is the
-      dated line «06/10 (ter) 19:00 — Disciplina».
+    - a record whose keys are only `mes`/`dia`/`data`/`horario`/`disciplina`/`turma`, with a
+      `data` and a `disciplina`, is the dated line «06/10 (ter) 19:00 — Disciplina».
   - **Any other record is one line by how many keys it shows** (the group key aside, R-T13): ONE
     key → its value (a list of values: «Redes»); TWO filled keys → «first: second» («Sem bônus:
     R$ 2.880,00»); more → «chave: valor · …». In HTML, records of one key are a LIST, not a
@@ -452,7 +454,9 @@ Every `.md` of this repository.
 - [`docs/BOOKKEEPER.md`](docs/BOOKKEEPER.md) — the financial vertical: its tools, why
   `remove_by_search` asks a second question, and what counts as a source for a figure.
 - [`docs/COORDINATOR.md`](docs/COORDINATOR.md) — the academic vertical: deadlines, the discipline
-  that names nothing, the free slot, the e-mail context.
+  that names nothing, the free slot, the holiday read by its base name, `confirm_swap`'s empty
+  professor, the coordination's e-mail through the tenant's tags and what the tools print for it,
+  the rehearsal seed.
 - [`docs/BOOKKEEPER_PLAN.md`](docs/BOOKKEEPER_PLAN.md) — **historical.** The approved plan that
   ported the bookkeeper, in three phases across this repository and the host. It names files in
   other repositories and a count of tools that has since grown; `docs/BOOKKEEPER.md` is the

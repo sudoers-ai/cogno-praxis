@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Docs — swept against the code (2026-10-22)
+
+- Every `.md` checked sentence by sentence against `main` (`61bb1fc`). Corrected: the coordinator's
+  and the companies' tool lists in the README were not in the order the servers register them; the
+  calendar export is one of the coordinator's three writes, not its second; herald IS on PyPI (0.1.0,
+  older than the CRLF fix), so the README no longer says it is not; `docs/HOST_INTEGRATION.md` §8
+  names `COGNO_COORDINATOR_TZ`, which `build_server` reads when given no `tz_name=`; §7 says the
+  model writes `[conteudo]` and a free tag's value; `docs/BOOKKEEPER.md` says cogno-mcp now carries
+  the gate-C flag; two README sentences of the templated e-mail section were narrower than the code
+  (a year the read printed passes as written; the dated line needs a `data` and a `disciplina`);
+  the README index describes `docs/COORDINATOR.md` as it is. Five entries below carry a «later:»
+  line where a later PR of the same day changed what they say. No code changes.
+
 ### Changed — no persona has e-mail markers in code: the coordination's five are the tenant's FREE tags, and a free tag may hold a LIST OF RECORDS (R-T13, 2026-10-22)
 
 - **Why.** The owner: «preciso de algo genérico. Quando entrar uma persona nova, faço via tags
@@ -70,6 +83,9 @@
 
 ### Changed — the coordinator's tools print every value a templated e-mail copies (R-T13, 2026-10-22)
 
+(later: #181 — the provider is gone: `email_fields` reads no pay row; `[valores_por_bonus]` is the
+tenant's FREE tag, which the persona fills by copying these rows.)
+
 - **Why.** The owner: «preciso de algo genérico» — a persona's e-mail is made with the tenant's
   own tags, filled by the persona from the tools it already has, never by a code path of its own.
   The coordination's five e-mail values were computed by a field provider inside the e-mail
@@ -114,6 +130,12 @@
   assertion (5 of 8), with the two digest controls.
 
 ### Changed — the e-mail after the owner's model: a table per class group, a colour per discipline, rich text, the tenant's appearance (2026-10-22)
+
+(later: #181 — no provider: the coordination's five are the tenant's FREE tags, and an e-mail is
+HTML only when a free tag holds a list of records; `_aulas_records`, `_BLOCK_FORMS` and
+`_DATA_MARKERS` are gone; no value is bold by its name, and `[total]`/`[valor_por_aula]` are no
+longer a row; a record outside the dated form is its value with ONE key and «first: second» with
+TWO filled keys.)
 
 - **Why.** The owner gave a model e-mail of his front desk, then a second image: «ficou bom, mas
   pode melhorar». The structure:
@@ -187,6 +209,11 @@
 
 ### Added — the HTML form of a templated e-mail that carries data: tables (2026-10-22)
 
+(later: #179 — a table per class group (Mês · Dia · Data · Horário · Disciplina), the `[aulas]`
+text moved, and the e-mail may carry the tenant's logo, icons and links; #181 — HTML only when a
+FREE tag holds a list of records, no value bold by its name, the response-rate condition not a
+record (the tenant writes it), and `_ordered_classes`/`_subjects`/`_bonus_rows` gone.)
+
 - **Why.** The owner's order: «qdo for enviar cronograma ou algum dado especifico, colocar em
   formato tabular e visualmente agradavel para o usuario». A month of classes and the pay values
   went out as lines of plain text.
@@ -228,6 +255,9 @@
 
 ### Added — FREE company tags: an empty value is filled from the conversation, and asked when nobody said it (2026-10-22)
 
+(later: #181 — `EMAIL_FIELDS` is the eight, so the names refused whatever the value are those
+eight and `[cpf_cnpj]`/`[contrato]`; `free_tag_values` also takes a LIST OF RECORDS.)
+
 - **Why.** The owner: «preciso q seja flexivel e chamada pelo usuario»; «o template terá tags que
   devem ser preenchidas conforme as mensagens com o agente»; «tags padrões são preenchidas
   automaticamente». The company tags of 2026-10-21 (below) hold a FIXED value only.
@@ -267,6 +297,10 @@
   module docstring. No version bump: the entry waits here.
 
 ### Changed — the default e-mail markers are the eight generic ones; the coordination's five only in its template (2026-10-22)
+
+(later: #181 — `FIELD_PROVIDERS` is empty: `known_markers(persona)` is the eight for every persona,
+`validate_template` gives one verdict for every persona, `EMAIL_FIELDS` is the eight, and the
+coordination's five are ordinary tag names, no longer reserved.)
 
 - **Why.** The owner's rule: «vamos deixar somente as tags que servem para todos, tags
   especificas precisam ser adicionadas». From 2026-10-21 (below) every persona's template could
