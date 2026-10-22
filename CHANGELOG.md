@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### Added — the SCOPE of a company tag: every persona, or the ones the tenant names (R-T16, 2026-10-22)
+
+- **Why.** The owner: «são por persona. Mas no caso as que existem são só do coordinator». The
+  coordination's five free tags (`[aulas]`, `[disciplinas]`, `[valor_por_aula]`,
+  `[valores_por_bonus]`, `[total]`) were valid — and offered — in every persona's template, where
+  the secretary and the bookkeeper have no tool that reads them.
+- **What.**
+  - A tag, fixed or free, may carry a scope `{name: [persona id, …]}`; no scope (absent or an
+    empty list) is every persona, the behaviour of before. `PERSONA_ID` is the form of an id.
+  - `normalise_custom_tag_scopes(raw, tags, personas)` is the SAVE door: `personas` is the HOST's
+    catalogue (this library has none); an id outside it is a refusal naming it (quoted only when
+    it has the form of an id), and nothing is stored on any refusal. `parse_custom_tag_scopes` is
+    the TURN door; an id the catalogue lost narrows the tag, never widens it.
+    `custom_tag_scope_problems` is the one rule; `tag_in_scope`/`tags_in_scope` the reading
+    (`persona=None` reads no scope).
+  - `validate_template(…, tag_scopes=…, scope_refusal=…)`: for a persona outside its scope a tag
+    is not a marker — refused, and never listed among the markers a refusal says it may use. The
+    sentence is the caller's (`scope_refusal(where, name, ids)`: the host names a persona the way
+    its panel does); without one, or when it fails or answers no text, it is
+    `default_scope_refusal`, by the ids — the refusal is never lost.
+  - `EmailContext.custom_tag_scopes`: `fill_email_fields` never fills an out-of-scope tag for that
+    persona — `missing`, naming the scope.
+- **Unchanged.** With no `tag_scopes` (and no `custom_tag_scopes`) every verdict and every fill is
+  the one of before; `fields_for`/`known_markers` list markers, never tags, and did not move.
+- **Docs.** README (the scope bullets; the sentence that said tags of one persona are not here),
+  `docs/HOST_INTEGRATION.md` §7 (the scope is the host's to store and offer; whose the appearance
+  is — the tenant's or a persona's — is the host's).
+- **Tests.** `tests/unit/test_email_tag_scopes.py` (90): the twin (red on the base: 90 of 90),
+  the global-tag control in every persona, the caller's sentence and its floor, two personas in id
+  order, both doors, the fill.
+
 ### Added — the calendar's recipient falls back to the institution's REGISTRY when the professors tab has none (P5, 2026-10-22)
 
 - **Why.** Measured on a production tenant: a coordinator asked to mail a professor's classes;

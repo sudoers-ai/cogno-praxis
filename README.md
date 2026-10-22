@@ -179,10 +179,31 @@ any other text of the tenant.
   in any persona — the value is the tenant's, not a persona's read. A tag the context no longer
   carries is `missing` with «tag personalizada removida» (its source:
   «as tags personalizadas da empresa»), so the send asks the requester instead of sending.
-- Tags filled by code, tags of one persona only and HTML values are not here: a FIXED tag's
+- Tags filled by code and HTML values are not here: a FIXED tag's
   value is plain text, and the HTML form of an e-mail shows it escaped (its own `http(s)://` URLs
   as links, like the template's text; a FREE tag's value is what the conversation said, never
   linked).
+
+**The SCOPE of a company tag — every persona, or the ones the tenant names (R-T16, 2026-10-22).**
+The owner: «são por persona. Mas no caso as que existem são só do coordinator». A tag, fixed or
+free, may carry a scope `{name: [persona id, …]}` and then serves those personas only; no scope
+(absent, or an empty list) is every persona, the behaviour of before.
+
+- `normalise_custom_tag_scopes(raw, tags, personas)` → `(stored, refusals)`, the SAVE door:
+  `personas` is the HOST's catalogue of business personas (this library has none), an id outside
+  it is a refusal that names it, the ids are stored stripped, de-duplicated and sorted, an empty
+  list is not stored, and nothing is stored on any refusal. `parse_custom_tag_scopes(raw, tags)`
+  is the TURN door: what the save would keep (catalogue aside), the rest dropped — an id the
+  catalogue no longer has NARROWS the tag, it never widens it. `tag_in_scope(name, persona,
+  scopes)` and `tags_in_scope(map, persona, scopes)` are the reading (`persona=None` reads no
+  scope).
+- `validate_template(…, tag_scopes=…, scope_refusal=…)`: for a persona outside a tag's scope the
+  tag is not a marker — never listed among those it may use, and refused with a sentence that
+  names the scope. `scope_refusal(where, name, ids)` is the CALLER's composer (a host names a
+  persona the way its panel does); without one, or when it fails, the sentence is
+  `default_scope_refusal`, by the ids. With no `tag_scopes` the verdict is the one of before.
+- `fill_email_fields` reads `EmailContext.custom_tag_scopes`: a tag outside the scope of the
+  persona it fills for is `missing`, naming the scope — never filled, fixed or free.
 
 **FREE company tags — no fixed value, filled from the conversation (2026-10-22).** The owner:
 «preciso q seja flexivel e chamada pelo usuario»; «o template terá tags que devem ser preenchidas
