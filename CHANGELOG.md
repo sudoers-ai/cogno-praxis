@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Comments — the herald dependency, as it is (2026-10-22)
+
+- `coordinator/mailer.py`: the docstring named an extra `calendar` that `pyproject.toml` never declared; it
+  now says cogno-herald is installed alongside and declared in no extra.
+- `pyproject.toml`: the comment said cogno-herald is not on PyPI; PyPI has 0.1.0, which predates the CRLF
+  line endings (herald #15) a strict SMTP server requires — the reason it is still installed from git.
+- Comments only; no code, no behaviour.
+
 ### Docs — swept against the code (2026-10-22)
 
 - Every `.md` checked sentence by sentence against `main` (`61bb1fc`). Corrected: the coordinator's
