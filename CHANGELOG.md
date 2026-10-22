@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+### Added — FREE company tags: an empty value is filled from the conversation, and asked when nobody said it (2026-10-22)
+
+- **Why.** The owner: «preciso q seja flexivel e chamada pelo usuario»; «o template terá tags que
+  devem ser preenchidas conforme as mensagens com o agente»; «tags padrões são preenchidas
+  automaticamente». The company tags of 2026-10-21 (below) hold a FIXED value only.
+- **What.** A company tag whose value is EMPTY (blanks only included) is FREE. It is stored in
+  the SAME map, `{name: ""}`: every non-empty string stored before reads exactly as the fixed tag
+  it was (the save door refused the empty value until now, so none was stored), and a host
+  pinned to the previous praxis reads a free tag as a value its turn door drops. `free_tags(tags)`
+  names them. The name rules are unchanged: the thirteen of `EMAIL_FIELDS`, the reserved names
+  and the grammar are refused whatever the value (the name is checked first).
+- **The fill.** `EmailContext.free_tag_values` (`{name: text}`) is what the conversation said,
+  taken by the host from its executor's call. `fill_email_fields` fills a free tag from it as ONE
+  line of plain text (`free_value`: every run of blanks and line breaks becomes one space, so it
+  never breaks a subject), at most `MAX_CUSTOM_TAG_CHARS` characters and with no control
+  character (`free_value_problems`, the fixed value's sentences). Not said → `missing` with
+  `CUSTOM_TAG_FREE_MISSING` («o pedido não disse o que pôr nesta tag», plus «: <hint>» when the
+  tenant wrote one), source `CUSTOM_TAG_FREE_SOURCE` («o que o solicitante disser na conversa»),
+  so the send ASKS — the path that already existed. A value for a FIXED tag, a standard marker or
+  a name that is no tag is never read; a removed free tag is the removed path, whatever the
+  conversation said.
+- **The hint.** Optional, for a free tag only: the tenant's plain text, one line, at most
+  `MAX_CUSTOM_TAG_HINT_CHARS` = 120 characters. `custom_tag_hint_problems` is the rule,
+  `normalise_custom_tag_hints(raw, tags)` the SAVE door and `parse_custom_tag_hints(raw, tags)`
+  the TURN door; `EmailContext.custom_tag_hints` carries them to the question. The hint is TEXT
+  OF THE TENANT: a host that puts it in a prompt (the reference host renders it in its
+  executor's tool schema and at the end of its e-mail duty) shapes and fences it there.
+- **Inverted** (3 pins of 2026-10-21, `test_email_company_tags.py`): the empty value and the
+  blanks-only value were refused «está vazio» and are now kept empty; the tolerant reader dropped
+  a blank value and now keeps it empty.
+- **Tests.** `tests/unit/test_email_free_tags.py` (new): the twin (an empty value saves; on the
+  base «está vazio»), the fill from the conversation and the exact question with and without the
+  hint, a FIXED value of before and a FREE tag of now in ONE map through the save door, the turn
+  door and the fill (with the free value in the request the e-mail is whole; without it the one
+  question is about the free tag and the fixed one is filled), the map the G package stored read
+  and filled byte for byte (control), the reservation (control), the conversation's value (one
+  line, the ceiling, control characters, never read as a template), the hint's rules, and the
+  per-persona rows. Docs: README «Templated e-mail fields», `docs/HOST_INTEGRATION.md` §7, the
+  module docstring. No version bump: the entry waits here.
+
 ### Changed — the default e-mail markers are the eight generic ones; the coordination's five only in its template (2026-10-22)
 
 - **Why.** The owner's rule: «vamos deixar somente as tags que servem para todos, tags

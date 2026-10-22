@@ -59,6 +59,27 @@ names the tenant REMOVED (``removed_tags=``), and the fill returns it as a :clas
 tenant never declared (a typo) is refused at both doors, as any unknown marker always was. Tags
 filled by data (a provider, code), tags of one persona only and HTML are not here.
 
+**FREE company tags — no fixed value, filled from the CONVERSATION (2026-10-22).** The owner:
+«preciso q seja flexivel e chamada pelo usuario»; «o template terá tags que devem ser preenchidas
+conforme as mensagens com o agente». A company tag whose stored value is EMPTY (``""`` after the
+normalisation) is FREE: :func:`custom_tag_problems` no longer refuses it, and the map keeps it as
+``{name: ""}`` — ONE map, so every string the G package stored (never empty: its save door
+refused that) still reads as the FIXED tag it was. :func:`free_tags` names them. The value comes
+from what the person who asked SAID: ``EmailContext.free_tag_values``, which the host takes from
+the executor's call. :func:`fill_email_fields` fills a free tag from it as ONE line of plain text
+(every run of blanks and line breaks becomes one space, so it never breaks a subject; at most
+:data:`MAX_CUSTOM_TAG_CHARS` characters, no control character); a free tag the conversation did
+not fill is a :class:`Missing` — :data:`CUSTOM_TAG_FREE_MISSING`, from
+:data:`CUSTOM_TAG_FREE_SOURCE` — so the send ASKS, the path that already existed. A value the
+conversation gives for a FIXED tag, a standard marker or a name that is no tag changes nothing:
+a fixed tag stays fixed. The free tag is a company tag in every other respect: the same name
+grammar and the same reservation (the thirteen of :data:`EMAIL_FIELDS`, the reserved names), the
+same removed path. A free tag may carry a HINT for the person filling it («a disciplina da aula
+remarcada»): plain text of the tenant, ONE line, at most :data:`MAX_CUSTOM_TAG_HINT_CHARS`
+characters, only for a free tag — :func:`normalise_custom_tag_hints` (the save door),
+:func:`parse_custom_tag_hints` (the turn's), ``EmailContext.custom_tag_hints`` — and the question
+names it. A host that puts a hint in a prompt shapes and fences it like any text of the tenant.
+
 **A field with no value STOPS the send.** :func:`fill_email_fields` returns ``(values, missing)``
 and never raises; each :class:`Missing` names the field, where it should have come from and why
 it is not there, in the vertical's own words. The host turns a non-empty ``missing`` into a
@@ -297,6 +318,13 @@ CUSTOM_TAG_SOURCE = "as tags personalizadas da empresa"
 #: The reason a template's company tag has no value: the tenant removed it after the template
 #: was saved (a name the save door did not know is never saved, so an unknown one IS removed).
 CUSTOM_TAG_REMOVED = "tag personalizada removida"
+#: Where a FREE company tag's value comes from — the ``source`` of its :class:`Missing`.
+CUSTOM_TAG_FREE_SOURCE = "o que o solicitante disser na conversa"
+#: The reason a FREE company tag has no value: the conversation did not say it. The tenant's
+#: hint, when there is one, follows after a colon.
+CUSTOM_TAG_FREE_MISSING = "o pedido não disse o que pôr nesta tag"
+#: The longest HINT a free tag may carry, counted after it is stripped.
+MAX_CUSTOM_TAG_HINT_CHARS = 120
 #: Control characters a plain-text value may carry: the line break and the tab.
 _ALLOWED_CONTROLS = frozenset("\n\t")
 
@@ -317,7 +345,11 @@ def _custom_value(value: str) -> str:
 
 def custom_tag_problems(name: object, value: object) -> "tuple[str, ...]":
     """Every reason the company tag ``name`` → ``value`` cannot be saved, in words — ``()`` when
-    it can. Never raises. Each sentence names the tag, so a list of them needs no index."""
+    it can. Never raises. Each sentence names the tag, so a list of them needs no index.
+
+    An EMPTY value (blanks only included) is a FREE tag, not a refusal (2026-10-22): its value
+    comes from the conversation. The NAME is checked first, so a free tag is held to the same
+    grammar and the same reservation as a fixed one."""
     if not isinstance(name, str) or CUSTOM_TAG_NAME.fullmatch(name) is None:
         shown = name[:40] if isinstance(name, str) else type(name).__name__
         return (f"«{shown}» não serve como nome de tag: só letras minúsculas sem acento, "
@@ -337,12 +369,98 @@ def custom_tag_problems(name: object, value: object) -> "tuple[str, ...]":
     if any((ord(c) < 32 or ord(c) == 127) and c not in _ALLOWED_CONTROLS for c in text):
         return (f"o valor de [{name}] tem um caractere de controle; só texto simples "
                 "(com quebras de linha e tabulações)",)
-    if not text:
-        return (f"o valor de [{name}] está vazio",)
     if len(text) > MAX_CUSTOM_TAG_CHARS:
         return (f"o valor de [{name}] tem {len(text)} caracteres; o máximo é "
                 f"{MAX_CUSTOM_TAG_CHARS}",)
     return ()
+
+
+def free_tags(tags: object) -> "tuple[str, ...]":
+    """The FREE tags of ``tags`` (a map the turn door read, :func:`parse_custom_tags`): the names
+    whose value is empty, in the map's order. Never raises; a name that cannot be a tag is none."""
+    if not isinstance(tags, Mapping):
+        return ()
+    return tuple(n for n, v in tags.items()
+                 if is_custom_tag_name(n) and isinstance(v, str) and not _custom_value(v))
+
+
+def free_value(value: object) -> str:
+    """A value the conversation gave a free tag, as it is filled: ONE line — every run of blanks
+    and line breaks one space, the outer ones off. ``""`` for anything that is not text."""
+    return " ".join(value.split()) if isinstance(value, str) else ""
+
+
+def free_value_problems(name: str, value: object) -> "tuple[str, ...]":
+    """Every reason the conversation's ``value`` cannot fill the free tag ``name`` — ``()`` when
+    it can (an empty one included: that is a value nobody said, not a bad one). The fixed value's
+    sentences, so the requester reads one rule."""
+    if not isinstance(value, str):
+        return (f"o valor de [{name}] tem de ser texto",)
+    text = free_value(value)
+    if any(ord(c) < 32 or ord(c) == 127 for c in text):
+        return (f"o valor de [{name}] tem um caractere de controle; só texto simples",)
+    if len(text) > MAX_CUSTOM_TAG_CHARS:
+        return (f"o valor de [{name}] tem {len(text)} caracteres; o máximo é "
+                f"{MAX_CUSTOM_TAG_CHARS}",)
+    return ()
+
+
+def custom_tag_hint_problems(name: object, hint: object,
+                             tags: "Mapping[str, str]") -> "tuple[str, ...]":
+    """Every reason ``hint`` cannot be the hint of the company tag ``name``, given the tenant's
+    ``tags`` (as stored) — ``()`` when it can. Never raises. A hint belongs to a FREE tag only:
+    a fixed one is filled by its value and asks nobody. It is the tenant's plain text, one line,
+    at most :data:`MAX_CUSTOM_TAG_HINT_CHARS` characters."""
+    known = tags if isinstance(tags, Mapping) else {}
+    if (not isinstance(name, str) or name not in known or not is_custom_tag_name(name)
+            or not isinstance(known[name], str)):
+        shown = name[:40] if isinstance(name, str) else type(name).__name__
+        return (f"a dica de «{shown}» não é de nenhuma tag da empresa",)
+    if _custom_value(known[name]):
+        return (f"[{name}] tem valor fixo: a dica só serve a uma tag livre (sem valor)",)
+    if not isinstance(hint, str):
+        return (f"a dica de [{name}] tem de ser texto",)
+    text = hint.strip()
+    if len(text.splitlines()) > 1:
+        return (f"a dica de [{name}] tem de ser uma linha só",)
+    if any(ord(c) < 32 or ord(c) == 127 for c in text):
+        return (f"a dica de [{name}] tem um caractere de controle; só texto simples",)
+    if len(text) > MAX_CUSTOM_TAG_HINT_CHARS:
+        return (f"a dica de [{name}] tem {len(text)} caracteres; o máximo é "
+                f"{MAX_CUSTOM_TAG_HINT_CHARS}",)
+    return ()
+
+
+def normalise_custom_tag_hints(raw: object, tags: "Mapping[str, str]"
+                               ) -> "tuple[dict[str, str], tuple[str, ...]]":
+    """The SAVE door for the hints of the tenant's FREE tags: ``(stored, refusals)``.
+
+    ``tags`` is the map as it will be stored (:func:`normalise_custom_tags`). ``None`` is no
+    hints. An empty hint is no hint (not stored). ``stored`` is ``{}`` whenever ``refusals`` is
+    not empty. Never raises."""
+    if raw is None:
+        return {}, ()
+    if not isinstance(raw, Mapping):
+        return {}, ("as dicas das tags são um objeto {nome: dica}",)
+    refusals: list[str] = []
+    stored: dict[str, str] = {}
+    for name, hint in raw.items():
+        why = custom_tag_hint_problems(name, hint, tags)
+        if why:
+            refusals += why
+        elif isinstance(name, str) and isinstance(hint, str) and hint.strip():
+            stored[name] = hint.strip()
+    return ({}, tuple(refusals)) if refusals else (stored, ())
+
+
+def parse_custom_tag_hints(raw: object, tags: "Mapping[str, str]") -> "dict[str, str]":
+    """The TURN door for the hints: those the save would keep, stripped — every other entry
+    dropped, never a refusal."""
+    if not isinstance(raw, Mapping):
+        return {}
+    return {name: hint.strip() for name, hint in raw.items()
+            if isinstance(name, str) and isinstance(hint, str) and hint.strip()
+            and not custom_tag_hint_problems(name, hint, tags)}
 
 
 def normalise_custom_tags(raw: object) -> "tuple[dict[str, str], tuple[str, ...]]":
@@ -525,7 +643,13 @@ class EmailContext:
     vertical's own words and are never wrapped in another.
 
     ``custom_tags`` — the tenant's company tags, ``{name: value}`` (:func:`parse_custom_tags`),
-    from the host: a FIXED value of the tenant, the same for every persona and every recipient.
+    from the host: a FIXED value of the tenant, the same for every persona and every recipient;
+    an EMPTY value is a FREE tag (:func:`free_tags`).
+
+    ``free_tag_values`` — what the CONVERSATION said for the free tags, ``{name: text}``: the
+    host takes it from the executor's call. Read for a free tag only; anything else in it is
+    ignored. ``custom_tag_hints`` — the tenant's hints for its free tags
+    (:func:`parse_custom_tag_hints`), named in the question when a value is missing.
     """
     recipient_name: str = ""
     recipient_email: str = ""
@@ -541,6 +665,8 @@ class EmailContext:
     persona_name: str = ""
     requester_name: str = ""
     custom_tags: "Mapping[str, str]" = field(default_factory=dict)
+    free_tag_values: "Mapping[str, str]" = field(default_factory=dict)
+    custom_tag_hints: "Mapping[str, str]" = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -628,6 +754,13 @@ def fill_email_fields(fields: "Iterable[str]", context: EmailContext, *,
     not carry was removed after the template was saved — a ``Missing`` with
     :data:`CUSTOM_TAG_REMOVED`; one whose stored value the save would refuse is a ``Missing``
     with that refusal. Neither is ever rendered blank.
+
+    A FREE company tag (stored value empty, :func:`free_tags`) is filled from
+    ``context.free_tag_values`` — what the conversation said — as one line of plain text
+    (:func:`free_value`). Not said (absent or blank) → a ``Missing`` with
+    :data:`CUSTOM_TAG_FREE_MISSING` and the tenant's hint, from :data:`CUSTOM_TAG_FREE_SOURCE`;
+    said in a form the rule refuses (:func:`free_value_problems`) → a ``Missing`` with that
+    sentence. A conversation value for anything that is not a free tag is never read.
     """
     wanted = tuple(dict.fromkeys(f for f in fields
                                  if f in EMAIL_FIELDS or is_custom_tag_name(f)))
@@ -635,10 +768,26 @@ def fill_email_fields(fields: "Iterable[str]", context: EmailContext, *,
     missing: list[Missing] = []
     mine = fields_for(persona)
     tags = context.custom_tags if isinstance(context.custom_tags, Mapping) else {}
+    said = context.free_tag_values if isinstance(context.free_tag_values, Mapping) else {}
+    hints = context.custom_tag_hints if isinstance(context.custom_tag_hints, Mapping) else {}
 
-    def miss(name: str, reason: str) -> None:
-        source = EMAIL_FIELDS[name].source if name in EMAIL_FIELDS else CUSTOM_TAG_SOURCE
+    def miss(name: str, reason: str, source: str = "") -> None:
+        source = source or (EMAIL_FIELDS[name].source if name in EMAIL_FIELDS
+                            else CUSTOM_TAG_SOURCE)
         missing.append(Missing(name, source, reason))
+
+    def fill_free(name: str) -> None:
+        given = said.get(name)
+        if given is None or (isinstance(given, str) and not free_value(given)):
+            hint = hints.get(name)
+            shown = (hint.strip() if isinstance(hint, str)
+                     and not custom_tag_hint_problems(name, hint, tags) else "")
+            miss(name, CUSTOM_TAG_FREE_MISSING + (f": {shown}" if shown else ""),
+                 CUSTOM_TAG_FREE_SOURCE)
+        elif free_value_problems(name, given):
+            miss(name, "; ".join(free_value_problems(name, given)), CUSTOM_TAG_FREE_SOURCE)
+        else:
+            values[name] = free_value(given)
 
     who = context.recipient_name.strip() or context.professor.strip() or "o destinatário"
     month_num = _month_numeric(context.month)
@@ -651,6 +800,8 @@ def fill_email_fields(fields: "Iterable[str]", context: EmailContext, *,
                 miss(name, CUSTOM_TAG_REMOVED)
             elif custom_tag_problems(name, tags[name]):
                 miss(name, "; ".join(custom_tag_problems(name, tags[name])))
+            elif not _custom_value(tags[name]):
+                fill_free(name)                  # a FREE tag: what the conversation said
             else:
                 values[name] = _custom_value(tags[name])
         elif name not in mine:
@@ -789,5 +940,8 @@ __all__ = [
     "render_email", "email_digest", "missing_question", "is_email_month", "month_words",
     "date_words", "CUSTOM_TAG_NAME", "MAX_CUSTOM_TAG_CHARS", "MAX_CUSTOM_TAGS",
     "CUSTOM_TAG_SOURCE", "CUSTOM_TAG_REMOVED", "is_custom_tag_name", "custom_tag_problems",
-    "normalise_custom_tags", "parse_custom_tags",
+    "normalise_custom_tags", "parse_custom_tags", "CUSTOM_TAG_FREE_SOURCE",
+    "CUSTOM_TAG_FREE_MISSING", "MAX_CUSTOM_TAG_HINT_CHARS", "free_tags", "free_value",
+    "free_value_problems", "custom_tag_hint_problems", "normalise_custom_tag_hints",
+    "parse_custom_tag_hints",
 ]
