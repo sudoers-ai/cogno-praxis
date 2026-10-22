@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### Changed — the default e-mail markers are the eight generic ones; the coordination's five only in its template (2026-10-22)
+
+- **Why.** The owner's rule: «vamos deixar somente as tags que servem para todos, tags
+  especificas precisam ser adicionadas». From 2026-10-21 (below) every persona's template could
+  use the thirteen markers, so a front-desk template could cite `[aulas]` and only learn at the
+  send that nobody there reads the schedule.
+- **What.** `known_markers()` with no persona is the DEFAULT list: the eight `GENERIC_FIELDS`.
+  With a persona it is the generic ones and that persona's own (the `COORDINATOR`'s thirteen).
+  `validate_template(…, persona=…)` accepts exactly `known_markers(persona)` (and the tenant's
+  company tags); a marker of another persona's provider is refused naming it — «no corpo,
+  [aulas] é uma tag da coordenação (COORDINATOR): só pode ser usada no template dessa persona; os
+  marcadores são …» — and every refusal that lists the markers lists this persona's. With no
+  persona the default list only. `EMAIL_FIELDS` stays the union of the thirteen.
+- **Not changed.** `fill_email_fields` and `fields_for`: with no persona the fill still reads
+  every marker its context carries — the save and the fill with no persona answer different
+  questions, and the module docstring says why. The company tags' VERDICTS: the five
+  coordination names stay reserved in every persona, because the collision check reads the union
+  (`EMAIL_FIELDS`), never the default list — the risk this change could have opened, pinned by a
+  twin. Only the WORDS of that collision changed for the five: «[aulas] já é uma tag da
+  coordenação (…); escolha outro nome» instead of «já é um marcador padrão», which this change
+  made false; the sentence of a generic marker is byte for byte.
+- **Tests.** Inverted, the pins of 2026-10-21 that said «the thirteen in any persona»:
+  `test_email_markers_are_one_list.py` is now `test_email_markers_by_persona.py` (the default
+  list, the SECRETARY template with `[aulas]` refused and the COORDINATOR's saved, every marker ×
+  every persona, the list a refusal offers, a row table derived from `FIELD_PROVIDERS`);
+  `test_email_fill_by_persona.py` (the thirteen are valid only for the row that fills them);
+  `test_email_field_providers.py` (the coordinator's markers refused for another persona, the
+  schedule template at the front desk, the persona id deciding the use too). Assertions that
+  validated a coordination template with no persona now pass `persona="COORDINATOR"` or pin the
+  refusal. `test_email_company_tags.py`: the reserved-name twin and its control
+  (`horario_atendimento` passes), the two collision sentences. On `81471e6`: 102 failed, 307
+  passed across the five files. Docs: README «Templated e-mail fields», `docs/COORDINATOR.md`,
+  the module docstring.
+
 ### Added — the tenant's own e-mail markers: company tags with a FIXED value, in every persona (2026-10-21)
 
 - **Why.** The owner asked for a field to create tags of one's own beside the thirteen standard
@@ -47,6 +81,11 @@
   Docs: README «Templated e-mail fields», `docs/HOST_INTEGRATION.md` §7, the module docstring.
 
 ### Changed — ONE list of e-mail markers for every persona; who can FILL a marker is separate (2026-10-21)
+
+*Superseded for the SAVE on 2026-10-22 (above): the default list is the eight generic markers and
+the coordination's five are valid only in its template. The fill described here is unchanged.
+The test file `test_email_markers_are_one_list.py` named below is now
+`test_email_markers_by_persona.py`, with its pins inverted.*
 
 - **Why.** The owner's rule: «as tags do template devem ser padrão para tudo e não especifico
   para a persona». From E3 (2026-10-07) `validate_template(…, persona=…)` refused a marker

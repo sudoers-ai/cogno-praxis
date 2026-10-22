@@ -1,16 +1,17 @@
 """GENERIC markers and per-persona FIELD PROVIDERS (``cogno_praxis.email_fields``, E3).
 
-Every marker is valid in every persona's template (the owner's rule, 2026-10-21 — see
-``test_email_markers_are_one_list.py``); a persona's provider decides only what it can FILL.
-Everything here is synthetic — invented names, an invented school, an invented persona id. What
+A template may use the eight generic markers and its OWN persona's (the owner's rule, 2026-10-22
+— see ``test_email_markers_by_persona.py``); a persona's provider decides what its template may
+use AND what it can FILL. Everything here is synthetic — invented names, an invented school, an invented persona id. What
 is pinned, one line each:
 
 * the list has two halves and the union is DERIVED: no marker in both, none lost, and a registry
   that could answer two ways is refused when it is built;
 * every marker in use before E3 still validates and fills in the persona it was used in (one
   test per marker), and the three template SHAPES in use render byte for byte;
-* a marker another persona supplies is VALID for this one (it was refused from E3 until
-  2026-10-21), and only the persona that supplies it can FILL it (:func:`fields_for`);
+* a marker another persona supplies is REFUSED for this one, naming the persona it belongs to
+  (as from E3 until 2026-10-21; between the two it was valid), and only the persona that
+  supplies it can FILL it (:func:`fields_for`);
 * the new generic markers — ``[data]``, ``[assinatura]``, ``[solicitante]`` — fill from the
   host's half of the context alone, and each is a named ``Missing`` when that half is empty;
 * a template of generic markers alone needs NO provider and NO month;
@@ -155,14 +156,20 @@ def test_a_registry_that_could_answer_two_ways_is_refused_when_built(clash, word
 def test_each_marker_in_use_before_E3_is_still_valid_for_the_coordinator(marker):
     assert marker in fields_for(COORD)
     assert validate_template("Aviso", f"Texto: [{marker}]", persona=COORD) == ()
-    # …and for a caller that gives no persona (the reading from before E3)
-    assert validate_template("Aviso", f"Texto: [{marker}]") == ()
+    # …and for a caller that gives no persona, only the default list (2026-10-22): a generic
+    # marker is valid, a coordination one is refused naming the coordination
+    reasons = validate_template("Aviso", f"Texto: [{marker}]")
+    if marker in LEGACY_GENERIC:
+        assert reasons == ()
+    else:
+        assert len(reasons) == 1 and "é uma tag da coordenação (COORDINATOR)" in reasons[0]
 
 
 @pytest.mark.parametrize("template", [T_SCHEDULE, T_INVOICE, T_NOTICE])
 def test_the_three_template_shapes_in_use_are_valid_for_the_coordinator(template):
     assert validate_template(*template, persona=COORD) == ()
-    assert validate_template(*template) == ()
+    # with no persona, only the shape of generic markers alone (2026-10-22)
+    assert (validate_template(*template) == ()) is (template is T_NOTICE)
 
 
 @pytest.mark.parametrize("marker", LEGACY_GENERIC + NEW_GENERIC)
@@ -186,26 +193,41 @@ def test_the_generic_notice_renders_byte_for_byte_from_the_hosts_half_alone():
     assert email_digest(*out) == email_digest(*render_email(*T_NOTICE, values))
 
 
-# ── the persona decides what it can FILL, never what a template may use ──────────────────────
+# ── the persona decides what its template may use, and what it can FILL ──────────────────────
+
+#: The refusal's words, typed here — the expectation, not a copy of the code.
+_OF_THE_COORDINATION = ("é uma tag da coordenação (COORDINATOR): só pode ser usada no template "
+                        "dessa persona")
+
 
 @pytest.mark.parametrize("marker", LEGACY_COORDINATOR)
 @pytest.mark.parametrize("persona", OTHERS)
-def test_a_coordinator_marker_is_valid_for_another_persona_and_filled_only_by_the_coordinator(
+def test_a_coordinator_marker_is_refused_for_another_persona_naming_the_coordination(
         marker, persona):
-    """From E3 until 2026-10-21 this was refused with both personas named. The markers are one
-    list now; the provider still says who has somewhere to read the marker from."""
-    assert validate_template("Aviso", f"Texto: [{marker}]", persona=persona) == ()
+    """Inverted (was: valid for another persona, 2026-10-21). Refused, naming the persona the
+    marker belongs to, and listing the markers THIS persona's template may use — the generic
+    ones, no specific one. TWIN: the same template for the COORDINATOR."""
+    (reason,) = validate_template("Aviso", f"Texto: [{marker}]", persona=persona)
+    assert reason.startswith(f"no corpo, [{marker}] {_OF_THE_COORDINATION}; os marcadores são ")
+    offered = reason.split("os marcadores são ", 1)[1]
+    assert offered == ", ".join(f"[{n}]" for n in GENERIC_FIELDS)
     assert validate_template("Aviso", f"Texto: [{marker}]", persona=COORD) == ()
     assert marker not in fields_for(persona) and marker in fields_for(COORD)
 
 
-def test_the_schedule_template_is_saved_at_the_front_desk_and_by_the_coordinator():
-    assert validate_template(*T_SCHEDULE, persona="SECRETARY") == ()
+def test_the_schedule_template_is_refused_at_the_front_desk_and_saved_by_the_coordinator():
+    """Inverted (was: saved at the front desk too)."""
+    reasons = validate_template(*T_SCHEDULE, persona="SECRETARY")
+    assert [r.split(f" {_OF_THE_COORDINATION}", 1)[0] for r in reasons] == [
+        "no corpo, [aulas]", "no corpo, [disciplinas]"]
     assert validate_template(*T_SCHEDULE, persona=COORD) == ()
 
 
-def test_a_coordinator_marker_in_the_subject_is_valid_for_another_persona_too():
-    assert validate_template("Total: [total]", "corpo", persona="BOOKKEEPER") == ()
+def test_a_coordinator_marker_in_the_subject_is_refused_for_another_persona_too():
+    """Inverted (was: valid for another persona too)."""
+    (reason,) = validate_template("Total: [total]", "corpo", persona="BOOKKEEPER")
+    assert reason.startswith(f"no assunto, [total] {_OF_THE_COORDINATION};")
+    assert validate_template("Total: [total]", "corpo", persona=COORD) == ()
 
 
 @pytest.mark.parametrize("persona", (COORD,) + OTHERS + (None,))
@@ -222,8 +244,9 @@ def test_a_removed_marker_stays_refused_for_every_persona(persona):
 def test_an_unknown_marker_stays_refused_for_every_persona_listing_its_markers(persona):
     (reason,) = validate_template("Aviso", "Olá [nmoe]", persona=persona)
     assert "[nmoe] não é um marcador; os marcadores são " in reason
-    # the ONE list, whichever persona the template is for
-    assert reason.endswith(", ".join(known_markers()))
+    # THIS persona's list (2026-10-22): the coordinator's thirteen, everybody else's eight
+    assert reason.endswith(", ".join(known_markers(persona)))
+    assert ("[aulas]" in reason) is (persona == COORD)
 
 
 # ── adversarial: spellings and ids that are NOT the case ─────────────────────────────────────
@@ -245,6 +268,7 @@ def test_a_near_miss_of_a_marker_is_not_that_marker(body, words, persona):
     reasons = validate_template("Aviso", body, persona=persona)
     assert len(reasons) == 1 and words in reasons[0], reasons
     assert "é um marcador da persona" not in reasons[0]
+    assert "é uma tag da" not in reasons[0]
 
 
 @pytest.mark.parametrize("persona", ["coordinator", "Coordinator", "COORDINATORS", "COORD",
@@ -255,14 +279,15 @@ def test_a_persona_id_is_compared_as_written(persona):
     exact = persona.strip() == COORD
     assert (provider_for(persona) is FIELD_PROVIDERS[COORD]) is exact
     assert ("aulas" in fields_for(persona)) is exact
-    # what a template may USE does not depend on the id at all
-    assert validate_template("Aviso", "[aulas]", persona=persona) == ()
+    # what a template may USE follows the same id (2026-10-22): only the coordinator's own
+    assert (validate_template("Aviso", "[aulas]", persona=persona) == ()) is exact
     assert validate_template("Aviso", "[nome] [data]", persona=persona) == ()
 
 
 def test_only_None_is_the_reading_with_no_persona():
     assert fields_for(None) is EMAIL_FIELDS
-    assert known_markers() == tuple(f"[{n}]" for n in EMAIL_FIELDS)
+    # the DEFAULT list is the eight generic markers (2026-10-22); the fill above still reads all
+    assert known_markers() == tuple(f"[{n}]" for n in GENERIC_FIELDS)
     assert set(fields_for("")) == set(GENERIC_FIELDS)
     assert provider_for(None) is None and provider_for(7) is None  # type: ignore[arg-type]
     assert provider_of("aulas") is FIELD_PROVIDERS[COORD]
@@ -399,8 +424,8 @@ def test_the_readme_documents_both_halves_and_the_new_markers():
     root = pathlib.Path(ef.__file__).resolve().parents[1]
     readme = (root / "README.md").read_text(encoding="utf-8").split(
         "### Templated e-mail fields", 1)[1].split("\n**Prompt-only personas.**", 1)[0]
-    for marker in known_markers():
-        assert marker in readme, marker
+    for marker in EMAIL_FIELDS:
+        assert f"[{marker}]" in readme, marker
     for name in ("GENERIC_FIELDS", "FIELD_PROVIDERS", "provider_fields", "template_needs_month",
                  "persona="):
         assert name in readme, name

@@ -12,32 +12,41 @@ second copy. A marker outside it is REFUSED when the template is saved
 (:func:`validate_template`), and so is any ``[`` that does not open a known marker — that is what
 catches a typo like ``[nmoe]`` before it ships as literal text to a professor.
 
-**ONE list for every persona; who can FILL each marker is a separate question (2026-10-21).**
-The owner's rule: the markers are standard for everything, not specific to a persona. So
-:func:`validate_template` accepts every marker of :data:`EMAIL_FIELDS` in any persona's
-template — it answers «which markers EXIST», and that answer is the same for everyone.
-:data:`FIELD_PROVIDERS` still answers the other question, «who has somewhere to READ this
-marker from». :data:`GENERIC_FIELDS` are filled from what every turn has (the tenant's records,
-the tenant itself, the request, the clock): ``[nome]``, ``[email]``, ``[empresa]``, ``[mes]``,
-``[data]``, ``[assinatura]``, ``[solicitante]``, ``[conteudo]``. Everything else is read by ONE
-persona and is declared by that persona's :class:`FieldProvider`: today only the coordinator's
-(``[aulas]``, ``[disciplinas]``, ``[valor_por_aula]``, ``[valores_por_bonus]``, ``[total]``).
-:data:`EMAIL_FIELDS` is the union, derived — never typed. :func:`fields_for` says what one
-persona can fill. A template that uses a marker its persona cannot fill SAVES; at the send,
-``fill_email_fields(…, persona=…)`` returns that marker as a :class:`Missing` naming it and who
-reads it («o template usa [aulas], que esta persona não consegue preencher: só a coordenação
-(COORDINATOR) o lê»), and the send asks the requester instead of sending. Until 2026-10-21 such a
-template was refused at save, by persona (E3, 2026-10-07).
+**The DEFAULT markers are the eight that serve every persona; a persona's own are added only to
+its template (2026-10-22).** The owner's rule: «vamos deixar somente as tags que servem para
+todos, tags especificas precisam ser adicionadas». :data:`GENERIC_FIELDS` are the default list —
+filled from what every turn has (the tenant's records, the tenant itself, the request, the
+clock): ``[nome]``, ``[email]``, ``[empresa]``, ``[mes]``, ``[data]``, ``[assinatura]``,
+``[solicitante]``, ``[conteudo]`` — and :func:`known_markers` with no persona answers them.
+Everything else is read by ONE persona and is declared by that persona's
+:class:`FieldProvider`: today only the coordinator's (``[aulas]``, ``[disciplinas]``,
+``[valor_por_aula]``, ``[valores_por_bonus]``, ``[total]``). Those are valid in THAT persona's
+template and in no other: :func:`validate_template` refuses one anywhere else — and in a template
+saved with no persona — with a sentence that names the marker and the persona it belongs to
+(«[aulas] é uma tag da coordenação (COORDINATOR): só pode ser usada no template dessa
+persona»).
+:data:`EMAIL_FIELDS` is the union, derived — never typed: every name the fill knows, and every
+name a company tag may never take. From 2026-10-21 until this rule the thirteen were valid in
+every persona's template (a marker the persona could not fill was asked at the send); from E3
+(2026-10-07) until 2026-10-21 they were refused by persona, as now.
+
+**Validating and filling with NO persona answer different lists, on purpose.** The save asks
+«which markers may a template use», and a template nobody owns has only the default list: no
+persona's read stands behind a coordination figure there. The fill asks «what can be filled from
+THIS context», and with no persona it fills every marker the context carries, byte for byte as it
+always did — a caller that built the context itself (a test, a doc check, a host from before
+personas) is the reader of everything in it. A host that knows the persona passes it to both.
 
 A provider DECLARES fields; it does not read them. Which service answers for a provider's
 fields is the host's wiring (:func:`provider_fields` tells it which providers a template needs,
 and a template of generic markers alone needs none). This module imports no service.
 
 **The tenant's own markers — company tags with a FIXED value (2026-10-21).** Beside the
-thirteen, a tenant may declare tags of its own: ``{name: value}``, valid in EVERY persona's
-template (the owner's rule: the tags are standard for everything). The name is
+markers above, a tenant may declare tags of its own: ``{name: value}``, valid in EVERY persona's
+template (a fixed value of the tenant serves every persona). The name is
 :data:`CUSTOM_TAG_NAME` (``[a-z][a-z0-9_]{1,30}``) and is never a marker of
-:data:`EMAIL_FIELDS` nor a name of :data:`REFUSED_FIELDS`; the value is plain text, one line or
+:data:`EMAIL_FIELDS` — the UNION, so the coordination's five stay reserved in every persona
+although the default list is the eight — nor a name of :data:`REFUSED_FIELDS`; the value is plain text, one line or
 several, at most :data:`MAX_CUSTOM_TAG_CHARS` characters — the business's DATA, never an
 instruction. :func:`normalise_custom_tags` is the SAVE door (every refusal named) and
 :func:`parse_custom_tags` the TURN's (tolerant: it drops what the save would refuse). The value
@@ -210,14 +219,15 @@ def provider_of(field: str) -> "Optional[FieldProvider]":
 
 
 def fields_for(persona: "Optional[str]") -> "Mapping[str, FieldSpec]":
-    """The markers ``persona`` can FILL: the generic ones and its own provider's.
+    """The markers ``persona`` can FILL: the generic ones and its own provider's — for a persona,
+    also the markers its template may use (:func:`known_markers`).
 
-    This is not what a template may USE — every marker of :data:`EMAIL_FIELDS` is valid in any
-    persona's template (:func:`validate_template`). It is what this persona has somewhere to read
-    from; a host composing an e-mail asks it, and a marker outside it comes out as ``missing``.
+    A host composing an e-mail asks it, and a marker outside it comes out as ``missing``.
 
-    ``None`` — the caller does not say whose it is — answers EVERY marker. Any string, the empty
-    one included, is a persona."""
+    ``None`` — the caller does not say whose it is — answers EVERY marker: the FILL with no
+    persona reads everything its context carries. The SAVE with no persona does not: it offers
+    the default list (:func:`known_markers`; the module docstring says why the two differ). Any
+    string, the empty one included, is a persona."""
     if persona is None:
         return EMAIL_FIELDS
     p = provider_for(persona)
@@ -226,11 +236,19 @@ def fields_for(persona: "Optional[str]") -> "Mapping[str, FieldSpec]":
     return MappingProxyType({**GENERIC_FIELDS, **{f.name: f for f in p.fields}})
 
 
+def _template_fields_for(persona: "Optional[str]") -> "Mapping[str, FieldSpec]":
+    """The markers a template of ``persona`` may use: the default list (:data:`GENERIC_FIELDS`)
+    with no persona, else the generic ones and its own provider's (:func:`fields_for`)."""
+    return GENERIC_FIELDS if persona is None else fields_for(persona)
+
+
 def known_markers(persona: "Optional[str]" = None) -> "tuple[str, ...]":
-    """``("[nome]", "[email]", …)`` — the list as a person reads it, generic markers first. With
-    no ``persona``, every marker (the ONE list a template may use); with one, the markers that
-    persona can fill (:func:`fields_for`)."""
-    return tuple(f"[{n}]" for n in fields_for(persona))
+    """``("[nome]", "[email]", …)`` — the markers a template of ``persona`` may use, as a person
+    reads them, generic markers first. With no ``persona``, the DEFAULT list: the eight generic
+    markers that serve every persona. With one, the generic ones and that persona's own (the
+    COORDINATOR's thirteen) — exactly what :func:`validate_template` accepts for it and lists in
+    its refusals."""
+    return tuple(f"[{n}]" for n in _template_fields_for(persona))
 
 
 def provider_fields(fields: "Iterable[str]") -> "dict[str, tuple[str, ...]]":
@@ -305,8 +323,12 @@ def custom_tag_problems(name: object, value: object) -> "tuple[str, ...]":
         return (f"«{shown}» não serve como nome de tag: só letras minúsculas sem acento, "
                 "algarismos e «_», a começar por uma letra, de 2 a 31 caracteres",)
     if name in EMAIL_FIELDS:
-        return (f"[{name}] já é um marcador padrão ({EMAIL_FIELDS[name].source}); "
-                "escolha outro nome",)
+        # Every name of the UNION is refused — never only the default list's, or a tag named
+        # [aulas] would collide with what the coordination computes. Only the WORDS differ: a
+        # persona's own marker is not «padrão» (2026-10-22).
+        owner = provider_of(name)
+        kind = f"uma tag da {owner.label}" if owner is not None else "um marcador padrão"
+        return (f"[{name}] já é {kind} ({EMAIL_FIELDS[name].source}); escolha outro nome",)
     if name in REFUSED_FIELDS:
         return (f"[{name}] é um nome reservado: {REFUSED_FIELDS[name]}",)
     if not isinstance(value, str):
@@ -378,13 +400,17 @@ def template_fields(subject: str, body: str) -> "tuple[str, ...]":
 
 def _bracket_problems(text: str, where: str, phase: str,
                       tags: "Optional[Mapping[str, Optional[str]]]" = None,
-                      removed: "frozenset[str]" = frozenset()) -> "list[str]":
-    """Every ``[`` in ``text`` that does not open a marker of :data:`EMAIL_FIELDS` nor one of
-    the tenant's company ``tags`` — named, with its position, listing every marker that exists.
-    A name in ``removed`` (a tag the tenant removed) is accepted too, and is not listed."""
+                      removed: "frozenset[str]" = frozenset(),
+                      persona: "Optional[str]" = None) -> "list[str]":
+    """Every ``[`` in ``text`` that does not open a marker a template of ``persona`` may use
+    (:func:`known_markers`) nor one of the tenant's company ``tags`` — named, with its position,
+    listing exactly the markers it may use. A marker of ANOTHER persona's provider is refused
+    naming the persona it belongs to. A name in ``removed`` (a tag the tenant removed) is accepted
+    too, and is not listed."""
     out: list[str] = []
     tags = tags or {}
-    allowed = ", ".join(known_markers()) + (
+    usable = _template_fields_for(persona)
+    allowed = ", ".join(known_markers(persona)) + (
         "; e os da empresa: " + ", ".join(f"[{n}]" for n in tags) if tags else "")
     for i, ch in enumerate(text):
         if ch != "[":
@@ -396,7 +422,13 @@ def _bracket_problems(text: str, where: str, phase: str,
                        f"marcador; os marcadores são {allowed}")
             continue
         name = m.group(1)
-        if name in EMAIL_FIELDS:
+        if name in usable:
+            continue
+        owner = provider_of(name)
+        if owner is not None:
+            # A real marker, of a persona this template is not (or of no persona at all).
+            out.append(f"no {where}, [{name}] é uma tag da {owner.label} ({owner.persona}): só "
+                       f"pode ser usada no template dessa persona; os marcadores são {allowed}")
             continue
         if name in tags or name in removed:
             continue
@@ -419,13 +451,15 @@ def validate_template(subject: str, body: str, *, phase: str = "E1",
     Never raises. Each reason is a sentence the tenant's admin reads (the host answers 400 with
     the list), so it names what is wrong and where, and lists the markers that DO exist.
 
-    ``persona`` — the persona the template is saved for. It changes nothing: the markers are ONE
-    list for every persona (the owner's rule, 2026-10-21), and a marker this persona cannot fill
-    is the send's question, not the save's refusal (:func:`fields_for`, :class:`Missing`). It is
-    still accepted so that a caller written when it narrowed the list keeps working.
+    ``persona`` — the persona the template is saved for. Its template may use the default list
+    (the eight generic markers) and that persona's own (:func:`known_markers`); a marker of
+    another persona's provider is refused, naming the persona it belongs to (the owner's rule,
+    2026-10-22). ``None`` — a template nobody owns — may use the default list only; the fill with
+    no persona still reads every marker (the module docstring says why the two differ). Any
+    string, the empty one included, is a persona, compared as written (:func:`provider_for`).
 
     ``custom_tags`` — the tenant's company tags: a mapping ``{name: value}`` or just the names.
-    Each is a marker of this template beside the thirteen, in any persona; a name that cannot be
+    Each is a marker of this template beside the persona's, in any persona; a name that cannot be
     a tag (:func:`is_custom_tag_name`) is ignored, so it unlocks nothing. With the VALUES, a tag
     whose value spans lines is refused in the subject. ``()`` — no company tag: the verdict of
     before, byte for byte.
@@ -451,8 +485,8 @@ def validate_template(subject: str, body: str, *, phase: str = "E1",
         out.append(f"o corpo tem {len(body)} caracteres; o máximo é {MAX_BODY_CHARS}")
     tags = _company_tags(custom_tags)
     removed = frozenset(n for n in _company_tags(removed_tags) if n not in tags)
-    out += _bracket_problems(subject, "assunto", phase, tags, removed)
-    out += _bracket_problems(body, "corpo", phase, tags, removed)
+    out += _bracket_problems(subject, "assunto", phase, tags, removed, persona)
+    out += _bracket_problems(body, "corpo", phase, tags, removed, persona)
     for name in markers_cited(subject):
         if name in SUBJECT_FORBIDDEN:
             out.append(f"[{name}] não pode ir no assunto (tem várias linhas ou é texto livre)")

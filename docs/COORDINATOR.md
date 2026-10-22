@@ -203,8 +203,12 @@ is missing, never send one with part of the classes. Read-only.
 **Which markers this read answers for (E3).** The five markers filled from this context —
 `[disciplinas]`, `[aulas]`, `[valor_por_aula]`, `[valores_por_bonus]`, `[total]` — are the
 coordinator's own: `cogno_praxis.email_fields.FIELD_PROVIDERS["COORDINATOR"]` declares them.
-Since 2026-10-21 a template of ANY persona may use them (the markers are one list), but only the
-coordinator can FILL them (`fields_for`). For another persona the send asks instead of sending.
+They are valid in the COORDINATOR's template only (2026-10-22, the owner's rule: the default
+markers are the eight that serve every persona, a persona's own are added to its template): a
+template of another persona that cites one is refused at the save, naming the coordination
+(«[aulas] é uma tag da coordenação (COORDINATOR): …»), and only the coordinator can FILL them
+(`fields_for`). They also stay reserved as company-tag names in every persona. (From 2026-10-21
+until 2026-10-22 any persona's template could use them, and the send asked instead of sending.)
 The declaration reads nothing; a host calls `email_context` only when
 `provider_fields(template_fields(…))` names `coordinator`, so a template of generic markers
 (`[nome]`, `[empresa]`, `[data]`, …) is composed without this read, in any persona.

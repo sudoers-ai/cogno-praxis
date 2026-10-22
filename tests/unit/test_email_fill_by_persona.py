@@ -1,8 +1,11 @@
 """The fill, PER PERSONA: a template with all thirteen markers, filled FOR each persona.
 
 The owner's order (2026-10-21): «essa parte do template do e-mail precisa estar bem feita e
-validada com testes por persona». The markers are one list (``validate_template`` takes them in
-any persona); what a persona can FILL is :func:`fields_for`. ``fill_email_fields(…, persona=X)``
+validada com testes por persona». Since 2026-10-22 a template may use the eight generic markers
+and its OWN persona's (``validate_template`` refuses another persona's, so only the COORDINATOR's
+template saves with all thirteen); what a persona can FILL is :func:`fields_for`, and the fill is
+unchanged — it is asked here with every marker, as a host whose stored template predates the rule
+would ask it. ``fill_email_fields(…, persona=X)``
 fills, for X, the markers X has somewhere to read from, and returns each other one as a
 :class:`Missing` that names the marker and WHO reads it — never a value taken from a context X was
 not the reader of.
@@ -53,10 +56,23 @@ def _full_context():
                 persona_name="Assistente Vexa", requester_name="Coord Gama")
 
 
-def test_the_template_uses_all_thirteen_and_is_valid_for_every_row():
+#: The coordination's sentence for each of its markers in :data:`T_ALL`, where it is cited.
+_REFUSED_OUTSIDE = ("no assunto, [valor_por_aula]", "no assunto, [total]", "no corpo, [aulas]",
+                    "no corpo, [disciplinas]", "no corpo, [valores_por_bonus]")
+
+
+def test_the_template_uses_all_thirteen_and_is_valid_only_for_the_row_that_fills_them():
+    """Inverted (was: «valid for every row»): only the persona whose provider declares the five
+    may SAVE a template that uses them; every other row is refused once per coordination marker,
+    each sentence naming the coordination."""
     assert set(template_fields(*T_ALL)) == set(EMAIL_FIELDS) and len(EMAIL_FIELDS) == 13
-    for persona in EXPECTED_FILLS:
-        assert validate_template(*T_ALL, persona=persona) == ()
+    for persona, fills in EXPECTED_FILLS.items():
+        reasons = validate_template(*T_ALL, persona=persona)
+        if fills == frozenset(EMAIL_FIELDS):
+            assert reasons == (), (persona, reasons)
+            continue
+        assert [r.split(" é uma tag da coordenação (COORDINATOR):", 1)[0] for r in reasons] == \
+            list(_REFUSED_OUTSIDE), (persona, reasons)
 
 
 def test_every_provider_persona_has_a_row():
