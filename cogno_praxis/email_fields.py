@@ -89,14 +89,27 @@ marker that has no value — it is never reached with one.
 
 **The HTML form — tables for an e-mail that carries data (2026-10-22).** The owner's order:
 «qdo for enviar cronograma ou algum dado especifico, colocar em formato tabular e visualmente
-agradavel». :func:`render_email_html` renders the SAME e-mail as an HTML document: the classes as a
-table (one row per class), the pay values as a two-column table, the disciplines as a list, the
-total in bold. The host sends it beside the text as ``multipart/alternative``. The TEXT does not
-move by a byte: it is what the requester was shown and confirmed, and :func:`email_digest` is
-still taken of it. A template whose body uses no provider's marker renders no HTML at all (``""``),
-and its e-mail goes out as the text it always was. Every value and the template's own text are
-escaped, the styles are inline, and the document loads nothing; a table is drawn only from rows
-whose text IS the value the text part carries.
+agradavel», and his model e-mail. :func:`render_email_forms` gives ``(subject, text, html)``.
+:func:`render_email_html` renders the SAME e-mail as an HTML document:
+- the classes as one table PER CLASS GROUP under its «Turma X» title, each discipline's cell in a
+  colour that is the same across the whole e-mail (:func:`record_colors`) — drawn by the
+  GENERIC renderer, :func:`records_html`, from a list of records the coordinator produces;
+- the pay values as two-column tables, the disciplines as a list;
+- the tenant's text as simple rich text (paragraphs, «•»/«·» lists, short «…:» titles, its URLs as
+  links);
+- a header with the sender's name and, when the tenant configured one, its signature block
+  (:class:`EmailAppearance`, saved through :func:`normalise_email_appearance`).
+
+The host sends it beside the text as ``multipart/alternative``. The TEXT is what the requester was
+shown and confirmed, and :func:`email_digest` is taken of it. It moved in one place only: ``[aulas]``
+is a «Turma X» block per class group, its lines with the weekday. It also gains the configured
+signature's lines when the e-mail goes out as HTML.
+
+A template whose body uses no provider's marker renders no HTML at all (``""``) and its e-mail
+goes out as the text it always was. Every value and the template's own text are escaped and the
+styles are inline. The only images are the logo and the icons the tenant configured
+(``http``/``https``, with ``alt``); nothing else is loaded. A table is drawn only from rows whose
+text IS the value the text part carries.
 
 What deliberately is NOT here, by the owner's decisions of 2026-10-06:
 
@@ -117,10 +130,12 @@ from __future__ import annotations
 import hashlib
 import html
 import re
+import unicodedata
+import urllib.parse
 from dataclasses import dataclass, field
 from datetime import date
 from types import MappingProxyType
-from typing import Callable, Iterable, Mapping, Optional, Sequence
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
 from cogno_praxis.coordinator.pay import PayEstimate, _condition_lines, fmt_money
 
@@ -723,9 +738,132 @@ _PAY_FIELDS = frozenset({"valor_por_aula", "valores_por_bonus", "total"})
 _NEEDS_CLASSES = frozenset({"disciplinas", "aulas", "valores_por_bonus", "total"})
 
 
-def _line_of(c: EmailClass) -> str:
-    stamp = c.when.strftime("%d/%m") + (f" {c.time}" if c.time else "")
-    return f"{stamp} — {c.subject} — {c.turma}"
+# ── records: the one shape a table is drawn from (2026-10-22) ──────────────────────────────────
+#
+# The owner's rule: «preciso de algo genérico» — a new persona's e-mail is made with tags, never
+# with code. So nothing here draws «the classes»: it draws a LIST OF RECORDS, each a mapping of
+# simple keys to text, and the coordinator's [aulas] is just one producer of such a list
+# (:func:`_aulas_records`). Three keys have a meaning, compared folded (case and accents aside):
+#
+# * ``turma`` — the records are split into one block per value, titled «Turma <value>», the blocks
+#   in the order of the value (a list without it is one block, untitled);
+# * ``disciplina`` — in the HTML, each distinct value has one colour across the whole e-mail;
+# * a record whose keys are all among ``mes``/``dia``/``data``/``horario``/``disciplina``/``turma``
+#   and that has ``data`` and ``disciplina`` is written as a dated line, «06/10 (ter) 19:00 —
+#   Disciplina»; any other record as «chave: valor · …».
+
+#: A runaway guard: the most records one list may carry.
+MAX_RECORDS = 500
+_GROUP_KEY = "turma"
+_COLOR_KEY = "disciplina"
+_DATED_KEYS = frozenset({"mes", "dia", "data", "horario", "disciplina", "turma"})
+_SHORT_DATE = re.compile(r"(\d{1,2}/\d{1,2})/\d{2,4}")
+
+
+def _fold_key(key: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", key)
+                   if not unicodedata.combining(c)).casefold().strip()
+
+
+def as_records(value: object) -> "Optional[list[dict[str, str]]]":
+    """``value`` as a list of records — each a ``{key: text}`` with non-blank string keys, a
+    value that is not text written as text (``None`` as empty) — or ``None`` when it is not a
+    non-empty list of mappings (or holds more than :data:`MAX_RECORDS`). Never raises."""
+    if not isinstance(value, (list, tuple)) or not value or len(value) > MAX_RECORDS:
+        return None
+    out: "list[dict[str, str]]" = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            return None
+        record: "dict[str, str]" = {}
+        for k, v in item.items():
+            if not isinstance(k, str) or not k.strip():
+                return None
+            record[k.strip()] = "" if v is None else (v if isinstance(v, str) else str(v)).strip()
+        out.append(record)
+    return out
+
+
+def _field(record: "Mapping[str, str]", name: str) -> str:
+    """The value of the key of ``record`` that folds to ``name`` — ``""`` when there is none."""
+    for k, v in record.items():
+        if _fold_key(k) == name:
+            return v
+    return ""
+
+
+def _group_title(value: str) -> str:
+    """«Turma <value>» — the value itself when it already says «Turma …»."""
+    v = value.strip()
+    return v if _fold_key(v).startswith("turma") else f"Turma {v}"
+
+
+def _record_groups(records: "Sequence[Mapping[str, str]]"
+                   ) -> "list[tuple[str, list[Mapping[str, str]]]]":
+    """``[(group value, records)]`` — one group per value of the ``turma`` key, in the order of
+    the value; the records keep their order inside a group. No ``turma`` key → one group, ``""``."""
+    if not any(_fold_key(k) == _GROUP_KEY for r in records for k in r):
+        return [("", list(records))]
+    groups: "dict[str, list[Mapping[str, str]]]" = {}
+    for r in records:
+        groups.setdefault(_field(r, _GROUP_KEY), []).append(r)
+    # By the CODE: «B2» and «Turma A1» are ordered as «Turma B2» and «Turma A1» are.
+    return sorted(groups.items(), key=lambda kv: (_fold_key(_group_title(kv[0])), kv[0]))
+
+
+def _record_line(record: "Mapping[str, str]") -> str:
+    """One record as a line of text: the dated form when its keys are the known ones, else
+    «chave: valor · …» (the group key and the empty values left out)."""
+    keys = {_fold_key(k) for k in record}
+    if keys <= _DATED_KEYS and _field(record, "data") and _field(record, "disciplina"):
+        date_text = _field(record, "data")
+        m = _SHORT_DATE.fullmatch(date_text)
+        stamp = (m.group(1) if m else date_text)
+        stamp += f" ({_field(record, 'dia')})" if _field(record, "dia") else ""
+        stamp += f" {_field(record, 'horario')}" if _field(record, "horario") else ""
+        return f"{stamp} — {_field(record, 'disciplina')}"
+    return " · ".join(f"{k}: {v}" for k, v in record.items() if v and _fold_key(k) != _GROUP_KEY)
+
+
+def records_text(records: object) -> str:
+    """A list of records as TEXT: one line per record (:func:`_record_line`), under a «Turma X»
+    title per group when the records carry a ``turma``, a blank line between groups. ``""`` for
+    anything that is not a list of records."""
+    recs = as_records(records)
+    if recs is None:
+        return ""
+    blocks = []
+    for value, group in _record_groups(recs):
+        lines = [_record_line(r) for r in group]
+        blocks.append("\n".join(([_group_title(value)] if value else []) + lines))
+    return "\n\n".join(blocks)
+
+
+#: ``date.weekday()`` → the abbreviated weekday a Brazilian timetable writes (2026-10-22: the
+#: owner's model e-mail has a «Dia» column, and the text line carries it too).
+_WEEKDAYS = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
+
+
+def _weekday(day: date) -> str:
+    return _WEEKDAYS[day.weekday()]
+
+
+def _aulas_records(classes: "Iterable[EmailClass]") -> "list[dict[str, str]]":
+    """``[aulas]`` as a list of records — the coordinator's classes, in order, keyed by the
+    convention above: ``mês``, ``dia``, ``data`` (dd/mm/aa), ``horário`` (when any class has an
+    hour; ``""`` for one without — never a guessed hour), ``disciplina`` and ``turma``. The text
+    and the tables are drawn from this list by the GENERIC renderer; nothing here is particular to
+    classes."""
+    ordered = _ordered_classes(classes)
+    timed = any(c.time for c in ordered)
+    return [{"mês": _PT_MONTHS[c.when.month], "dia": _weekday(c.when),
+             "data": c.when.strftime("%d/%m/%y"), **({"horário": c.time} if timed else {}),
+             "disciplina": c.subject, "turma": c.turma} for c in ordered]
+
+
+def _aulas_text(classes: "Iterable[EmailClass]") -> str:
+    """``[aulas]`` as text: :func:`records_text` of :func:`_aulas_records`."""
+    return records_text(_aulas_records(classes))
 
 
 def _ordered_classes(classes: "Iterable[EmailClass]") -> "list[EmailClass]":
@@ -917,7 +1055,7 @@ def _fill_schedule_field(name, context, who, month_num, values, miss) -> None:
         return
     est = context.estimate
     if name == "aulas":
-        values[name] = "\n".join(_line_of(c) for c in _ordered_classes(context.classes))
+        values[name] = _aulas_text(context.classes)
     elif name == "disciplinas":
         values[name] = "\n".join(_subjects(context.classes))
     elif name == "valor_por_aula" and est is not None:
@@ -964,23 +1102,280 @@ def render_email(subject: str, body: str, values: "Mapping[str, str]") -> "tuple
 
 # ── the HTML form (2026-10-22) ────────────────────────────────────────────────────────────────
 #
-# The owner's order: an e-mail that carries specific data goes out in a table a person can read
-# at a glance. The TEXT above stays what it was, byte for byte: it is what the requester was shown
-# and confirmed, and the digest is taken of it. The HTML is a second dress for the SAME e-mail,
-# sent beside the text as ``multipart/alternative`` — never a second text.
+# The owner's order: an e-mail that carries specific data goes out readable at a glance — the
+# classes in a table per class group, the values in a table, the tenant's text as paragraphs,
+# lists and section titles, and the tenant's signature block. The TEXT form is what the requester
+# is shown and confirms, and :func:`email_digest` is taken of it; the HTML is the SAME e-mail in
+# another dress, sent beside the text as ``multipart/alternative`` — never a second text.
 
-#: The only CSS of the document, written inline: a style sheet or a ``<style>`` block is dropped by
-#: several mail clients, and the document loads nothing at all.
+# ── the tenant's e-mail appearance ──────────────────────────────────────────────────────────
+
+#: The fields of a tenant's «Aparência do e-mail». No free HTML: every one is plain text, a colour,
+#: an e-mail, a phone or a URL, validated at the SAVE door and escaped at the render.
+APPEARANCE_FIELDS = ("sender_name", "accent_color", "logo_url", "department", "email", "phone",
+                     "site", "links")
+#: The keys of one social link: its name (shown as the link text), its URL, and an optional icon.
+APPEARANCE_LINK_FIELDS = ("label", "url", "icon_url")
+MAX_APPEARANCE_TEXT = 80
+MAX_APPEARANCE_URL = 500
+MAX_SOCIAL_LINKS = 4
+MAX_LINK_LABEL = 30
+#: The only URL schemes a link, the logo or an icon may use.
+APPEARANCE_URL_SCHEMES = ("http", "https")
+_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
+_APPEARANCE_EMAIL = re.compile(r"[^@\s<>\"'()\[\]]+@[^@\s<>\"'()\[\]]+\.[^@\s<>\"'()\[\]]+")
+_PHONE = re.compile(r"[0-9+()\-. ]{4,30}")
+_URL_FORBIDDEN = frozenset(" \t\r\n\"'<>\\`")
+_LABELS = {"sender_name": "o nome do remetente", "accent_color": "a cor de destaque",
+           "logo_url": "o logótipo", "department": "o departamento", "email": "o e-mail",
+           "phone": "o telefone", "site": "o site", "links": "os links das redes",
+           "label": "o nome", "url": "o endereço", "icon_url": "o ícone"}
+
+
+@dataclass(frozen=True)
+class SocialLink:
+    """One social link of the signature: its NAME is the link text; ``icon_url`` (optional) is a
+    small image shown instead, with the name as its ``alt``."""
+    label: str
+    url: str
+    icon_url: str = ""
+
+
+@dataclass(frozen=True)
+class EmailAppearance:
+    """A tenant's «Aparência do e-mail» — what dresses the HTML form of its e-mails. Every field
+    is optional; an empty one is simply not drawn. Build it with :func:`parse_email_appearance`
+    (the TURN door) from what :func:`normalise_email_appearance` (the SAVE door) stored."""
+    sender_name: str = ""
+    accent_color: str = ""
+    logo_url: str = ""
+    department: str = ""
+    email: str = ""
+    phone: str = ""
+    site: str = ""
+    links: "tuple[SocialLink, ...]" = ()
+
+    @property
+    def has_signature(self) -> bool:
+        """Whether the tenant configured a signature block: a logo, a line or a link."""
+        return bool(self.logo_url or self.department or self.email or self.phone or self.site
+                    or self.links)
+
+
+def _text_problem(field: str, value: object, limit: int = MAX_APPEARANCE_TEXT) -> "Optional[str]":
+    if not isinstance(value, str):
+        return f"{_LABELS.get(field, field)} tem de ser texto"
+    if any(ord(c) < 32 or ord(c) == 127 for c in value):
+        return f"{_LABELS.get(field, field)} tem de ser uma linha de texto simples"
+    if len(value.strip()) > limit:
+        return f"{_LABELS.get(field, field)} tem {len(value.strip())} caracteres; o máximo é {limit}"
+    return None
+
+
+def _url_problem(field: str, value: object) -> "Optional[str]":
+    """Why ``value`` is not a URL the appearance may hold — ``None`` when it is (or is empty).
+    Only ``http``/``https`` with a host: ``javascript:``, ``data:``, a relative or a bare path are
+    refused, and so is any blank or quote inside it."""
+    what = _LABELS.get(field, field)
+    if not isinstance(value, str):
+        return f"{what} tem de ser um endereço (texto)"
+    v = value.strip()
+    if not v:
+        return None
+    if len(v) > MAX_APPEARANCE_URL:
+        return f"{what} tem {len(v)} caracteres; o máximo é {MAX_APPEARANCE_URL}"
+    if any(c in _URL_FORBIDDEN or ord(c) < 32 or ord(c) == 127 for c in v):
+        return f"{what} não pode ter espaços, aspas nem os caracteres < > \\ `"
+    parts = urllib.parse.urlsplit(v)
+    if parts.scheme.lower() not in APPEARANCE_URL_SCHEMES or not parts.netloc:
+        return f"{what} só aceita endereços http:// ou https:// (recebi «{v[:40]}»)"
+    return None
+
+
+def _links_problems(raw: object) -> "tuple[list[dict[str, str]], list[str]]":
+    if not isinstance(raw, (list, tuple)):
+        return [], ["os links das redes são uma lista de {label, url, icon_url}"]
+    if len(raw) > MAX_SOCIAL_LINKS:
+        return [], [f"{len(raw)} links de redes; o máximo é {MAX_SOCIAL_LINKS}"]
+    out: "list[dict[str, str]]" = []
+    why: "list[str]" = []
+    for i, item in enumerate(raw, 1):
+        if not isinstance(item, Mapping):
+            why.append(f"o link {i} das redes tem de ser um objeto {{label, url, icon_url}}")
+            continue
+        extra = sorted(str(k) for k in item if k not in APPEARANCE_LINK_FIELDS)
+        if extra:
+            why.append(f"o link {i} das redes tem campos desconhecidos: {', '.join(extra)}")
+        label, url, icon = item.get("label", ""), item.get("url", ""), item.get("icon_url", "")
+        bad = [p for p in (_text_problem("label", label, MAX_LINK_LABEL),
+                           _url_problem("url", url), _url_problem("icon_url", icon)) if p]
+        if isinstance(label, str) and not label.strip():
+            bad.append("tem de ter um nome")
+        if isinstance(url, str) and not url.strip():
+            bad.append("tem de ter um endereço")
+        if bad:
+            why += [f"o link {i} das redes: {b}" for b in bad]
+        elif isinstance(label, str) and isinstance(url, str) and isinstance(icon, str):
+            out.append({k: v for k, v in (("label", label.strip()), ("url", url.strip()),
+                                          ("icon_url", icon.strip())) if v})
+    return out, why
+
+
+def normalise_email_appearance(raw: object) -> "tuple[dict[str, Any], tuple[str, ...]]":
+    """The SAVE door for a tenant's e-mail appearance: ``(stored, refusals)``.
+
+    ``stored`` keeps only the fields that carry a value, each normalised (outer blanks off, the
+    colour in lower case), and is ``{}`` whenever ``refusals`` is not empty — nothing is stored
+    on any refusal. Every refusal is a sentence that names the field. A URL (the site, the logo, a
+    link, an icon) is ``http://`` or ``https://`` with a host, and nothing else. Never raises."""
+    if not isinstance(raw, Mapping):
+        return {}, ("a aparência do e-mail é um objeto {campo: valor}",)
+    refusals: "list[str]" = []
+    extra = sorted(str(k) for k in raw if k not in APPEARANCE_FIELDS)
+    if extra:
+        refusals.append(f"campos desconhecidos: {', '.join(extra)}; os campos são "
+                        f"{', '.join(APPEARANCE_FIELDS)}")
+    stored: "dict[str, Any]" = {}
+    for name in ("sender_name", "department"):
+        if name in raw:
+            why = _text_problem(name, raw[name])
+            if why:
+                refusals.append(why)
+            elif raw[name].strip():
+                stored[name] = raw[name].strip()
+    if "accent_color" in raw:
+        v = raw["accent_color"]
+        if not isinstance(v, str) or (v.strip() and not _COLOR.fullmatch(v.strip())):
+            refusals.append("a cor de destaque é #RRGGBB (por exemplo #f6d55c)")
+        elif v.strip():
+            stored["accent_color"] = v.strip().lower()
+    if "email" in raw:
+        v = raw["email"]
+        if not isinstance(v, str) or (v.strip() and (len(v.strip()) > 254
+                                                     or not _APPEARANCE_EMAIL.fullmatch(v.strip()))):
+            refusals.append("o e-mail da assinatura não é um endereço de e-mail")
+        elif v.strip():
+            stored["email"] = v.strip()
+    if "phone" in raw:
+        v = raw["phone"]
+        if not isinstance(v, str) or (v.strip() and not _PHONE.fullmatch(v.strip())):
+            refusals.append("o telefone só pode ter algarismos, espaços e + ( ) - . (4 a 30)")
+        elif v.strip():
+            stored["phone"] = v.strip()
+    for name in ("logo_url", "site"):
+        if name in raw:
+            why = _url_problem(name, raw[name])
+            if why:
+                refusals.append(why)
+            elif raw[name].strip():
+                stored[name] = raw[name].strip()
+    if "links" in raw:
+        links, why_links = _links_problems(raw["links"])
+        refusals += why_links
+        if links and not why_links:
+            stored["links"] = links
+    return ({}, tuple(refusals)) if refusals else (stored, ())
+
+
+def parse_email_appearance(raw: object) -> "Optional[EmailAppearance]":
+    """The TURN door: the appearance ``raw`` describes, every field the save would refuse dropped
+    on its own (a bad link costs that link, never the e-mail) — or ``None`` when nothing usable is
+    left. Never raises."""
+    if not isinstance(raw, Mapping):
+        return None
+    kept: "dict[str, Any]" = {}
+    for name in APPEARANCE_FIELDS:
+        if name in raw:
+            stored, why = normalise_email_appearance({name: raw[name]})
+            if not why:
+                kept.update(stored)
+    if isinstance(raw.get("links"), (list, tuple)) and "links" not in kept:
+        # A list the save would refuse whole (one bad link): keep the good ones, at most four.
+        good = [lk for lk in raw["links"][:MAX_SOCIAL_LINKS]
+                if not normalise_email_appearance({"links": [lk]})[1]]
+        if good:
+            kept["links"] = normalise_email_appearance({"links": good})[0].get("links", [])
+    if not kept:
+        return None
+    links = tuple(SocialLink(lk["label"], lk["url"], lk.get("icon_url", ""))
+                  for lk in kept.pop("links", ()))
+    return EmailAppearance(links=links, **kept)
+
+
+def email_signature_text(appearance: "Optional[EmailAppearance]", context: EmailContext) -> str:
+    """The signature block as TEXT lines — ``""`` unless the tenant configured one
+    (:attr:`EmailAppearance.has_signature`). The name of the persona that signs (``[assinatura]``'s
+    value; the tenant's name when it has none), the department, the phone, the e-mail, the site,
+    and each social link as «name: URL». The HTML draws the SAME lines."""
+    if appearance is None or not appearance.has_signature:
+        return ""
+    name = context.persona_name.strip() or context.tenant_name.strip()
+    lines = [ln for ln in (name, appearance.department, appearance.phone, appearance.email,
+                           appearance.site) if ln]
+    lines += [f"{lk.label}: {lk.url}" for lk in appearance.links]
+    return "\n".join(lines)
+
+
+# ── the look ────────────────────────────────────────────────────────────────────────────────
+
+#: Soft tones for the disciplines (orange, pink, yellow, light green, light blue, lilac). A tenant's
+#: accent colour is put FIRST; without one, this palette as is.
+DEFAULT_PALETTE = ("#fde2c4", "#f9d2e0", "#fff3b0", "#d8f0d2", "#d6e8fa", "#e6daf5")
+#: The sober colours of an e-mail with no appearance: grey header cells, a navy name.
+_INK = "#1f2328"
+_NAVY = "#1f3a5f"
+_HEAD_BG = "#e9ecef"
+_RULE = "#d0d7de"
+_CELL_BORDER = "#555555"
 _FONT = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
-_BODY_STYLE = f"margin:0;padding:16px;background:#ffffff;color:#1f2328;{_FONT};font-size:15px;line-height:1.5"
+_BODY_STYLE = (f"margin:0;padding:16px;background:#ffffff;color:{_INK};{_FONT};font-size:15px;"
+               "line-height:1.5")
 _WRAP_STYLE = "max-width:640px;margin:0 auto"
-_TABLE_STYLE = "border-collapse:collapse;width:100%;margin:8px 0;font-size:14px"
-_TH_STYLE = ("text-align:left;background:#f2f4f7;border:1px solid #d0d7de;padding:6px 10px;"
-             "font-weight:600")
-_TD_STYLE = "border:1px solid #d0d7de;padding:6px 10px;vertical-align:top"
-_STRONG_ROW_STYLE = "font-weight:700"
-_LIST_STYLE = "margin:8px 0;padding-left:20px"
-_P_STYLE = "margin:8px 0"
+_P_STYLE = "margin:0 0 12px"
+_HEADING_STYLE = "margin:16px 0 6px"
+_LIST_STYLE = "margin:0 0 12px;padding-left:24px"
+_TABLE_STYLE = "border-collapse:collapse;width:100%;margin:4px 0 12px;font-size:14px"
+_TH_STYLE = (f"background:{_HEAD_BG};font-weight:700;text-align:center;"
+             f"border:1px solid {_CELL_BORDER};padding:6px 8px")
+_TD_STYLE = f"border:1px solid {_CELL_BORDER};padding:6px 8px;text-align:center"
+_NARROW = "width:1%;white-space:nowrap;background:#ffffff"
+_GROUP_TITLE_STYLE = "margin:12px 0 4px;font-size:13px;font-weight:600;color:#57606a"
+#: A section title: a line of the template that ends with «:» and is at most this long, rendered.
+MAX_HEADING_CHARS = 40
+#: The characters that open a list item in the template. «-» does NOT: a line the tenant opened
+#: with a dash stays a line with its dash (the owner's model, 2026-10-22).
+LIST_BULLETS = ("•", "·")
+_URL_IN_TEXT = re.compile(r"https?://[^\s<>\"'\[\]]+", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class _Look:
+    palette: "tuple[str, ...]"
+    colors: "Mapping[str, str]"
+
+
+def _palette(appearance: "Optional[EmailAppearance]") -> "tuple[str, ...]":
+    accent = appearance.accent_color if appearance is not None else ""
+    return ((accent,) + tuple(c for c in DEFAULT_PALETTE if c != accent)) if accent \
+        else DEFAULT_PALETTE
+
+
+def record_colors(record_lists: "Iterable[object]",
+                  appearance: "Optional[EmailAppearance]" = None) -> "dict[str, str]":
+    """``{disciplina value: colour}`` over the e-mail's lists of records, in order — each list's
+    groups in the order of their ``turma``, each group's records in order. A value gets the next
+    colour of the palette (the tenant's accent first, :data:`DEFAULT_PALETTE` cycled) the FIRST time
+    it appears, and keeps it for the whole e-mail: the same discipline in another class group, or
+    in another table, has the same colour. Deterministic: a function of the lists alone."""
+    palette = _palette(appearance)
+    out: "dict[str, str]" = {}
+    for records in record_lists:
+        for _value, group in _record_groups(as_records(records) or []):
+            for r in group:
+                d = _field(r, _COLOR_KEY)
+                if d and d not in out:
+                    out[d] = palette[len(out) % len(palette)]
+    return out
 
 
 def _esc(text: str) -> str:
@@ -992,31 +1387,84 @@ def _text_html(text: str) -> str:
     return _esc(text.replace("\r\n", "\n").replace("\r", "\n")).replace("\n", "<br>\n")
 
 
-def _table(head: "Sequence[str]", rows: "Sequence[Sequence[str]]",
-           strong: "frozenset[int]" = frozenset()) -> str:
+def _linked(text: str) -> str:
+    """The tenant's own text as HTML: escaped, every ``http(s)://`` URL a link to itself (a
+    trailing punctuation mark is left outside). Nothing else becomes markup."""
+    out: "list[str]" = []
+    pos = 0
+    for m in _URL_IN_TEXT.finditer(text):
+        url = m.group(0).rstrip(".,;:!?)")
+        out.append(_esc(text[pos:m.start()]))
+        out.append(f'<a href="{_esc(url)}">{_esc(url)}</a>')
+        pos = m.start() + len(url)
+    out.append(_esc(text[pos:]))
+    return "".join(out)
+
+
+def _table(head: "Sequence[str]", rows: "Sequence[Sequence[tuple[str, str]]]") -> str:
+    """``rows`` of ``(cell text, extra style)``; the text is escaped."""
     th = "".join(f'<th style="{_TH_STYLE}">{_esc(h)}</th>' for h in head)
     body = "".join(
-        (f'<tr style="{_STRONG_ROW_STYLE}">' if i in strong else "<tr>")
-        + "".join(f'<td style="{_TD_STYLE}">{_esc(cell)}</td>' for cell in row) + "</tr>"
-        for i, row in enumerate(rows))
-    return (f'<table style="{_TABLE_STYLE}"><thead><tr>{th}</tr></thead>'
-            f"<tbody>{body}</tbody></table>")
+        "<tr>" + "".join(f'<td style="{_TD_STYLE}{";" + extra if extra else ""}">{_esc(text)}</td>'
+                         for text, extra in row) + "</tr>"
+        for row in rows)
+    return f'<table style="{_TABLE_STYLE}"><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table>'
 
 
-def _aulas_html(value: str, context: EmailContext) -> "Optional[str]":
-    """``[aulas]``: one row per class — Data · Horário (only when some class has an hour; a
-    class without one gets an empty cell, never a guessed hour) · Disciplina · Turma."""
-    ordered = _ordered_classes(context.classes)
-    if not ordered or "\n".join(_line_of(c) for c in ordered) != value:
+def _header(key: str) -> str:
+    """A record key as its column's header: «mês» → «Mês», «valor_hora» → «Valor hora»."""
+    text = key.strip().replace("_", " ")
+    return text[:1].upper() + text[1:]
+
+
+def records_html(records: object, *, colors: "Optional[Mapping[str, str]]" = None) -> str:
+    """A list of records as HTML TABLES — the generic renderer every table of an e-mail is drawn
+    by. ``""`` for anything that is not a list of records.
+
+    * One column per key, in the order the keys first appear; a column empty in every record of
+      a table is left out (an hour nobody has is not a column).
+    * With a ``turma`` key: ONE table per value, under its «Turma X» title, in the order of the
+      value, and no ``turma`` column (the table IS the class group's).
+    * With a ``disciplina`` key: that cell has the value's colour (``colors``, from
+      :func:`record_colors`), the other cells are white and narrow, the discipline's wide.
+    * Every value and every header is escaped."""
+    recs = as_records(records)
+    if recs is None:
+        return ""
+    colors = colors or {}
+    out: "list[str]" = []
+    for value, group in _record_groups(recs):
+        keys: "list[str]" = []
+        for r in group:
+            keys += [k for k in r if k not in keys and _fold_key(k) != _GROUP_KEY]
+        keys = [k for k in keys if any(r.get(k) for r in group)]
+        colored = any(_fold_key(k) == _COLOR_KEY for k in keys)
+        rows = []
+        for r in group:
+            row = []
+            for k in keys:
+                cell = r.get(k, "")
+                if colored and _fold_key(k) == _COLOR_KEY:
+                    row.append((cell, f"background:{colors.get(cell, '#ffffff')}"))
+                else:
+                    row.append((cell, _NARROW if colored else ""))
+            rows.append(row)
+        title = (f'<p style="{_GROUP_TITLE_STYLE}">{_esc(_group_title(value))}</p>'
+                 if value else "")
+        out.append(title + _table([_header(k) for k in keys], rows))
+    return "".join(out)
+
+
+def _aulas_html(value: str, context: EmailContext, look: _Look) -> "Optional[str]":
+    """``[aulas]``: :func:`records_html` of :func:`_aulas_records` — the coordinator only PRODUCES
+    the list; the tables are the generic renderer's."""
+    records = _aulas_records(context.classes)
+    if not records or records_text(records) != value:
         return None
-    timed = any(c.time for c in ordered)
-    head = ["Data"] + (["Horário"] if timed else []) + ["Disciplina", "Turma"]
-    rows = [[c.when.strftime("%d/%m")] + ([c.time] if timed else []) + [c.subject, c.turma]
-            for c in ordered]
-    return _table(head, rows)
+    return records_html(records, colors=look.colors)
 
 
-def _disciplinas_html(value: str, context: EmailContext) -> "Optional[str]":
+def _disciplinas_html(value: str, context: EmailContext, look: _Look) -> "Optional[str]":
     """``[disciplinas]``: a list, one discipline per item, in the text's order."""
     subjects = _subjects(context.classes)
     if not subjects or "\n".join(subjects) != value:
@@ -1025,98 +1473,234 @@ def _disciplinas_html(value: str, context: EmailContext) -> "Optional[str]":
     return f'<ul style="{_LIST_STYLE}">{items}</ul>'
 
 
-def _bonus_html(value: str, context: EmailContext) -> "Optional[str]":
-    """``[valores_por_bonus]``: a two-column table (Faixa · Valor), the determined band in bold
-    with the text's own mark, then the response-rate condition the bands hang on."""
+def _bonus_html(value: str, context: EmailContext, look: _Look) -> "Optional[str]":
+    """``[valores_por_bonus]``: a list of PAIRS through :func:`records_html` — a two-column table
+    (Faixa · Valor), the determined band carrying the text's own mark — then the response-rate
+    condition the bands hang on."""
     est = context.estimate
     if est is None or not est.tiers or _bonus_value(est) != value:
         return None
-    rows, mark = _bonus_rows(est), _bonus_mark(est)
-    out = _table(["Faixa", "Valor"],
-                 [[label, money + (mark if applied else "")] for label, money, applied in rows],
-                 frozenset(i for i, (_, _, applied) in enumerate(rows) if applied))
-    return out + "".join(f'<p style="{_P_STYLE}">{_esc(c)}</p>' for c in _bonus_condition(est))
+    mark = _bonus_mark(est)
+    pairs = [{"faixa": label, "valor": money + (mark if applied else "")}
+             for label, money, applied in _bonus_rows(est)]
+    return records_html(pairs) + "".join(f'<p style="{_P_STYLE}">{_esc(c)}</p>'
+                                         for c in _bonus_condition(est))
 
 
-def _strong_html(value: str, context: EmailContext) -> "Optional[str]":
-    """``[total]``, ``[valor_por_aula]``: the figure, in bold — the text's own value."""
-    return f"<strong>{_text_html(value)}</strong>"
-
-
-#: The markers that have an HTML form, and whether that form is a BLOCK (a table or a list, which
-#: takes a line of its own) or INLINE. Every provider's marker is here and no generic one is — a
-#: test derives it both ways — so the e-mails that go out as HTML are exactly the ones that carry
-#: a persona's specific data. A form answers ``None`` when the context does not rebuild the very
-#: value the text carries; the value is then shown as escaped text.
-_HTML_FORMS: "Mapping[str, tuple[Callable[[str, EmailContext], Optional[str]], bool]]" = (
+#: The block forms: a marker ALONE on a line of the template draws its block — the classes as
+#: tables, the disciplines as a list, the bands as a two-column table. A form answers ``None``
+#: when the context does not rebuild the very value the text carries; the value is then text.
+_BLOCK_FORMS: "Mapping[str, Callable[[str, EmailContext, _Look], Optional[str]]]" = (
     MappingProxyType({
-        "aulas": (_aulas_html, True),
-        "disciplinas": (_disciplinas_html, True),
-        "valores_por_bonus": (_bonus_html, True),
-        "valor_por_aula": (_strong_html, False),
-        "total": (_strong_html, False),
+        "aulas": _aulas_html,
+        "disciplinas": _disciplinas_html,
+        "valores_por_bonus": _bonus_html,
     }))
+#: The markers that make an e-mail go out as HTML: every provider's marker — a persona's
+#: specific data — and no generic one. DERIVED from :data:`FIELD_PROVIDERS`.
+_DATA_MARKERS: "frozenset[str]" = frozenset(f for p in FIELD_PROVIDERS.values()
+                                            for f in p.field_names)
+#: The producers of a list of records, by marker — what the colours of an e-mail are counted over.
+_RECORD_SOURCES: "Mapping[str, Callable[[EmailContext], list[dict[str, str]]]]" = (
+    MappingProxyType({"aulas": lambda context: _aulas_records(context.classes)}))
+#: Figures that are bold wherever they stand (2026-10-22: «ou texto» — a figure is not a table).
+_BOLD_INLINE = frozenset({"total", "valor_por_aula"})
+
+
+def _value_html(name: str, value: str, context: EmailContext) -> str:
+    """A marker's value inside a line: escaped, line breaks as ``<br>``. A FIXED company tag is
+    the tenant's own text, so its URLs become links like the template's. No other value's do — a
+    FREE tag's value is what the conversation said (``free_tag_values``), not the tenant's."""
+    if name in _BOLD_INLINE:
+        return f"<strong>{_text_html(value)}</strong>"
+    tags = context.custom_tags if isinstance(context.custom_tags, Mapping) else {}
+    fixed = isinstance(tags.get(name), str) and bool(_custom_value(tags[name]))
+    if name not in EMAIL_FIELDS and is_custom_tag_name(name) and fixed:
+        return "<br>\n".join(_linked(ln) for ln in
+                             value.replace("\r\n", "\n").replace("\r", "\n").split("\n"))
+    return _text_html(value)
+
+
+def _line_html(line: str, values: "Mapping[str, str]",
+               context: EmailContext) -> "tuple[str, str]":
+    """One line of the template — ``(html, text)``: the tenant's words escaped (URLs as links),
+    each marker its value. ONE pass: a marker typed inside a value stays text."""
+    html_parts: "list[str]" = []
+    text_parts: "list[str]" = []
+    pos = 0
+    for m in _MARKER.finditer(line):
+        html_parts.append(_linked(line[pos:m.start()]))
+        text_parts.append(line[pos:m.start()])
+        name = m.group(1)
+        html_parts.append(_value_html(name, values[name], context))
+        text_parts.append(values[name])
+        pos = m.end()
+    html_parts.append(_linked(line[pos:]))
+    text_parts.append(line[pos:])
+    return "".join(html_parts), "".join(text_parts)
+
+
+def _body_html(body: str, values: "Mapping[str, str]", context: EmailContext, look: _Look) -> str:
+    """The template's body as simple rich text — four rules, and nothing else of Markdown:
+
+    * a blank line separates paragraphs (the lines of one paragraph are joined by ``<br>``);
+    * a line opened by «•» or «·» is a list item (consecutive ones are one list); a line opened by
+      «-» stays a line with its dash;
+    * a line that ends with «:» and is at most :data:`MAX_HEADING_CHARS` characters, rendered, is a
+      section title in bold;
+    * an ``http(s)://`` URL in the tenant's text is a link.
+
+    A data marker alone on its line is its block (:data:`_BLOCK_FORMS`). Everything is escaped."""
+    out: "list[str]" = []
+    para: "list[str]" = []
+    items: "list[str]" = []
+
+    def flush() -> None:
+        if para:
+            out.append(f'<p style="{_P_STYLE}">' + "<br>\n".join(para) + "</p>")
+            para.clear()
+        if items:
+            out.append(f'<ul style="{_LIST_STYLE}">'
+                       + "".join(f"<li>{it}</li>" for it in items) + "</ul>")
+            items.clear()
+
+    for line in body.split("\n"):
+        stripped = line.strip()
+        alone = _MARKER.fullmatch(stripped)
+        if not stripped:
+            flush()
+            continue
+        if alone and alone.group(1) in _BLOCK_FORMS:
+            name = alone.group(1)
+            drawn = _BLOCK_FORMS[name](values[name], context, look)
+            if drawn is not None:
+                flush()
+                out.append(drawn)
+                continue
+        if stripped[0] in LIST_BULLETS:
+            if para:
+                flush()
+            items.append(_line_html(stripped[1:].lstrip(), values, context)[0])
+            continue
+        if items:
+            flush()
+        rendered, text = _line_html(stripped, values, context)
+        if text.strip().endswith(":") and len(text.strip()) <= MAX_HEADING_CHARS:
+            flush()
+            out.append(f'<p style="{_HEADING_STYLE}"><strong>{rendered}</strong></p>')
+            continue
+        para.append(rendered)
+    flush()
+    return "\n".join(out)
+
+
+def _signature_html(appearance: "Optional[EmailAppearance]", context: EmailContext) -> str:
+    """The tenant's signature block — ``""`` exactly when :func:`email_signature_text` is ``""``:
+    the logo on the LEFT with a thin vertical rule, the lines on the right (the persona's name in
+    bold, the department, the phone, the e-mail and the site as links), the social links below —
+    each its icon when one is configured (an image with the network's name as ``alt``), else the
+    name as a link. In a table, which every mail client lays out."""
+    if appearance is None or not appearance.has_signature:
+        return ""
+    name = context.persona_name.strip() or context.tenant_name.strip()
+    lines = [f"<strong>{_esc(name)}</strong>"] if name else []
+    lines += [_esc(v) for v in (appearance.department, appearance.phone) if v]
+    if appearance.email:
+        lines.append(f'<a href="mailto:{_esc(appearance.email)}">{_esc(appearance.email)}</a>')
+    if appearance.site:
+        lines.append(f'<a href="{_esc(appearance.site)}">{_esc(appearance.site)}</a>')
+    logo = ""
+    rule = ""
+    if appearance.logo_url:
+        logo = (f'<td style="padding:0 12px 0 0;vertical-align:middle">'
+                f'<img src="{_esc(appearance.logo_url)}" '
+                f'alt="{_esc(appearance.sender_name or context.tenant_name.strip() or "logótipo")}" '
+                'width="80" style="display:block;width:80px;max-width:80px;height:auto;border:0">'
+                "</td>")
+        rule = f"border-left:1px solid {_RULE};padding:0 0 0 12px;"
+    cell = (f'<td style="{rule}vertical-align:middle;font-size:13px;line-height:1.5">'
+            + "<br>\n".join(lines) + "</td>")
+    links = []
+    for lk in appearance.links:
+        if lk.icon_url:
+            inner = (f'<img src="{_esc(lk.icon_url)}" alt="{_esc(lk.label)}" width="18" '
+                     'height="18" style="display:inline-block;width:18px;height:18px;border:0">')
+        else:
+            inner = _esc(lk.label)
+        links.append(f'<a href="{_esc(lk.url)}">{inner}</a>')
+    social = (f'<tr><td colspan="{2 if logo else 1}" style="padding:8px 0 0 0;font-size:13px">'
+              + " &nbsp; ".join(links) + "</td></tr>") if links else ""
+    return (f'<table style="border-collapse:collapse;margin:20px 0 0 0"><tbody><tr>{logo}{cell}'
+            f"</tr>{social}</tbody></table>")
 
 
 def render_email_html(subject: str, body: str, values: "Mapping[str, str]",
-                      context: EmailContext) -> str:
+                      context: EmailContext, *,
+                      appearance: "Optional[EmailAppearance]" = None) -> str:
     """The e-mail's HTML form — a whole document — or ``""`` when it has none.
 
     ``""`` unless the BODY uses a marker with an HTML form (a persona's data: the classes, the
-    disciplines, the pay values, the total). A template of generic markers or company tags has no
-    table to draw, and an HTML part would only repeat its text in another dress: it goes out as
-    the text it always was. A data marker in the SUBJECT alone draws nothing either.
+    disciplines, the pay values, the total). A template of generic markers or company tags goes
+    out as the text it always was. A data marker in the SUBJECT alone draws nothing either.
 
-    The HTML is the SAME e-mail as :func:`render_email` with the same ``values``, never another
-    one:
+    The HTML is the SAME e-mail as the text :func:`render_email_forms` gives with the same
+    ``values``, never another one:
 
     * one pass over the template, as the text render: a marker typed inside a value stays text;
-    * the template's own text and every value are escaped (``html.escape``), so only what this
-      function writes can be a tag — and it writes no script, no style sheet, no image, no link
-      and no URL: the styles are inline and the document loads nothing;
+    * the template's own text and every value are escaped (``html.escape``); the template's body
+      is simple rich text (:func:`_body_html`: paragraphs, «•»/«·» lists, short «…:» titles, URLs
+      as links) and nothing else of the tenant's becomes markup;
     * a table is drawn only from rows of ``context`` whose text IS that marker's value in
-      ``values`` — the value the text part carries. Rows that rebuild another text (``values`` came from another read)
-      draw no table: the value is shown as escaped text;
-    * a line break of the text is a ``<br>``; a table or a list takes a line of its own, so one
-      line break on each side of it is the block's own.
+      ``values`` — the value the text part carries; otherwise the value is shown as text;
+    * the styles are inline. The ONLY images are the logo and the social icons the tenant
+      configured in its ``appearance`` (``http``/``https``, escaped, with ``alt``); nothing else
+      is loaded — no style sheet, no script, no tracking pixel;
+    * a header with the sender's name (the appearance's, else the tenant's) and, when the tenant
+      configured one, its signature block — the same lines :func:`email_signature_text` adds to
+      the text.
 
     Raises ``ValueError`` exactly when :func:`render_email` does (a marker with no value, a
     subject that spans lines): the caller never gets here with a ``missing``.
     """
     rendered_subject, _ = render_email(subject, body, values)
     body = (body or "").replace("\r\n", "\n").replace("\r", "\n")
-    if not any(m.group(1) in _HTML_FORMS for m in _MARKER.finditer(body)):
+    used = [m.group(1) for m in _MARKER.finditer(body)]
+    if not any(name in _DATA_MARKERS for name in used):
         return ""
-    # ("text" | "inline" | "block", html) — literal text is escaped once its neighbours are known.
-    parts: "list[tuple[str, str]]" = []
-    pos = 0
-    for m in _MARKER.finditer(body):
-        parts.append(("text", body[pos:m.start()]))
-        name, value = m.group(1), values[m.group(1)]
-        form, block = _HTML_FORMS.get(name, (None, False))
-        drawn = form(value, context) if form is not None else None
-        if drawn is None:
-            parts.append(("inline", _text_html(value)))
-        else:
-            parts.append(("block" if block else "inline", drawn))
-        pos = m.end()
-    parts.append(("text", body[pos:]))
-    out: "list[str]" = []
-    for i, (kind, piece) in enumerate(parts):
-        if kind != "text":
-            out.append(piece)
-            continue
-        if i > 0 and parts[i - 1][0] == "block" and piece.startswith("\n"):
-            piece = piece[1:]
-        if i + 1 < len(parts) and parts[i + 1][0] == "block" and piece.endswith("\n"):
-            piece = piece[:-1]
-        out.append(_text_html(piece))
+    lists = [_RECORD_SOURCES[name](context) for name in dict.fromkeys(used)
+             if name in _RECORD_SOURCES]
+    look = _Look(palette=_palette(appearance), colors=record_colors(lists, appearance))
+    accent = (appearance.accent_color if appearance is not None else "") or _NAVY
+    sender = ((appearance.sender_name if appearance is not None else "")
+              or context.tenant_name.strip())
+    header = (f'<p style="margin:0 0 16px;padding:0 0 8px;border-bottom:2px solid {accent};'
+              f'font-size:16px;font-weight:700;color:{_NAVY}">{_esc(sender)}</p>\n'
+              if sender else "")
     return ("<!DOCTYPE html>\n"
             '<html lang="pt-BR">\n<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
             f"<title>{_esc(rendered_subject)}</title>\n</head>\n"
             f'<body style="{_BODY_STYLE}">\n<div style="{_WRAP_STYLE}">\n'
-            f"{''.join(out)}\n</div>\n</body>\n</html>\n")
+            f"{header}{_body_html(body, values, context, look)}\n"
+            f"{_signature_html(appearance, context)}\n</div>\n</body>\n</html>\n")
+
+
+def render_email_forms(subject: str, body: str, values: "Mapping[str, str]",
+                       context: EmailContext, *,
+                       appearance: "Optional[EmailAppearance]" = None
+                       ) -> "tuple[str, str, str]":
+    """``(subject, text, html)`` — the ONE place the two forms of an e-mail are joined.
+
+    ``text`` is :func:`render_email`'s body and, when the e-mail goes out as HTML and the tenant
+    configured a signature, a blank line and :func:`email_signature_text` — the same lines the
+    HTML's signature block draws. It is what the requester is shown and confirms, and what
+    :func:`email_digest` is taken of. ``html`` is :func:`render_email_html`, ``""`` for an e-mail
+    with no data marker in its body (its ``text`` is then :func:`render_email`'s, byte for byte).
+    """
+    out_subject, text = render_email(subject, body, values)
+    doc = render_email_html(subject, body, values, context, appearance=appearance)
+    signature = email_signature_text(appearance, context) if doc else ""
+    return out_subject, (f"{text}\n\n{signature}" if signature else text), doc
 
 
 def email_digest(subject: str, body: str) -> str:
@@ -1137,11 +1721,16 @@ __all__ = [
     "MAX_CONTEUDO_CHARS", "EmailClass", "EmailContext", "Missing", "known_markers",
     "fields_for", "provider_for", "provider_of", "provider_fields", "template_needs_month",
     "markers_cited", "template_fields", "validate_template", "fill_email_fields",
-    "render_email", "render_email_html", "email_digest", "missing_question", "is_email_month", "month_words",
+    "render_email", "render_email_html", "render_email_forms", "email_digest", "missing_question", "is_email_month", "month_words",
     "date_words", "CUSTOM_TAG_NAME", "MAX_CUSTOM_TAG_CHARS", "MAX_CUSTOM_TAGS",
     "CUSTOM_TAG_SOURCE", "CUSTOM_TAG_REMOVED", "is_custom_tag_name", "custom_tag_problems",
     "normalise_custom_tags", "parse_custom_tags", "CUSTOM_TAG_FREE_SOURCE",
     "CUSTOM_TAG_FREE_MISSING", "MAX_CUSTOM_TAG_HINT_CHARS", "free_tags", "free_value",
     "free_value_problems", "custom_tag_hint_problems", "normalise_custom_tag_hints",
     "parse_custom_tag_hints",
+    "EmailAppearance", "SocialLink", "APPEARANCE_FIELDS", "APPEARANCE_LINK_FIELDS",
+    "APPEARANCE_URL_SCHEMES", "MAX_SOCIAL_LINKS", "DEFAULT_PALETTE", "LIST_BULLETS",
+    "MAX_HEADING_CHARS", "normalise_email_appearance", "parse_email_appearance",
+    "email_signature_text", "record_colors", "records_html", "records_text", "as_records",
+    "MAX_RECORDS",
 ]

@@ -2,6 +2,78 @@
 
 ## Unreleased
 
+### Changed — the e-mail after the owner's model: a table per class group, a colour per discipline, rich text, the tenant's appearance (2026-10-22)
+
+- **Why.** The owner gave a model e-mail of his front desk, then a second image: «ficou bom, mas
+  pode melhorar». The structure:
+  - a greeting and the tenant's paragraphs, with the contract link;
+  - the classes in a table PER CLASS GROUP (Mês · Dia · Data · Disciplina, plus Horário), each
+    discipline in its own soft colour;
+  - sections in bold with round bullets, and a section written with dashes that stays as lines;
+  - a signature block: the logo on the left with a rule, the person's name in bold, the
+    department, phone, e-mail and site, and the social icons below.
+- **What.**
+  - `render_email_forms(subject, body, values, context, appearance=…)` → `(subject, text, html)`
+    is the one join of the two forms.
+  - **The tables are GENERIC** (the owner's order: «preciso de algo genérico»).
+    `records_html`/`records_text` draw ANY list of records (`as_records`: `{key: text}`): one
+    column per key, a column nobody filled left out, one table and one text block per `turma`
+    under «Turma X» in code order, and a colour per `disciplina` value. `record_colors` gives
+    each value ONE colour across the e-mail, by order of first appearance, the tenant's accent
+    first (`DEFAULT_PALETTE`); it is deterministic. A record with only the known keys is the
+    dated line «06/10 (ter) 19:00 — Disciplina», and any other is «chave: valor · …».
+  - `[aulas]` only PRODUCES such a list (`_aulas_records`) for the generic renderer; there is no
+    class-specific drawing. `[valores_por_bonus]` is a list of pairs through the same renderer
+    (the determined band keeps its mark in the cell, no longer a bold row). `[total]` and
+    `[valor_por_aula]` are bold, alone or inline.
+  - `_HTML_FORMS` (of the entry below) is split in two. `_BLOCK_FORMS` holds what a marker alone
+    on a line draws. `_DATA_MARKERS` holds what makes an e-mail HTML, DERIVED from
+    `FIELD_PROVIDERS`.
+  - The tenant's text is simple rich text, four rules: paragraphs; «•»/«·» list items («-» stays
+    a line with its dash); a line ending with «:» of at most 40 characters is a bold title; its
+    `http(s)://` URLs are links. A FIXED company tag's URLs are linked too. A FREE tag's value
+    (#177) is never linked, because it is what the conversation said.
+  - `[total]`/`[valor_por_aula]` alone on a line are a two-column row, and bold inside a sentence.
+  - `EmailAppearance` holds the sender name, accent colour, logo, department, e-mail, phone, site
+    and up to four social links with an optional icon. `normalise_email_appearance` is the SAVE
+    door: `http`/`https` only, every refusal named, nothing stored on any refusal.
+    `parse_email_appearance` is the TURN door. `email_signature_text` gives the signature's text
+    lines.
+- **Where this follows the model and not the first list.** The addendum's list of consequences
+  said a line opened by «-» becomes a `<ul>` item. Its visual detail, from the owner's image,
+  says such a section stays as lines with the dash, and only «•»/«·» are bullets. This follows
+  the visual detail. Swapping is one constant (`LIST_BULLETS`).
+- **The images.** The logo and each social icon are the ONLY images, and only the `http`/`https`
+  URLs the tenant configured, escaped, with `alt`. A link without an icon is its name as text.
+  Nothing else is loaded: no `data:`, no inline SVG, no style sheet, no pixel.
+- **THE TEXT MOVED, declared.** It moved only in `[aulas]`: a «Turma X» block per class group,
+  each line «06/10 (ter) 19:00 — Disciplina» (the weekday added, the class group moved to the
+  title). When the e-mail goes out as HTML and the tenant configured a signature, the signature's
+  lines follow the body after a blank line.
+  - The text is what the requester confirms and what `email_digest` covers, so the proposal shows
+    the same lines.
+  - **Proven:** with `[aulas]` written the parent tree's way, all 96 renderings of the corpus give
+    the digests taken on `f1fc1e9` (identical on `5d0dc7c`, with #177 underneath), with a
+    control.
+  - A host must expect a confirmation PENDING across the deploy to compose to a different text
+    (`digest_changed` on the host).
+- **Tests that change, and why.**
+  - In `tests/unit/test_email_fields.py`: `test_aulas_are_chronological_and_never_invent_an_hour`
+    and `test_render_byte_for_byte_and_deterministic` (×2) pin the new `[aulas]` text.
+    `test_M1_the_listed_classes_sum_to_the_estimates_base_past_days_included` counts the class
+    lines, not the titles.
+  - In `tests/unit/test_email_markers_by_persona.py`: `test_the_coordinator_fills_aulas` pins the
+    new `[aulas]` text.
+  - `tests/unit/test_email_html.py` is rewritten for the new HTML and the appearance, and its
+    digest test becomes «the text moves only in `[aulas]`».
+- **Proof.** 31 mutations, all killed, the generic renderer's rules included: the `turma`
+  column out of the table, the dated line only for the known keys, a non-mapping item refused,
+  and the trigger set derived from the providers. The group order was killed only after a twin
+  where the code order and the order of the first record differ. That twin also found a defect:
+  a group value with no «Turma» prefix was sorted by the raw value, not the code.
+- **Docs.** README «Templated e-mail fields», `docs/COORDINATOR.md`, `docs/HOST_INTEGRATION.md`
+  §7, and the module docstring.
+
 ### Added — the HTML form of a templated e-mail that carries data: tables (2026-10-22)
 
 - **Why.** The owner's order: «qdo for enviar cronograma ou algum dado especifico, colocar em

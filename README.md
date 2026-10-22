@@ -165,7 +165,9 @@ any other text of the tenant.
   carries is `missing` with «tag personalizada removida» (its source:
   «as tags personalizadas da empresa»), so the send asks the requester instead of sending.
 - Tags filled by data (a provider, code), tags of one persona only and HTML values are not
-  here: a tag's value is plain text, and the HTML form of an e-mail shows it escaped.
+  here: a tag's value is plain text, and the HTML form of an e-mail shows it escaped (a FIXED
+  tag's own `http(s)://` URLs as links, like the template's text; a FREE tag's value is what the
+  conversation said, never linked).
 
 **FREE company tags — no fixed value, filled from the conversation (2026-10-22).** The owner:
 «preciso q seja flexivel e chamada pelo usuario»; «o template terá tags que devem ser preenchidas
@@ -218,21 +220,59 @@ name grammar, the reservation of the thirteen and of the reserved names, the rem
   template does not use is never asked for.
 - `render_email(subject, body, values)` → one-pass substitution (a marker inside a value stays
   text); `email_digest(subject, body)` is what a proposal records and a confirmation compares.
-- `render_email_html(subject, body, values, context)` → the HTML form of the SAME e-mail, as a
-  whole document, or `""` (2026-10-22). It renders only when the BODY uses a provider's marker:
-  `[aulas]` becomes a table with one row per class (Data · Horário, only when some class has an
-  hour · Disciplina · Turma), `[valores_por_bonus]` a two-column table (Faixa · Valor) with the
-  determined band in bold and the response-rate condition below it, `[disciplinas]` a list, and
-  `[total]` and `[valor_por_aula]` bold. A template of generic markers or company tags has no
-  table to draw, so it renders `""` and its e-mail stays plain text.
-  - **Safe by construction.** Every value and the template's own text are escaped. The styles
-    are inline, and there is no script, style sheet, image, link or URL.
-  - **The same e-mail.** The render is one pass, like the text. A table is drawn only from rows
-    of `context` whose text IS the value the text part carries; any other value is shown as
-    escaped text.
-  - **The text does not move.** `render_email` is byte for byte the same, and the digest is still
-    of the text. The host sends the HTML beside it as `multipart/alternative`, and the proposal
-    in the chat stays the text.
+- `render_email_forms(subject, body, values, context, appearance=…)` → `(subject, text, html)`,
+  the ONE place the two forms of an e-mail are joined (2026-10-22). `text` is what the requester
+  is shown and confirms and what `email_digest` covers. `html` is `""` unless the BODY uses a
+  provider's marker; a template of generic markers or company tags stays plain text, byte for
+  byte `render_email`'s.
+- **Tables are GENERIC: a list of records in, tables out** (the owner's rule: «preciso de algo
+  genérico» — a new persona's e-mail is made with tags, not with code).
+  - **The records.** `as_records(value)` reads a list of records: each `{key: text}`, at most
+    `MAX_RECORDS`.
+  - **The tables.** `records_html(records, colors=…)` draws one column per key, in order, and
+    leaves out a column nobody filled.
+  - **The text.** `records_text(records)` writes one line per record.
+  - **Three keys have a meaning,** compared folded:
+    - `turma` splits the records into one table (and one text block) per value, titled «Turma
+      <value>», in the order of the code;
+    - `disciplina` colours each distinct value with ONE colour across the e-mail
+      (`record_colors`: by first appearance, the tenant's accent first, `DEFAULT_PALETTE`
+      cycled);
+    - a record whose keys are only `mes`/`dia`/`data`/`horario`/`disciplina`/`turma` is the
+      dated line «06/10 (ter) 19:00 — Disciplina». Any other record is «chave: valor · …».
+- `render_email_html(…)` → the HTML document, after the owner's model e-mail:
+  - `[aulas]` only PRODUCES a list of records (`mês`, `dia`, `data` dd/mm/aa, `horário`,
+    `disciplina`, `turma`) for the generic renderer: one table per class group, Mês · Dia · Data
+    · Horário (when the group has one) · Disciplina, the discipline coloured.
+  - `[valores_por_bonus]` is a list of pairs through the same renderer (Faixa · Valor; the
+    determined band carries the text's own mark). `[disciplinas]` is a list. `[total]` and
+    `[valor_por_aula]` are bold, alone on a line or inside a sentence.
+  - **The tenant's text is simple rich text — four rules, nothing else of Markdown.** A blank
+    line separates paragraphs. A line opened by «•» or «·» is a list item, and a line opened by
+    «-» stays a line with its dash. A line that ends with «:» and is at most
+    `MAX_HEADING_CHARS` (40) characters is a bold title. An `http(s)://` URL in the tenant's own
+    text (or a FIXED company tag's value) is a link. A value the model, a read or the
+    conversation wrote is never linked, and that includes a FREE tag's.
+  - **Header and signature.** A header carries the sender's name: the appearance's, else the
+    tenant's. When the tenant configured a signature, a block follows: the logo on the left with
+    a thin rule, then the persona's name in bold, department, phone, e-mail and site, and below
+    them up to four social links (each its icon when one is configured, else its name).
+  - **Safe by construction.** Every value and the template's own text are escaped, and the
+    styles are inline. The only images are the logo and the icons the appearance configured
+    (`http`/`https`, with `alt`). No style sheet, no script, no tracking pixel.
+  - **The same e-mail.** One pass, like the text. A table is drawn only from rows whose text IS
+    the value the text part carries.
+- **The text moved in ONE place (2026-10-22, declared).** `[aulas]` is now a «Turma X» block per
+  class group, each line «06/10 (ter) 19:00 — Disciplina» with the weekday. When the e-mail goes
+  out as HTML and the tenant configured a signature, its lines follow the body after a blank line
+  (`email_signature_text`). Everything else is byte for byte as before.
+- **The tenant's appearance** (`EmailAppearance`): sender name, accent colour (`#RRGGBB`), logo
+  URL, department, e-mail, phone, site, and up to four social links (`{label, url, icon_url}`).
+  `normalise_email_appearance(raw)` → `(stored, refusals)` is the SAVE door: every refusal is
+  named and nothing is stored on any. A URL is `http://` or `https://` with a host; `javascript:`,
+  `data:` and every other scheme are refused, and so are blanks and quotes. There is no free HTML.
+  `parse_email_appearance(raw)` is the TURN door: it drops what the save would refuse, field by
+  field and link by link.
 
 **Prompt-only personas.** Two personas ship here with **no tools of their own** — just the
 four prompt slots (`system`, `voice`, `scope`, `limits`) as package data, loaded by the host's

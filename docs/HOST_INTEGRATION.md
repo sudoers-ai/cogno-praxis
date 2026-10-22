@@ -271,11 +271,21 @@ Storing the hints, offering the free tags to the executor and fencing the hint i
 yours.
 
 An e-mail whose body uses a provider's marker (the coordinator's classes, pay values or total)
-also has an HTML form, `render_email_html(subject, body, values, context)`: the same `values` and
-the SAME `EmailContext` the fill read. Send it beside the text as `multipart/alternative`
-(`cogno_herald.send_html_email`); `""` means there is no HTML, so send the text alone, as before.
-What the requester confirms, what you audit and what `email_digest` covers stay the TEXT: the HTML
-is the same e-mail in another dress, never a second message.
+also has an HTML form. Compose with `render_email_forms(subject, body, values, context,
+appearance=…)` → `(subject, text, html)`: the same `values` and the SAME `EmailContext` the fill
+read, and the tenant's appearance from `parse_email_appearance(<what you stored>)`.
+- **Sending.** Send `html` beside `text` as `multipart/alternative`
+  (`cogno_herald.send_html_email`). An empty `html` means there is none, so send `text` alone.
+- **The text is the e-mail.** What the requester confirms, what you audit and what
+  `email_digest` covers are `text`, never `render_email`'s body alone: for an HTML e-mail it
+  carries the configured signature's lines.
+- **Tables for other data.** `records_html(records, colors=record_colors([records],
+  appearance))` and `records_text(records)` draw any list of records (`{key: text}`) the same
+  way: one column per key, a table per `turma`, a colour per `disciplina`.
+- **Storing the appearance.** It is the tenant's, one per tenant. Save it through
+  `normalise_email_appearance` (answer the refusals with a 4xx and store nothing). Read it back
+  through `parse_email_appearance`. The logo and the icons are the only images an e-mail loads,
+  and they are the URLs the tenant gave.
 
 ## 8. The environment each server reads
 
