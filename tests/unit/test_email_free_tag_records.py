@@ -24,6 +24,7 @@ Everything here is synthetic: invented names, an invented school.
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import date
 
 import pytest
@@ -224,6 +225,38 @@ def test_the_year_comes_from_the_cell_or_else_from_the_month():
     # 05/09/2027 is a Sunday: the cell's year wins over the send's month.
     assert _unverified([{"dia": "dom", "data": "05/09/2027"}], month="2026-09") == ((0, "data"),)
     assert _unverified([{"dia": "sáb", "data": "05/09"}], month="") == ((0, "dia"),)
+
+
+# ── the year of the date: derived from the send's month, checked (the Director, 2026-10-22) ─────
+
+def test_the_html_date_column_carries_the_year_of_the_send_month_and_the_text_does_not():
+    ctx = _ctx({"aulas": AULAS})                          # month 2026-09
+    values, missing = fill_email_fields(["aulas"], ctx)
+    assert missing == () and "05/09/26" not in values["aulas"]      # the text: dd/mm, as before
+    html = render_email_forms("A", "[aulas]", values, ctx)[2]
+    assert ">05/09/26<" in html and ">12/09/26<" in html and ">05/09<" not in html
+    # no month → as written; a date of another month → as written
+    no_month = dataclasses.replace(ctx, month="")
+    assert ">05/09<" in render_email_forms("A", "[aulas]", values, no_month)[2]
+    other = [{**AULAS[0], "data": "03/10"}]
+    assert records_html(other, month="2026-09").count(">03/10<") == 1
+    assert ">05/09/26<" in records_html(AULAS, month="2026-09")
+
+
+def test_a_date_with_the_year_is_verified_against_the_send_month():
+    check = getattr(ef, "record_cells_unverified", None)
+    assert check is not None, "the record grammar's check is part of the contract"
+    literal = lambda c: c in READ   # noqa: E731
+    # the right derivation: «05/09» read, the year of 2026-09
+    assert check([{"data": "05/09/26"}], month="2026-09", is_literal=literal) == ()
+    assert check([{"data": "05/09/2026"}], month="2026-09", is_literal=literal) == ()
+    # a wrong year — refused like a cell nobody read
+    assert check([{"data": "05/09/25"}], month="2026-09", is_literal=literal) == ((0, "data"),)
+    # no month: the year is derivable from nothing — refused; the literal dd/mm still passes
+    assert check([{"data": "05/09/26"}], month="", is_literal=literal) == ((0, "data"),)
+    assert check([{"data": "05/09"}], month="", is_literal=literal) == ()
+    # a dd/mm nobody read, with the right year — refused
+    assert check([{"data": "06/09/26"}], month="2026-09", is_literal=literal) == ((0, "data"),)
 
 
 def test_a_predicate_that_raises_verifies_nothing_and_a_non_list_is_unverified():

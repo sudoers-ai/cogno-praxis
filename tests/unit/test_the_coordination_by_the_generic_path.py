@@ -16,7 +16,10 @@ e-mail did not:
    the two derivations the composer checks (:func:`record_cells_unverified`). Every cell it passes
    is verified: literal in one of the two reads, or a correct derivation;
 3. the generic fill renders them; the digest of every tag's text over the corpus is the one the
-   provider produced on ``ad935b4`` (the base of this stack), taken by running the provider there.
+   provider produced on ``ad935b4`` (the base of this stack), taken by running the provider there
+   — and so are the HTML tables, the ``Data`` column included: the read prints ``dd/mm`` and the
+   renderer adds the year of the send's month (``dd/mm/aa``, the owner's model), a derivation it
+   checks (the Director's correction, 2026-10-22).
 
 What DIVERGES is listed, tag by tag, and each divergence is applied to the generic side by a
 named transformation before the comparison, so the digest proves that it is the ONLY difference:
@@ -24,9 +27,6 @@ named transformation before the comparison, so the digest proves that it is the 
 * ``[valores_por_bonus]`` — the lines of the response-rate CONDITION are not records: the
   provider ended the value with them, the generic value does not. A tenant writes the condition
   in its template (or in a fixed tag).
-* ``[aulas]`` in HTML — the ``Data`` column: the provider wrote ``dd/mm/aa``; the read prints
-  ``dd/mm`` and a cell is literal or one of the two derivations (``dia``, ``mês``), so the column
-  says ``dd/mm``. The TEXT is identical: the dated line has always written ``dd/mm``.
 * ``[valores_por_bonus]`` in HTML — the condition paragraph after the table, for the same reason.
 * ``[total]`` and ``[valor_por_aula]`` in HTML — the provider made an e-mail with either of them
   HTML, the figure in bold by its NAME. The generic path draws HTML only for an e-mail that
@@ -287,10 +287,6 @@ def test_the_html_tables_are_the_providers_but_for_the_declared_divergences():
     for tname in ("aulas", "disciplinas", "bonus"):
         parts = []
         for _text, doc, cond, month, pay in _forms(tname):
-            if doc is not None and tname == "aulas":
-                # DIVERGENCE (declared): the Data column is dd/mm, as the read prints it.
-                doc = re.sub(r'(<td style="[^"]*">)(\d\d/\d\d)(</td>)',
-                             lambda m: f"{m.group(1)}{m.group(2)}/{month[2:4]}{m.group(3)}", doc)
             if doc is not None and tname == "bonus" and cond:
                 # DIVERGENCE (declared): the condition paragraph after the table.
                 doc = doc.replace("</table>", '</table><p style="margin:0 0 12px">'

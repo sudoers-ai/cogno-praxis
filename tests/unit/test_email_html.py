@@ -328,7 +328,7 @@ def test_aulas_is_a_list_of_records_drawn_by_the_generic_renderer():
     assert values["aulas"] == records_text(records)
     doc = render_email_html(*T_SCHEDULE, values, ctx)
     colors = record_colors([records])
-    assert records_html(records, colors=colors) in doc
+    assert records_html(records, colors=colors, month=ctx.month) in doc
 
 
 # ── [aulas] in HTML: a table per class group ────────────────────────────────────────────────
@@ -359,11 +359,11 @@ def test_aulas_is_one_table_per_class_group_under_its_title():
     assert _group_titles(doc) == ["Turma XA_01", "Turma YB_02"]
     xa, yb = _tables(doc)
     assert _head(xa) == ["Mês", "Dia", "Data", "Horário", "Disciplina"]
-    # The Data column is dd/mm, as the read prints it (R-T13; the provider wrote dd/mm/aa).
-    assert _rows(xa) == [["setembro", "sáb", "05/09", "08:00", "Redes de Computadores"],
-                         ["setembro", "sáb", "12/09", "08:00", "Redes de Computadores"],
-                         ["setembro", "sáb", "26/09", "", "Cálculo Numérico"]]
-    assert _rows(yb) == [["setembro", "sáb", "19/09", "13:30", "Redes de Computadores"]]
+    # The read prints dd/mm; the Data column adds the year of the send's month (dd/mm/aa).
+    assert _rows(xa) == [["setembro", "sáb", "05/09/26", "08:00", "Redes de Computadores"],
+                         ["setembro", "sáb", "12/09/26", "08:00", "Redes de Computadores"],
+                         ["setembro", "sáb", "26/09/26", "", "Cálculo Numérico"]]
+    assert _rows(yb) == [["setembro", "sáb", "19/09/26", "13:30", "Redes de Computadores"]]
     assert sum(len(_rows(t)) for t in (xa, yb)) == len(_records(ctx))
     assert "Turma" not in _head(xa)                       # the table IS the class group's
 
@@ -377,7 +377,7 @@ def test_a_group_title_is_kept_with_a_single_group_and_the_hour_only_when_it_has
     assert _group_titles(doc) == ["Turma XA_01"]
     (table,) = _tables(doc)
     assert _head(table) == ["Mês", "Dia", "Data", "Disciplina"]
-    assert _rows(table) == [["outubro", "sáb", "03/10", "Cálculo Numérico"]]
+    assert _rows(table) == [["outubro", "sáb", "03/10/26", "Cálculo Numérico"]]
 
 
 def test_a_label_that_does_not_say_turma_is_titled_turma():
