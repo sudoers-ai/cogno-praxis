@@ -287,6 +287,22 @@ passes their rows. Two things are yours:
 `CoordinatorService.email_context` is gone: nothing reads a persona's data into an e-mail but the
 persona, through its tools, in the turn.
 
+**The calendar's registry (P5, 2026-10-22).** `preview_schedule_to_calendar` and
+`send_schedule_to_calendar` take a parameter the model must never see: `identity_directory`,
+`[{"label": <the identity's display name>, "email": <its address>}, …]` — your registry of
+identities. The vertical reads it ONLY for an oversight role and ONLY when the professors tab has
+no address for the professor named; the label that counts designates that professor by the match
+`professor=<name>` is resolved with (`_professor_hits`), and two labels with different addresses
+are refused. Four things are yours, the same way `identity_email` is:
+- **Inject it and prune it** from the schema the model sees — a recipient a model can fill is a
+  way to mail a professor's schedule to whoever asks — and overwrite whatever arrived.
+- **Who receives it**: which roles (the coordination, never a contact) and which identities
+  (yours to filter — staff, active, with an address). An entry without an `@` or a label is
+  ignored.
+- **Never record it**: it travels below the arguments the executor chose, so a trace, a ledger
+  or an audit row of the call must not carry it. Nothing in this package logs it.
+- **Its cost**: the vertical re-reads the schedule to resolve the labels, on that path only.
+
 An e-mail whose body carries a free tag holding a list of records also has an HTML form. Compose with `render_email_forms(subject, body, values, context,
 appearance=…)` → `(subject, text, html)`: the same `values` and the SAME `EmailContext` the fill
 read, and the tenant's appearance from `parse_email_appearance(<what you stored>)`.

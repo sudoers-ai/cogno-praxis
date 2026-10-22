@@ -73,6 +73,17 @@ Three things about it are worth knowing before you wire it:
   invite does, because every tenant's confirmations should leave, but a class calendar is an
   institution writing to its own faculty and a tenant that declared no mailbox has not asked to
   write to anybody. It never swallows a message either.
+- **The recipient is resolved by the system, never chosen by the model**, in a declared order:
+  the caller's own address from the host's directory (`identity_email`, only for the person the
+  host authenticated); the tenant's professors tab; and — for the coordination only, when the
+  tab has no address — the host's **registry of identities** (`identity_directory`, injected by
+  the host as `[{"label", "email"}]`). The registry label that counts is the one that designates
+  that professor by the same match `professor=<name>` is resolved with, exactly one person. Two
+  labels for that professor with different addresses are refused (naming the labels, never an
+  address); nobody in the registry is the refusal of before. When the address came from the
+  registry, the proposal's line says so: `→ <address> (from the Cogno registry — the professors
+  tab has no address for <professor>)`. Measured on a production tenant (2026-10-22): a professor
+  with no address on the tab and one in the registry, and the calendar refused.
 - **Every path that did not send RAISES**, so the MCP bridge reports `ok=False` /
   `side_effect=False` and the turn is never recorded as a write that did not happen. The one
   non-error answer starts with `SENT:`.

@@ -21,7 +21,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from difflib import SequenceMatcher
-from typing import Callable, Iterable, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
 from cogno_praxis.coordinator.ics import (
     CalendarEvent,
@@ -69,6 +69,19 @@ GRADE_GRACE_DAYS = 14           # parent parity: grades/attendance due within 14
 #: "All" therefore has to be ASKED FOR with a character nobody's name contains, and answered as
 #: one block per professor (:meth:`CoordinatorService.estimate_faculty_pay`), never as one sum.
 ALL_PROFESSORS = "*"
+
+#: Where a calendar's recipient address came from — :attr:`CalendarProposal.source`, and the
+#: second half of :meth:`CoordinatorService.calendar_recipient`. A CLOSED alphabet, because a
+#: proposal that names its source reads it, and a free string would be a sentence nobody wrote.
+#:
+#: * the caller's OWN address, from the host's directory (``identity_email``) — only for the
+#:   person the host authenticated;
+#: * the tenant's professors tab;
+#: * the host's REGISTRY of identities (``identity_directory``), matched by label to the
+#:   professor named — the coordination's fallback when the tab has no address (P5).
+RECIPIENT_FROM_OWN_IDENTITY = "own_identity"
+RECIPIENT_FROM_SHEET = "professors_tab"
+RECIPIENT_FROM_REGISTRY = "identity_directory"
 
 #: The refusal a non-oversight caller gets for asking about anybody but themselves — by name or
 #: with :data:`ALL_PROFESSORS`. ONE sentence, unchanged since the capability opened: it is the
@@ -721,6 +734,44 @@ def _ambiguous_year(matches: "list[ClassEntry]", raw: str) -> bool:
     return len(years) > 1
 
 
+def _professor_hits(target: str, groups: "Iterable[ProfessorGroup]") -> "list[ProfessorGroup]":
+    """The people a NAME designates — every group with a folded key containing it.
+
+    The OVERSIGHT branch of :meth:`CoordinatorService._visible`, applied to the groups instead of
+    to the rows: accent-stripped, case-folded SUBSTRING (``"brisa"`` inside ``"otelo brisa"``), no
+    typo tolerance. ONE definition with two readers, and that is the point of it being here:
+    :meth:`CoordinatorService._resolve_professor` (an oversight role's ``professor=<name>``, and
+    what ``email_context`` resolved a recipient's label with until #181) and
+    :meth:`CoordinatorService._registry_address` (which registry label designates the professor
+    a calendar is for). A second copy of the rule would be free to drift from the first, and the
+    two would then disagree about who a name is.
+
+    The expression is the one ``_resolve_professor`` always had, unchanged. A blank name is
+    inside every key, so neither caller passes one: an oversight ``professor`` is checked
+    non-empty before it gets here, and :func:`_directory_rows` drops a blank label.
+    """
+    n = _norm(target)
+    return [g for g in groups if any(n in key for key in g.keys)]
+
+
+def _directory_rows(directory: "Optional[Sequence[Any]]") -> "list[tuple[str, str]]":
+    """``identity_directory`` as ``(label, address)`` pairs — only the usable ones.
+
+    The host injects it (the model never sees the parameter), but it crosses a process boundary
+    as JSON, so it is read defensively: an entry that is not a mapping, a blank label, or an
+    address with no ``@`` is dropped rather than raised on — a malformed registry row must not
+    turn a calendar request into a crash, and the worst it can do here is not be used."""
+    out: "list[tuple[str, str]]" = []
+    for row in directory or ():
+        if not isinstance(row, Mapping):
+            continue
+        label = str(row.get("label") or "").strip()
+        address = str(row.get("email") or "").strip()
+        if label and "@" in address:
+            out.append((label, address))
+    return out
+
+
 @dataclass(frozen=True)
 class ProfessorGroup:
     """ONE person, and every spelling of their name the tenant's data carries.
@@ -778,6 +829,10 @@ class CalendarProposal:
     target: str = ""
     period: str = ""
     dropped: int = 0
+    #: Where :attr:`recipient` came from — one of the ``RECIPIENT_FROM_*`` constants. The
+    #: proposal names it when it is the registry, the one source the professor did not record
+    #: for this purpose (P5).
+    source: str = ""
 
     @property
     def count(self) -> int:
@@ -1866,9 +1921,7 @@ class CoordinatorService:
         they asked for, holding half the classes, with nothing to say so. Both halves now answer
         under the declared spelling, and the block says which spellings it summed.
         """
-        n = _norm(target)
-        hits = [g for g in self._professor_groups(entries, report)
-                if any(n in key for key in g.keys)]
+        hits = _professor_hits(target, self._professor_groups(entries, report))
         if not hits:
             raise CoordinatorError(
                 f'No professor matching "{target}" in the schedule or the faculty records — '
@@ -2246,10 +2299,24 @@ class CoordinatorService:
 
     def professor_email(self, *, professor: str = "", role: str = "", identity_label: str = "",
                         identity_email: str = "",
+                        identity_directory: "Optional[Sequence[Any]]" = None,
                         report: Optional[ReadReport] = None) -> str:
         """The address the target professor's calendar goes to — ``""`` when there is none.
 
-        TWO sources, in a DECLARED order, because they answer the question with different
+        The address half of :meth:`calendar_recipient`, which says where it came from too."""
+        return self.calendar_recipient(professor=professor, role=role,
+                                       identity_label=identity_label,
+                                       identity_email=identity_email,
+                                       identity_directory=identity_directory, report=report)[0]
+
+    def calendar_recipient(self, *, professor: str = "", role: str = "",
+                           identity_label: str = "", identity_email: str = "",
+                           identity_directory: "Optional[Sequence[Any]]" = None,
+                           report: Optional[ReadReport] = None) -> "tuple[str, str]":
+        """``(address, source)`` for the target professor's calendar — ``("", "")`` when there
+        is none. ``source`` is one of the ``RECIPIENT_FROM_*`` constants.
+
+        THREE sources, in a DECLARED order, because they answer the question with different
         authority:
 
         1. the HOST DIRECTORY (``identity_email``, injected by the host's RBAC and never
@@ -2258,36 +2325,96 @@ class CoordinatorService:
            institution's own directory holds for them.
         2. the tenant's PROFESSORS TAB, read through :meth:`get_professor_info` and therefore
            under the very same role scoping — a professor sees their own row, an oversight role
-           sees anyone's. This is the only source for an oversight caller sending SOMEONE
+           sees anyone's. This is the first source for an oversight caller sending SOMEONE
            ELSE'S calendar, and the fallback when the directory has no address on file.
+        3. the host's REGISTRY of identities (``identity_directory``: ``[{"label", "email"}]``,
+           injected by the host for the coordination and never fillable by the model) — and
+           only for an OVERSIGHT caller whose tab answered nothing (P5). Measured on a
+           production tenant (2026-10-22): a professor with no address on the tab and one in the
+           registry, and the calendar refused as "no address on file". The label that
+           designates the professor is found by :meth:`_registry_address`, with the match an
+           oversight ``professor=<name>`` is resolved with. A professor sending their own
+           calendar never reaches it: their registry address IS ``identity_email``.
 
-        The order is stated rather than implied because the two can disagree, and a recipient
-        resolved by whichever source happened to answer first is how a calendar reaches the
-        wrong mailbox.
+        The order is stated rather than implied because the sources can disagree, and a
+        recipient resolved by whichever source happened to answer first is how a calendar
+        reaches the wrong mailbox. The tab outranks the registry because it is the address the
+        tenant recorded FOR this purpose; the registry is the address a person signed in with.
         """
         if not identity_label.strip():
             raise CoordinatorAccessError(_NO_IDENTITY)
         target = (professor or "").strip() or identity_label.strip()
         if not target:
-            return ""
+            return "", ""
         own = bool(identity_label.strip()) and _norm(target) == _norm(identity_label)
         if own and identity_email.strip():
-            return identity_email.strip()
+            return identity_email.strip(), RECIPIENT_FROM_OWN_IDENTITY
         for rec in self.get_professor_info(professor=target, role=role,
                                            identity_label=identity_label, report=report):
             for header, value in rec.items():
                 if "mail" in header and "@" in value:
-                    return value.strip()
-        return ""
+                    return value.strip(), RECIPIENT_FROM_SHEET
+        if role.upper() in _OVERSIGHT_ROLES:
+            found = self._registry_address(target, identity_directory)
+            if found:
+                return found, RECIPIENT_FROM_REGISTRY
+        return "", ""
+
+    def _registry_address(self, target: str,
+                          directory: "Optional[Sequence[Any]]") -> str:
+        """The address of the ONE registry identity whose label designates ``target`` — ``""``
+        when none does; RAISES when two do with different addresses.
+
+        **The match is :func:`_professor_hits`**, the one an oversight ``professor=<name>`` is
+        resolved with (and ``email_context`` resolved a recipient's label with, until #181),
+        over the people the tenant's data carries (:meth:`_professor_groups`): the target has to
+        designate exactly ONE person, and a registry label counts only when it designates
+        exactly that person. So «Lia» — inside «Lia Corvelo» and «Otília Fontoura» — designates
+        nobody and is nobody's address; a label written in a form the schedule never carries
+        designates nobody either, and that is the declared limit of the match it reuses.
+
+        **Two labels for that person with DIFFERENT addresses are refused, never picked**: the
+        refusal names the labels (never an address) and says where to fix it. The same address
+        twice — in any case — is one address. A schedule that did not read in full resolves
+        nobody here: a half-read cast can make an ambiguous label look unique.
+
+        A fresh read of the schedule, and only on this path — the tab had no address — so the
+        calls that already answered pay nothing.
+        """
+        rows = _directory_rows(directory)
+        if not rows:
+            return ""
+        read = ReadReport()
+        groups = self._professor_groups(self.aggregate(report=read), None)
+        if read.errors:
+            return ""
+        wanted = _professor_hits(target, groups)
+        if len(wanted) != 1:
+            return ""
+        hits = [(label, address) for label, address in rows
+                if _professor_hits(label, groups) == wanted]
+        by_address: "dict[str, list[str]]" = {}
+        for label, address in hits:
+            by_address.setdefault(address.casefold(), []).append(label)
+        if len(by_address) > 1:
+            labels = ", ".join(sorted({lb for lbs in by_address.values() for lb in lbs},
+                                      key=_norm))
+            raise CoordinatorError(
+                f"{len(hits)} people in this institution's registry match "
+                f"{wanted[0].canonical} and their e-mail addresses differ ({labels}) — this "
+                f"cannot choose between them. Record the address on the professors tab, which "
+                f"is read first, or correct the registry. Nothing was sent.")
+        return hits[0][1] if hits else ""
 
     def _prepare_calendar(
             self, *, sender: Optional[CalendarSender], professor: str, role: str,
             identity_label: str, identity_email: str, month: str, turma: str,
             describe: Optional[Callable[[ClassEntry], str]],
-            report: Optional[ReadReport]
-    ) -> tuple[CalendarSender, list[CalendarEvent], str, str, int]:
+            report: Optional[ReadReport],
+            identity_directory: "Optional[Sequence[Any]]" = None,
+    ) -> tuple[CalendarSender, list[CalendarEvent], str, str, int, str]:
         """Everything a calendar send needs, READ and not yet sent:
-        ``(sender, events, recipient, target, dropped)``.
+        ``(sender, events, recipient, target, dropped, source)``.
 
         ONE method behind the proposal and behind the send, and that is the property, not a
         refactor: a proposal is worth something only if it describes the send that would
@@ -2327,9 +2454,9 @@ class CoordinatorService:
             raise CoordinatorError(
                 "None of the classes found carries a date this system could read, so no "
                 "calendar entry could be built. Nothing was sent.")
-        recipient = self.professor_email(professor=professor, role=role,
-                                         identity_label=identity_label,
-                                         identity_email=identity_email, report=report)
+        recipient, source = self.calendar_recipient(
+            professor=professor, role=role, identity_label=identity_label,
+            identity_email=identity_email, identity_directory=identity_directory, report=report)
         if not recipient:
             raise CoordinatorError(
                 f"There is no e-mail address on file for {target}, so there is nowhere to send "
@@ -2361,13 +2488,14 @@ class CoordinatorService:
                 "have no ORGANIZER and the professor's reply would have nowhere to go. Set "
                 "`from_email` (or the authenticated `user`) in this institution's SMTP "
                 "configuration. Nothing was sent, and nothing will be until that is declared.")
-        return sender, events, recipient, target, dropped
+        return sender, events, recipient, target, dropped, source
 
     def preview_schedule_to_calendar(
             self, *, sender: Optional[CalendarSender], professor: str = "", role: str = "",
             identity_label: str = "", identity_email: str = "", month: str = "",
             turma: str = "", describe: Optional[Callable[[ClassEntry], str]] = None,
-            report: Optional[ReadReport] = None) -> CalendarProposal:
+            report: Optional[ReadReport] = None,
+            identity_directory: "Optional[Sequence[Any]]" = None) -> CalendarProposal:
         """What the SAME arguments would send — read, described, and NOT sent.
 
         This is the proposal half of a two-step send, and it exists because the question the
@@ -2383,12 +2511,12 @@ class CoordinatorService:
         described. Nothing about this method can put a message in the mail; the send is a
         separate call the user still has to agree to.
         """
-        _snd, events, recipient, target, dropped = self._prepare_calendar(
+        _snd, events, recipient, target, dropped, source = self._prepare_calendar(
             sender=sender, professor=professor, role=role, identity_label=identity_label,
             identity_email=identity_email, month=month, turma=turma, describe=describe,
-            report=report)
+            report=report, identity_directory=identity_directory)
         return CalendarProposal(events=events, recipient=recipient, target=target,
-                                period=month_label(month), dropped=dropped)
+                                period=month_label(month), dropped=dropped, source=source)
 
     async def send_schedule_to_calendar(
             self, *, sender: Optional[CalendarSender], professor: str = "", role: str = "",
@@ -2396,7 +2524,8 @@ class CoordinatorService:
             turma: str = "", tz_name: str = "", subject_line: str = "",
             describe: Optional[Callable[[ClassEntry], str]] = None,
             sequence: Optional[int] = None,
-            report: Optional[ReadReport] = None) -> tuple[int, str, int]:
+            report: Optional[ReadReport] = None,
+            identity_directory: "Optional[Sequence[Any]]" = None) -> tuple[int, str, int]:
         """Mail the target professor's upcoming classes as ONE ``.ics``. Returns
         ``(events_sent, recipient, classes_dropped)``.
 
@@ -2411,10 +2540,10 @@ class CoordinatorService:
         The read underneath is :meth:`get_professor_schedule` — the same call, the same
         ``_visible`` scoping, the same today-onward window. Nothing here can widen it.
         """
-        snd, events, recipient, _target, dropped = self._prepare_calendar(
+        snd, events, recipient, _target, dropped, _source = self._prepare_calendar(
             sender=sender, professor=professor, role=role, identity_label=identity_label,
             identity_email=identity_email, month=month, turma=turma, describe=describe,
-            report=report)
+            report=report, identity_directory=identity_directory)
         org_email, org_name = snd.organizer()
         ics = build_ics_calendar(
             events, organizer_email=org_email, organizer_name=org_name, attendee=recipient,

@@ -16,7 +16,7 @@ Run the demo standalone (stdio):  ``python -m cogno_praxis.coordinator.server``
 from __future__ import annotations
 
 import os
-from typing import Callable, Mapping, Optional
+from typing import Callable, Mapping, Optional, Sequence
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -36,6 +36,7 @@ from cogno_praxis.coordinator.service import (
     CoordinatorConfigError,
     CoordinatorError,
     CoordinatorService,
+    RECIPIENT_FROM_REGISTRY,
     _norm,
     _parse_date,
 )
@@ -575,7 +576,7 @@ def _calendar_proposal_text(p: CalendarProposal,
     """
     period = f" of {p.period}" if p.period else ""
     lines = ["NOT SENT — no e-mail has left.",
-             f"PROPOSAL: {p.count} class(es){period} → {p.recipient}",
+             f"PROPOSAL: {p.count} class(es){period} → {p.recipient}{_source_clause(p)}",
              "Put THAT ONE LINE to the user, the three facts together and unchanged: the count, "
              "the period and the address are a single fact. Splitting them across sentences, or "
              "taking any of them from an earlier listing in this conversation, is how a period "
@@ -590,6 +591,22 @@ def _calendar_proposal_text(p: CalendarProposal,
     footer = _fmt_report(report) if report else ""
     body = "\n".join(lines)
     return f"{body}\n\n{footer}" if footer else body
+
+
+def _source_clause(p: CalendarProposal) -> str:
+    """Where the address came from — said ONLY when it is the institution's registry (P5).
+
+    The professors tab and the caller's own address are the sources this proposal always had,
+    and their text is the text of before, byte for byte. The registry is the fallback a
+    coordinator did not choose: the professor recorded no address for calendars, and the one
+    used is the address they signed in with. A person agreeing to the send has to know that, so
+    it rides ON the proposal line, beside the address it qualifies — the line the reply relays
+    whole — rather than on a line of its own the voice may leave out.
+    """
+    if p.source != RECIPIENT_FROM_REGISTRY:
+        return ""
+    return (f" (from the Cogno registry — the professors tab has no address for "
+            f"{p.target or 'this professor'})")
 
 
 def _fmt_event(e: CalendarEvent) -> str:
@@ -863,7 +880,9 @@ def build_server(service: Optional[CoordinatorService] = None, *,
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def preview_schedule_to_calendar(professor: str = "", month: str = "", turma: str = "",
                                      identity_label: str = "", role: str = "",
-                                     identity_email: str = "") -> str:
+                                     identity_email: str = "",
+                                     identity_directory: Optional[Sequence[Mapping[str, str]]] = None
+                                     ) -> str:
         """What send_schedule_to_calendar WOULD mail — how many classes, for which period, and
         to which address — WITHOUT sending anything. Call this FIRST, every time, before
         send_schedule_to_calendar: it reads the same schedule the send would and answers with
@@ -880,13 +899,15 @@ def build_server(service: Optional[CoordinatorService] = None, *,
             svc.preview_schedule_to_calendar(
                 sender=_resolve_sender(), professor=professor, month=month, turma=turma,
                 identity_label=identity_label, role=role, identity_email=identity_email,
-                describe=_fmt_entry, report=report),
+                identity_directory=identity_directory, describe=_fmt_entry, report=report),
             report))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
     async def send_schedule_to_calendar(professor: str = "", month: str = "", turma: str = "",
                                         identity_label: str = "", role: str = "",
-                                        identity_email: str = "") -> str:
+                                        identity_email: str = "",
+                                        identity_directory: Optional[
+                                            Sequence[Mapping[str, str]]] = None) -> str:
         """E-mail the professor's UPCOMING classes as ONE calendar file (.ics) they import in a
         single action — "manda minhas aulas pro meu calendário", "envia meu calendário de
         setembro". ``month`` and ``turma`` narrow it exactly like get_professor_schedule; leave
@@ -903,7 +924,8 @@ def build_server(service: Optional[CoordinatorService] = None, *,
             count, to, dropped = await svc.send_schedule_to_calendar(
                 sender=_resolve_sender(), professor=professor, month=month, turma=turma,
                 identity_label=identity_label, role=role, identity_email=identity_email,
-                tz_name=tz, describe=_fmt_entry, report=report)
+                identity_directory=identity_directory, tz_name=tz, describe=_fmt_entry,
+                report=report)
         except CoordinatorAccessError as exc:
             # RAISED, not returned as text, and the two halves of that are separate.
             # RAISING is the accounting: a FastMCP tool that RETURNS is a successful call, and
