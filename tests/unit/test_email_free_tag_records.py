@@ -182,6 +182,8 @@ def test_the_email_is_html_only_when_its_body_carries_a_list():
     assert doc(text_only) == ""
     assert doc({n: "v" for n in FIVE}, tags={n: "fixo" for n in FIVE}) == ""
     with_list = dict(text_only, aulas=AULAS)
+    # A list handed to a FIXED tag is never read (the fixed value fills): no table, no HTML.
+    assert doc(with_list, tags={**FREE, "aulas": "fixo"}) == ""
     html = doc(with_list)
     assert html.startswith("<!DOCTYPE html>") and html.count("<table") == 1
     # A figure is never bold by its NAME (the provider's [total] was).
