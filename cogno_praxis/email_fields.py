@@ -1667,13 +1667,17 @@ def _signature_html(appearance: "Optional[EmailAppearance]", context: EmailConte
 
 def render_email_html(subject: str, body: str, values: "Mapping[str, str]",
                       context: EmailContext, *,
-                      appearance: "Optional[EmailAppearance]" = None) -> str:
+                      appearance: "Optional[EmailAppearance]" = None,
+                      force_html: bool = False) -> str:
     """The e-mail's HTML form — a whole document — or ``""`` when it has none.
 
     ``""`` unless the BODY carries a FREE tag whose value is a LIST OF RECORDS (R-T13: data
     copied from a read — a timetable, a table of values). A template of generic markers, fixed
     tags or free tags of text goes out as the text it always was (until R-T13 a provider's
-    figure, alone, made an e-mail HTML too).
+    figure, alone, made an e-mail HTML too). ``force_html=True`` draws the document anyway — for
+    a PREVIEW only (the host's ``email-preview``): the tenant's rich text, the header and the
+    signature, the free tags as whatever placeholder ``values`` carries, and no row invented. A
+    send never sets it.
 
     The HTML is the SAME e-mail as the text :func:`render_email_forms` gives with the same
     ``values``, never another one:
@@ -1698,7 +1702,7 @@ def render_email_html(subject: str, body: str, values: "Mapping[str, str]",
     body = (body or "").replace("\r\n", "\n").replace("\r", "\n")
     used = [m.group(1) for m in _MARKER.finditer(body)]
     lists = [r for r in (_structured(name, context) for name in dict.fromkeys(used)) if r]
-    if not lists:
+    if not lists and not force_html:
         return ""
     look = _Look(palette=_palette(appearance), colors=record_colors(lists, appearance))
     accent = (appearance.accent_color if appearance is not None else "") or _NAVY
@@ -1718,8 +1722,8 @@ def render_email_html(subject: str, body: str, values: "Mapping[str, str]",
 
 def render_email_forms(subject: str, body: str, values: "Mapping[str, str]",
                        context: EmailContext, *,
-                       appearance: "Optional[EmailAppearance]" = None
-                       ) -> "tuple[str, str, str]":
+                       appearance: "Optional[EmailAppearance]" = None,
+                       force_html: bool = False) -> "tuple[str, str, str]":
     """``(subject, text, html)`` — the ONE place the two forms of an e-mail are joined.
 
     ``text`` is :func:`render_email`'s body and, when the e-mail goes out as HTML and the tenant
@@ -1727,10 +1731,11 @@ def render_email_forms(subject: str, body: str, values: "Mapping[str, str]",
     HTML's signature block draws. It is what the requester is shown and confirms, and what
     :func:`email_digest` is taken of. ``html`` is :func:`render_email_html`, ``""`` for an e-mail
     with no list of records in its body (its ``text`` is then :func:`render_email`'s, byte for
-    byte).
+    byte) — unless ``force_html`` (a PREVIEW's, never a send's: :func:`render_email_html`).
     """
     out_subject, text = render_email(subject, body, values)
-    doc = render_email_html(subject, body, values, context, appearance=appearance)
+    doc = render_email_html(subject, body, values, context, appearance=appearance,
+                            force_html=force_html)
     signature = email_signature_text(appearance, context) if doc else ""
     return out_subject, (f"{text}\n\n{signature}" if signature else text), doc
 

@@ -238,6 +238,9 @@ path.
   is shown and confirms and what `email_digest` covers. `html` is `""` unless the BODY carries a
   FREE tag whose value is a list of records (R-T13; until then, a provider's marker); every other
   e-mail stays plain text, byte for byte `render_email`'s — a figure alone included.
+  `force_html=True` draws the document anyway, for a PREVIEW only (the tenant's rich text, the
+  header, the signature; the free tags as the placeholder the caller put in `values`; no row
+  invented) — a send never sets it, and the real table is seen only at the send.
 - **Tables are GENERIC: a list of records in, tables out** (the owner's rule: «preciso de algo
   genérico» — a new persona's e-mail is made with tags, not with code).
   - **The records.** `as_records(value)` reads a list of records: each `{key: text}`, at most

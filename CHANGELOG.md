@@ -33,6 +33,11 @@
     «first: second». In HTML, records of one key are a LIST.
   - The HTML form exists when the body carries a free tag holding a list (`_structured`); that tag
     alone on a line is its tables (`_records_block`), the colours counted over every list.
+  - `render_email_forms(…, force_html=True)` (and `render_email_html`) draws the document with no
+    list — for a PREVIEW only: the rich text, the header and the signature, a free tag as the
+    placeholder the caller put in `values`, no row invented. The default is `False`, and a send
+    never sets it. Declared: a preview shows the appearance and the free tags' placeholders; the
+    real table is seen only at the send.
   - Removed with the provider: `CoordinatorService.email_context`, `EmailClass`, the
     `EmailContext` fields `professor`/`classes`/`estimate`/`schedule_error`/`pay_error`, and every
     coordinator-only builder of `email_fields` (it imports nothing of the package now).
