@@ -36,6 +36,7 @@ import cogno_praxis.email_fields as ef
 from cogno_praxis.email_fields import (
     EMAIL_FIELDS,
     FIELD_PROVIDERS,
+    GENERIC_FIELDS,
     REFUSED_FIELDS,
     EmailContext,
     fill_email_fields,
@@ -96,7 +97,9 @@ def test_the_tenants_other_tags_do_not_open_it():
 
 def test_control_a_template_without_company_tags_is_unchanged_by_the_tenants_tags():
     fields = template_fields(*T_ALL)
-    assert validate_template(*T_ALL, custom_tags=TAGS) == validate_template(*T_ALL) == ()
+    # T_ALL cites the coordination's five: valid for the COORDINATOR only (2026-10-22)
+    assert validate_template(*T_ALL, persona="COORDINATOR", custom_tags=TAGS) == \
+        validate_template(*T_ALL, persona="COORDINATOR") == ()
     plain = fill_email_fields(fields, _full_context(), persona="COORDINATOR")
     tagged = fill_email_fields(fields, _with_tags(_full_context(), TAGS), persona="COORDINATOR")
     assert plain == tagged
@@ -113,10 +116,63 @@ def test_the_refusal_lists_the_tenants_tags_beside_the_thirteen():
 
 @pytest.mark.parametrize("name", sorted(EMAIL_FIELDS))
 def test_a_tag_named_like_a_standard_marker_is_refused(name):
+    """Every name of the union is refused. The sentence of a GENERIC marker is the one of before,
+    byte for byte; a coordination marker is no longer «padrão» (2026-10-22: the default list is
+    the eight), so its sentence says whose tag it is — the verdict is the same."""
     stored, refusals = ef.normalise_custom_tags({name: "valor"})
     assert stored == {}
-    assert refusals == (f"[{name}] já é um marcador padrão ({EMAIL_FIELDS[name].source}); "
-                        "escolha outro nome",)
+    if name in GENERIC_FIELDS:
+        assert refusals == (f"[{name}] já é um marcador padrão ({EMAIL_FIELDS[name].source}); "
+                            "escolha outro nome",)
+    else:
+        assert refusals == (f"[{name}] já é uma tag da coordenação ({EMAIL_FIELDS[name].source}); "
+                            "escolha outro nome",)
+
+
+def test_the_sentence_of_a_generic_collision_is_the_bases_byte_for_byte():
+    """CONTROL, pinned as text and not rebuilt from the code: the generic sentence did not move
+    (green on the base and on the change)."""
+    assert ef.custom_tag_problems("nome", "x") == (
+        "[nome] já é um marcador padrão (o nome do destinatário no cadastro); escolha outro nome",)
+
+
+def test_the_sentence_of_a_coordination_collision_says_whose_tag_it_is():
+    """A TEXT change of the company tags, not a behaviour one: the name is refused as before, and
+    the sentence no longer calls it «padrão» — the default list is the eight (2026-10-22)."""
+    assert ef.custom_tag_problems("aulas", "x") == (
+        "[aulas] já é uma tag da coordenação (as aulas do mês na agenda da coordenação); "
+        "escolha outro nome",)
+
+
+#: The coordination's five — typed here: the names the risk below is about.
+COORDINATION = ("disciplinas", "aulas", "valor_por_aula", "valores_por_bonus", "total")
+
+
+@pytest.mark.parametrize("name", COORDINATION)
+@pytest.mark.parametrize("persona", ("COORDINATOR", "SECRETARY", None))
+def test_a_coordination_name_stays_reserved_as_a_company_tag_after_the_list_shrank(name, persona):
+    """The risk of 2026-10-22: the DEFAULT list became the eight generic markers, so a collision
+    check that read it would now ACCEPT a company tag named ``aulas`` or ``total`` — a tag that
+    collides with what the COORDINATOR computes. The reservation reads the UNION
+    (:data:`EMAIL_FIELDS`), never the default list, in every persona."""
+    assert f"[{name}]" not in known_markers()             # the condition: the list shrank…
+    assert not ef.is_custom_tag_name(name)                 # …and the name is still no tag
+    stored, refusals = ef.normalise_custom_tags({name: "valor"})
+    assert stored == {} and len(refusals) == 1 and refusals[0].startswith(f"[{name}] já é ")
+    assert ef.parse_custom_tags({name: "valor"}) == {}
+    # a "tag" of that name unlocks nothing and fills nothing, whoever the template is for
+    assert validate_template("Aviso", f"Texto: [{name}]", persona=persona,
+                             custom_tags={name: "valor"}) == \
+        validate_template("Aviso", f"Texto: [{name}]", persona=persona)
+    values, _ = fill_email_fields((name,), _with_tags(_host_half(), {name: "VALOR DA TAG"}),
+                                  persona=persona)
+    assert values.get(name) != "VALOR DA TAG"
+
+
+def test_control_a_company_tag_that_collides_with_nothing_still_passes():
+    assert ef.is_custom_tag_name(TAG)
+    assert ef.normalise_custom_tags(TAGS) == (TAGS, ())
+    assert validate_template(*T_HOURS, persona="SECRETARY", custom_tags=TAGS) == ()
 
 
 @pytest.mark.parametrize("name", sorted(REFUSED_FIELDS))
@@ -184,7 +240,13 @@ def test_every_provider_persona_has_a_row():
 def test_the_company_tag_fills_in_every_persona_and_leaves_the_row_as_it_was(persona):
     subject, body = T_ALL[0], T_ALL[1] + "\n\nAtendimento: [horario_atendimento]"
     fields = template_fields(subject, body)
-    assert validate_template(subject, body, persona=persona, custom_tags=TAGS) == ()
+    reasons = validate_template(subject, body, persona=persona, custom_tags=TAGS)
+    if EXPECTED_FILLS[persona] == frozenset(EMAIL_FIELDS):
+        assert reasons == ()
+    else:
+        # only the coordination's markers are refused (2026-10-22); the company tag never is
+        assert reasons and all("é uma tag da coordenação (COORDINATOR)" in r for r in reasons)
+        assert not any(f"[{TAG}]" in r.split(";", 1)[0] for r in reasons)
     values, missing = fill_email_fields(fields, _with_tags(_full_context(), TAGS),
                                         persona=persona)
     assert values[TAG] == VALUE

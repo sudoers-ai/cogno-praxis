@@ -143,8 +143,14 @@ def test_an_unknown_marker_refusal_lists_the_markers_that_exist():
 
 
 def test_the_owners_two_templates_are_valid():
-    assert validate_template(*T_SCHEDULE) == ()
-    assert validate_template(*T_INVOICE) == ()
+    """For the persona they belong to (2026-10-22: a coordination marker is valid only in the
+    COORDINATOR's template); with no persona, the default list refuses their coordination
+    markers."""
+    assert validate_template(*T_SCHEDULE, persona="COORDINATOR") == ()
+    assert validate_template(*T_INVOICE, persona="COORDINATOR") == ()
+    for template in (T_SCHEDULE, T_INVOICE):
+        reasons = validate_template(*template)
+        assert reasons and all("é uma tag da coordenação (COORDINATOR)" in r for r in reasons)
 
 
 def test_contrato_opens_in_E3_and_cpf_never_does():
@@ -173,9 +179,9 @@ def test_the_list_is_derived_once_and_the_docs_cite_nothing_outside_it():
     for text in (ef.__doc__ or "", readme):
         stray = [m for m in markers_cited(text) if m not in allowed]
         assert stray == [], stray
-    # every listed marker is documented in the README, by name
-    for marker in known_markers():
-        assert marker in readme, marker
+    # every marker is documented in the README, by name — the default list and each persona's
+    for marker in EMAIL_FIELDS:
+        assert f"[{marker}]" in readme, marker
     assert SUBJECT_FORBIDDEN <= set(EMAIL_FIELDS)
 
 
