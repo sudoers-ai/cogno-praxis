@@ -266,3 +266,24 @@ def test_a_predicate_that_raises_verifies_nothing_and_a_non_list_is_unverified()
     assert check is not None, "the record grammar's check is part of the contract"
     assert check([{"data": "05/09"}], month="2026-09", is_literal=boom) == ((0, "data"),)
     assert check("texto", month="2026-09", is_literal=lambda c: True) == ((0, ""),)
+
+
+# ── the preview's HTML: force_html (the reviewer's decision, 2026-10-22) ─────────────────────────
+
+def test_force_html_draws_the_document_without_records_and_the_default_does_not():
+    """A preview shows the tenant's appearance and rich text even when the template carries no
+    list (its free tags are placeholders until the send); a SEND never forces it — an e-mail
+    with no records goes out as text, as always."""
+    import inspect
+    assert "force_html" in inspect.signature(render_email_forms).parameters
+    ctx = _ctx({"total": "R$ 1,00"})
+    body = "Olá, [nome].\n\nSobre as aulas:\n• Chegue cedo.\n\nTotal: [total]"
+    values, missing = fill_email_fields(template_fields("Aviso", body), ctx)
+    assert missing == ()
+    plain = render_email_forms("Aviso", body, values, ctx)
+    assert plain[2] == ""                                         # the default: text only
+    forced = render_email_forms("Aviso", body, values, ctx, force_html=True)
+    assert forced[2].startswith("<!DOCTYPE html>")
+    assert "<strong>Sobre as aulas:</strong>" in forced[2] and "<li>Chegue cedo.</li>" in forced[2]
+    assert "<table" not in forced[2]                              # no row is invented
+    assert forced[0] == plain[0] and forced[1] == plain[1]        # no signature configured
