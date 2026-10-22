@@ -166,6 +166,29 @@ any other text of the tenant.
   «as tags personalizadas da empresa»), so the send asks the requester instead of sending.
 - Tags filled by data (a provider, code), tags of one persona only and HTML are not here.
 
+**FREE company tags — no fixed value, filled from the conversation (2026-10-22).** The owner:
+«preciso q seja flexivel e chamada pelo usuario»; «o template terá tags que devem ser preenchidas
+conforme as mensagens com o agente». A company tag whose value is EMPTY is FREE: it is stored in
+the SAME map as `{name: ""}` (so every non-empty string stored before still reads as the fixed tag
+it was), and `free_tags(tags)` names the free ones. Everything else is the company tag's: the
+name grammar, the reservation of the thirteen and of the reserved names, the removed path.
+
+- The value comes from what the person who asked said: `EmailContext.free_tag_values`
+  (`{name: text}`, the host takes it from the executor's call). `fill_email_fields` fills a free
+  tag from it as ONE line of plain text (`free_value`: every run of blanks and line breaks one
+  space, so it never breaks a subject), at most `MAX_CUSTOM_TAG_CHARS` characters and with no
+  control character (`free_value_problems`). A value given for a fixed tag, a standard marker or
+  a name that is no tag is never read: a fixed tag stays fixed.
+- Not said → `missing`, with «o pedido não disse o que pôr nesta tag» (its source:
+  «o que o solicitante disser na conversa»), so the send ASKS. With the tenant's hint the reason ends
+  with it: «… nesta tag: a disciplina da aula remarcada».
+- The hint is optional, for a free tag only, the tenant's plain text on ONE line, at most
+  `MAX_CUSTOM_TAG_HINT_CHARS` (120) characters: `custom_tag_hint_problems(name, hint, tags)` is
+  the rule, `normalise_custom_tag_hints(raw, tags)` the SAVE door (every refusal named, nothing
+  stored on any refusal) and `parse_custom_tag_hints(raw, tags)` the TURN door;
+  `EmailContext.custom_tag_hints` carries them to the fill. A host that puts a hint in a prompt
+  shapes and fences it like any other text of the tenant.
+
 - `validate_template(subject, body, persona=…)` → the refusals in words, `()` when valid. A
   template may use `known_markers(persona)`: the eight generic markers and that persona's own
   (the id is compared as written). A marker of another persona is refused naming it — a template

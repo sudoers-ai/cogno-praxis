@@ -263,7 +263,12 @@ no persona gets the eight only — and the tenant's tags as `custom_tags=` when 
 SAVED, adds
 the names of the tags the tenant removed (`removed_tags=`) when the turn reads the stored
 ones — so a template whose tag was removed is kept and its send asks — and hands the same tags to
-`EmailContext.custom_tags` when it composes.
+`EmailContext.custom_tags` when it composes. A tag stored EMPTY is FREE (2026-10-22): the host
+asks its executor for the value from the conversation and hands it over as
+`EmailContext.free_tag_values`, with the tenant's hints (`parse_custom_tag_hints`) as
+`EmailContext.custom_tag_hints`; a free tag nobody filled comes back `missing` and the send asks.
+Storing the hints, offering the free tags to the executor and fencing the hint in its prompt are
+yours.
 
 ## 8. The environment each server reads
 
