@@ -137,6 +137,28 @@ def _owned(block: str, name: str) -> str:
     return f"{title}\nProfessor: {name}\n{rest}"
 
 
+def _as_recorded(block: str) -> str:
+    """``block`` without the two lines of figures R-T13 (2026-10-22) ADDED to every pay block —
+    the ``Valor por aula`` line and the ``*Valores por faixa de bônus*`` section — i.e. the block
+    as the turns below RECORDED it. What the additions say is pinned by
+    ``test_the_tools_print_what_an_email_copies.py``; here they are only taken off, so every
+    recorded pin keeps meaning what it meant."""
+    out: "list[str]" = []
+    skipping = False
+    for ln in block.split("\n"):
+        if skipping and ln:
+            continue
+        skipping = False
+        if ln == "*Valores por faixa de bônus*":
+            if out and out[-1] == "":
+                out.pop()
+            skipping = True
+            continue
+        if not ln.startswith("Valor por aula: "):
+            out.append(ln)
+    return "\n".join(out)
+
+
 def _nothing_for(name: str) -> str:
     """The empty answer, owned: the same 117-char sentence with WHOSE period was empty."""
     return NOTHING_TO_ESTIMATE.replace("found for this period", f"found for {name} for this period")
@@ -196,13 +218,19 @@ def test_the_fixture_IS_the_tenants_september_turn_115s_block_plus_ONE_line_sayi
     reproduced and closed in the same assertion: the number is still one person's (turn 114's,
     the same call as EMPLOYEE, byte for byte), and the block now says so."""
     out = _tool(_svc())(period="2026-09", professor="", **SUPERVISOR)
-    assert out == _owned(TURN_115_BLOCK, A)
+    assert _as_recorded(out) == _owned(TURN_115_BLOCK, A)
+    # …plus what R-T13 added: one class's value, and every band's (the hypotheses' figures).
+    assert "Horas por aula declaradas nas regras: 4 h\nValor por aula: R$ 480,00\n" in out
+    assert out.endswith("*Valores por faixa de bônus*\nSem bônus: R$ 1.440,00\n"
+                        "IBOPE 80–89%: R$ 1.800,00\nIBOPE 90%+: R$ 1.920,00")
     assert len(TURN_115_BLOCK) == 847                     # the recorded block, as it was
     assert out.splitlines()[1] == f"Professor: {A}"       # and the one line it gained
     owner = len(f"Professor: {A}\n")
     # turn 111, once per class group: 769 and 753 chars recorded, and the 117-char nothing
-    assert len(_tool(_svc())(period="2026-09", turma="DE_09", **SUPERVISOR)) == 769 + owner
-    assert len(_tool(_svc())(period="2026-09", turma="DE_10", **SUPERVISOR)) == 753 + owner
+    assert len(_as_recorded(_tool(_svc())(period="2026-09", turma="DE_09", **SUPERVISOR))) \
+        == 769 + owner
+    assert len(_as_recorded(_tool(_svc())(period="2026-09", turma="DE_10", **SUPERVISOR))) \
+        == 753 + owner
     assert _tool(_svc())(period="2026-09", turma="DSA_33", **SUPERVISOR) == _nothing_for(A)
     assert len(NOTHING_TO_ESTIMATE) == 117
     # …and turn 114's "minhas aulas" figures ARE those: the same call as EMPLOYEE, byte for byte
@@ -430,7 +458,7 @@ def test_an_EMPTY_professor_is_STILL_the_caller_for_every_role_and_never_everyon
     est = _svc().estimate_professor_pay(professor="", period="2026-09", identity_label=A, role=role)
     assert (est.hours, est.base) == (12, 1440.0)
     assert est.professor == A                             # own: the caller's own label
-    assert render_pay_block(est) == _owned(TURN_115_BLOCK, A)
+    assert _as_recorded(render_pay_block(est)) == _owned(TURN_115_BLOCK, A)
 
 
 def test_ALL_PROFESSORS_is_a_sentinel_the_single_estimate_redirects_not_a_name_it_looks_up():

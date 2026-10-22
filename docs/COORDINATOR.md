@@ -232,6 +232,41 @@ the very text the e-mail carries, so the table and the text cannot disagree. The
 follows the same shape: a «Turma X» block per class group, each line with the weekday. That is the
 one change to the text, and it is declared. `tests/unit/test_email_html.py`.
 
+## The tools PRINT every value a templated e-mail copies (R-T13, 2026-10-22)
+
+The owner's rule, «preciso de algo genérico»: a persona's e-mail is filled with the tenant's own
+tags, by the persona, from the tools it already has. A value a tool never printed is a value the
+persona would have to work out, which is the copy that goes wrong. So the arithmetic stays in the
+tools and the tools print it:
+
+- **The listing line carries the class HOUR** when the sheet records one: `08/09 19:00 · DE_09 ·
+  Bancos NoSQL` (the hour belongs to the day field, so the class group stays the middle one), and
+  the classes of ONE day are listed by hour, a class with no hour after the timed ones
+  (`server._hour_order`; nothing moves across dates). The hour is `CoordinatorService.entry_time`,
+  read through `COLUMN_TIME`, whose default is «Hora»: a sheet with an «Hora» header has its hour
+  read whether or not the rules declare the key, as the calendar export always read it. Every
+  tool that renders through the one line gets it (`get_professor_schedule`, `check_deadlines`,
+  `get_weekly_briefing`, `check_ibope_status`, `find_replacement_slot`, `daily_checks`), and so
+  does the host's out-of-process daily sweep, because `status_args` carries `time_of`. A sheet
+  with no hour column lists exactly what it always listed. The WEEKDAY is not printed: where a
+  templated e-mail is composed, a `dia` is checked by code as the weekday of the record's date.
+- **The pay block prints the value of ONE class**, `Valor por aula: R$ X` (hours per class × the
+  rate, `value_per_class_line`), under the two declared factors, in the professor's block and in
+  the faculty-wide one.
+- **The pay block prints the month's value under EVERY declared band**, in every bonus state,
+  under `*Valores por faixa de bônus*` (`BAND_VALUES_HEADER`): `Sem bônus: R$ X` and one
+  `<band>: R$ Y` per declared band, the determined level marked «← apurado (IBOPE N%)» (`below`
+  marks «Sem bônus», `applied` its band; `gap` and `not_found` mark nothing). One definition,
+  `pay.bonus_band_rows`/`bonus_band_lines`. Before, only the applied band was printed, or the
+  hypotheses when no result was read. With no result the hypotheses carry the same figures, and
+  the section is printed anyway, so a reader finds the levels in one place in every state. A
+  tenant that declares no band gets no section.
+
+Removing those two additions from a block gives the block of before, byte for byte, and a sheet
+with no hour column lists the same bytes as before: both are pinned by digests taken on the parent
+tree (`tests/unit/test_the_tools_print_what_an_email_copies.py`, with a control that the corpus
+reaches every bonus state).
+
 ## A rehearsal tenant's classes, from a FILE (2026-10-21)
 
 Without a Google token the coordinator's subprocess serves an EMPTY in-memory store, so a

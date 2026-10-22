@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+### Changed — the coordinator's tools print every value a templated e-mail copies (R-T13, 2026-10-22)
+
+- **Why.** The owner: «preciso de algo genérico» — a persona's e-mail is made with the tenant's
+  own tags, filled by the persona from the tools it already has, never by a code path of its own.
+  The coordination's five e-mail values were computed by a field provider inside the e-mail
+  module, and several of them were printed by no tool: the class hour, the value of one class,
+  and the month's value under each declared band (only the applied band was printed). A value a
+  tool never printed is one the persona would have to work out. The arithmetic stays in the tools,
+  and the tools now print it.
+- **What.**
+  - The listing line carries the class HOUR when the sheet records one: `08/09 19:00 · DE_09 ·
+    Disciplina`. The classes of one day are listed by hour, a class with no hour after the timed
+    ones (`server._hour_order`; nothing moves across dates). `status_args` carries `time_of`
+    (`CoordinatorService.entry_time`), so every listing tool gets it (`get_professor_schedule`,
+    `check_deadlines`, `get_weekly_briefing`, `check_ibope_status`, `find_replacement_slot`,
+    `daily_checks`), and so does `daily_checks_text` for a caller that passes `status_args`.
+    `COLUMN_TIME` defaults to «Hora», so a sheet with that header has its hour read whether or not
+    the rules declare the key, as the calendar export always did.
+  - The pay block prints `Valor por aula: R$ X` (hours per class × the rate,
+    `value_per_class_line`) under the two declared factors, in the professor's block and the
+    faculty-wide one.
+  - The pay block prints the month's value under EVERY declared band, in every bonus state, under
+    `*Valores por faixa de bônus*` (`BAND_VALUES_HEADER`): `Sem bônus: R$ X` and `<band>: R$ Y` per
+    band, the determined level marked «← apurado (IBOPE N%)». One definition
+    (`pay.bonus_band_rows`, `bonus_band_lines`, `bonus_mark`); `email_fields`' `[valores_por_bonus]`
+    reads the same rows, so its text did not move.
+  - New public names: `BAND_VALUES_HEADER`, `bonus_band_lines` (`cogno_praxis.coordinator`).
+- **What did NOT move.** Removing the two additions from every block of a corpus that reaches all
+  four bonus states and the no-band one gives the parent's block byte for byte, and a sheet with no
+  hour column lists exactly what it listed: both are pinned by digests taken on `ad935b4`. The
+  weekday is NOT printed; where an e-mail is composed it is a derivation of the date, checked by
+  code. The aggregate read's order is untouched (the pay grouping and the calendar read it); only
+  the listing orders a day by hour.
+- **Declared.**
+  - What a professor reads on WhatsApp changes in three places: the hour on each line (only for a
+    sheet with an hour column), the classes of one day by hour, and the two additions to the pay
+    block.
+  - With no IBOPE result, the band section repeats the hypotheses' figures.
+  - `test_oversight_pay_by_professor.py` keeps every recorded block, compared with the block minus
+    the two additions (`_as_recorded`). The «R$ 480,00 is not in the block» check of
+    `test_coordinator_pay.py` now reads «no `· 1 aula ·` line»: the value of one class is
+    R$ 480,00 too.
+- **Tests.** `tests/unit/test_the_tools_print_what_an_email_copies.py`: red on `ad935b4` by
+  assertion (5 of 8), with the two digest controls.
+
 ### Changed — the e-mail after the owner's model: a table per class group, a colour per discipline, rich text, the tenant's appearance (2026-10-22)
 
 - **Why.** The owner gave a model e-mail of his front desk, then a second image: «ficou bom, mas

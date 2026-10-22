@@ -264,7 +264,9 @@ def test_the_estimate_reads_the_WHOLE_month_given_classes_included():
     assert est.hours == pytest.approx(12) and est.base == pytest.approx(1440.0)
     block = render_pay_block(est)
     assert "Bancos NoSQL · 3 aulas · 12 h · R$ 1.440,00" in block
-    assert "R$ 480,00" not in block                       # not the «1 aula» the listing gives
+    assert "· 1 aula ·" not in block                      # not the «1 aula» the listing gives
+    # R$ 480,00 is now printed ONCE, as one class's value (R-T13) — never as a month's line.
+    assert block.count("R$ 480,00") == 1 and "Valor por aula: R$ 480,00" in block
 
 
 def test_an_EMPTY_period_is_the_current_month_in_full_plus_what_comes_and_no_earlier_month():

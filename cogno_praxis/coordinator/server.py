@@ -254,12 +254,20 @@ def _entry_status(e: ClassEntry, defaults: tuple[str, ...], column: str) -> str:
 
 def _fmt_line(e: ClassEntry, *, defaults: tuple[str, ...] = (), status_column: str = "",
               professor: bool = False,
-              names: "Optional[Mapping[str, str]]" = None) -> str:
+              names: "Optional[Mapping[str, str]]" = None, time: str = "") -> str:
     """One class as the line a professor actually reads: ``08/09 · DE_09 · Bancos NoSQL``.
 
     Three facts, in the order the eye needs them under a header that already fixed the month:
     the DAY, the class GROUP, the DISCIPLINE. Plus the status, and only when it is not the
     ordinary one.
+
+    **The day carries the class HOUR when the sheet records one** (``time``, canonical
+    ``HH:MM``; R-T13, 2026-10-22): ``08/09 19:00 · DE_09 · Bancos NoSQL``. The hour is part of
+    the DAY field, so the class group stays the middle one. It is printed because a templated
+    e-mail is now filled by the persona COPYING what this line says — the classes of the month
+    with their hour, as the e-mail always listed them — and a value the tool never printed is a
+    value the persona would have to make up. ``""`` (a sheet with no ``COLUMN_TIME``, or a row
+    whose hour cell is empty) prints the line exactly as before.
 
     **What this drops is the point.** The old line was ``Turma: X | Data: Y | Disciplina: Z``
     with every remaining non-empty column appended as ``Header: value`` — a label on every field
@@ -290,6 +298,8 @@ def _fmt_line(e: ClassEntry, *, defaults: tuple[str, ...] = (), status_column: s
     DESCRIPTION of a calendar event, where there is no listing around the line to give a bare
     field its meaning."""
     day = e.when.strftime("%d/%m") if e.when else e.date_str.strip()
+    if day and time:
+        day = f"{day} {time}"
     parts = [p for p in (day, e.sheet_key.strip(), e.subject.strip()) if p]
     status = _entry_status(e, defaults, status_column)
     if status:
@@ -312,11 +322,17 @@ def _professor_per_line(entries: list[ClassEntry], role: str) -> bool:
 
 
 def _status_args(svc: CoordinatorService) -> dict:
-    """The tenant's status vocabulary, as the two keyword arguments the listing takes.
+    """The tenant's sheet vocabulary for a line, as the keyword arguments the listing takes: its
+    status labels (``defaults``, ``status_column``) and how to read a class's HOUR (``time_of``,
+    :meth:`~cogno_praxis.coordinator.service.CoordinatorService.entry_time` — ``""`` for a sheet
+    with no ``COLUMN_TIME``).
 
     One reader of ``cfg`` instead of six: the six read tools all render the same lines, and a
-    seventh arriving later must not have to remember to pass this."""
-    return {"defaults": svc.cfg.status_default_labels, "status_column": svc.cfg.column_status}
+    seventh arriving later must not have to remember to pass this. The host's out-of-process
+    daily sweep splats it into :func:`daily_checks_text` too (the public door below), so the
+    hour reaches that digest with no change on its side."""
+    return {"defaults": svc.cfg.status_default_labels, "status_column": svc.cfg.column_status,
+            "time_of": svc.entry_time}
 
 
 def _canonical_names(svc: CoordinatorService, entries: list[ClassEntry],
@@ -350,10 +366,27 @@ def _listing(svc: CoordinatorService, entries: list[ClassEntry], *, empty: str,
                      names=_canonical_names(svc, entries, role), **_status_args(svc))
 
 
+def _hour_order(entries: list[ClassEntry], times: "Mapping[int, str]") -> list[ClassEntry]:
+    """``entries`` with each run of classes on the SAME date ordered by hour — a class with no
+    hour after the timed ones of its day, ties in their order. Nothing moves across dates: the
+    order the caller handed over between days is kept, whatever it was."""
+    out: list[ClassEntry] = []
+    i = 0
+    while i < len(entries):
+        j = i + 1
+        if entries[i].when is not None:
+            while j < len(entries) and entries[j].when == entries[i].when:
+                j += 1
+        out += sorted(entries[i:j], key=lambda x: times.get(id(x)) or "99:99")
+        i = j
+    return out
+
+
 def _fmt_list(entries: list[ClassEntry], *, empty: str,
               report: Optional[ReadReport] = None,
               defaults: tuple[str, ...] = (), status_column: str = "", role: str = "",
-              names: "Optional[Mapping[str, str]]" = None) -> str:
+              names: "Optional[Mapping[str, str]]" = None,
+              time_of: "Optional[Callable[[ClassEntry], str]]" = None) -> str:
     """The listing: classes grouped under a bold month header, in date order.
 
     ``role`` is the CALLER's, and it decides one thing: whether each dated line names its
@@ -362,6 +395,11 @@ def _fmt_list(entries: list[ClassEntry], *, empty: str,
 
     ``names`` is the SPELLING each professor is shown under (:func:`_canonical_names`); it is
     read only where a line names one at all.
+
+    ``time_of`` reads a class's HOUR (:func:`_status_args`); with it, each dated line carries the
+    hour the sheet records and the classes of one day are listed by hour (:func:`_hour_order`),
+    the order a templated e-mail has always listed them in. Without it — or on a sheet with no
+    hour — the listing is the one it always was, byte for byte.
 
     **This function is not adding a shape — it is refusing to destroy one.** Measured on the
     box's own turns for 2026-09-06: handed the flat labelled block, the executor's own draft came
@@ -382,6 +420,10 @@ def _fmt_list(entries: list[ClassEntry], *, empty: str,
         chunks: list[str] = []
         current: Optional[tuple[int, int]] = None
         named = _professor_per_line(entries, role)
+        times: "dict[int, str]" = (
+            {id(e): time_of(e) for e in entries if e.when is not None} if time_of else {})
+        if any(times.values()):
+            entries = _hour_order(entries, times)
         for e in entries:
             if e.when is None:
                 chunks.append(f"- {_fmt_entry(e)}")
@@ -390,7 +432,7 @@ def _fmt_list(entries: list[ClassEntry], *, empty: str,
             if key != current:
                 chunks.append(("\n" if chunks else "") + _month_header(e.when))
                 current = key
-            chunks.append(f"- {_fmt_line(e, defaults=defaults, status_column=status_column, professor=named, names=names)}")
+            chunks.append(f"- {_fmt_line(e, defaults=defaults, status_column=status_column, professor=named, names=names, time=times.get(id(e), ''))}")
         body = "\n".join(chunks)
     head = _fmt_head(report)
     if head:
@@ -424,7 +466,8 @@ _DAILY_NOTHING = (
 def _daily_checks_text(dc: DailyChecks, *, report: Optional[ReadReport] = None,
                        defaults: tuple[str, ...] = (), status_column: str = "",
                        role: str = "",
-                       names: "Optional[Mapping[str, str]]" = None) -> str:
+                       names: "Optional[Mapping[str, str]]" = None,
+                       time_of: "Optional[Callable[[ClassEntry], str]]" = None) -> str:
     """The three answers of one day, ASSEMBLED — it renders no line of its own.
 
     **This is deliberately not a formatter.** Every line here comes out of ``_fmt_list``, the
@@ -442,7 +485,9 @@ def _daily_checks_text(dc: DailyChecks, *, report: Optional[ReadReport] = None,
     ``names`` is the spelling each professor is shown under, for the sections that name one
     (:func:`_canonical_names`). It is a keyword with a default because this function is a
     PROMISED public name the host's out-of-process sweep calls — a professor's own digest names
-    nobody, passes nothing, and renders exactly as it does today.
+    nobody, passes nothing, and renders exactly as it does today. ``time_of`` is the same kind of
+    keyword: :func:`_status_args` carries it, so the lines gain the class hour wherever the
+    sheet records one; a caller that does not pass it renders as before.
 
     The deadline sections are two because the DATA is two — a window closing today cannot wait
     and a window with days left can. The per-deadline day COUNT is on
@@ -457,7 +502,7 @@ def _daily_checks_text(dc: DailyChecks, *, report: Optional[ReadReport] = None,
     def section(key: str, entries: list[ClassEntry], *, empty: str) -> str:
         return _DAILY_SECTIONS[key] + "\n" + _fmt_list(
             entries, empty=empty, defaults=defaults, status_column=status_column, role=role,
-            names=names)
+            names=names, time_of=time_of)
 
     blocks: list[str] = [section("classes", dc.classes_today, empty="No classes today.")]
     for key, group in (("due_today", dc.due_today), ("due_ahead", dc.due_ahead)):
@@ -636,8 +681,9 @@ def build_server(service: Optional[CoordinatorService] = None, *,
                                identity_label: str = "", role: str = "") -> str:
         """List a professor's class schedule (aggregated across all course spreadsheets, sorted
         by date, under a bold month header). EVERY line names its class group as its MIDDLE
-        field, unlabelled — ``08/09 · DE_09 · Bancos NoSQL`` — so an unfiltered read already
-        answers "which group is this class in?".
+        field, unlabelled — ``08/09 · DE_09 · Bancos NoSQL``, or ``08/09 19:00 · DE_09 · Bancos
+        NoSQL`` when the sheet records the hour — so an unfiltered read already answers "which
+        group is this class in?".
         Returns the next 30 days, from today onward. ``include_past`` reaches backwards; a named
         ``month`` or ``discipline`` drops the forward cut, ``turma`` does not.
         ``month`` filters by YYYY-MM, a bare number, or a month name in Portuguese or English

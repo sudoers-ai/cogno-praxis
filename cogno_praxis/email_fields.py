@@ -137,7 +137,8 @@ from datetime import date
 from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
-from cogno_praxis.coordinator.pay import PayEstimate, _condition_lines, fmt_money
+from cogno_praxis.coordinator.pay import (PayEstimate, _condition_lines, bonus_band_rows, bonus_mark,
+                                          fmt_money)
 
 # ── the closed list ──────────────────────────────────────────────────────────────────────────
 
@@ -879,22 +880,14 @@ def _subjects(classes: "Iterable[EmailClass]") -> "list[str]":
 
 
 def _bonus_rows(est: PayEstimate) -> "list[tuple[str, str, bool]]":
-    """``(label, value, applied)`` per line of ``[valores_por_bonus]``: «Sem bônus», then one per
-    DECLARED band. ``applied`` only when the bonus is DETERMINED (``below`` marks «Sem bônus»,
-    ``applied`` its band; ``not_found``/``gap`` mark nothing). The text and the HTML table read
-    these rows, so the two cannot list different figures."""
-    base, hours, state = est.base, est.hours, est.bonus_state
-    applied = est.matched_tier if state == "applied" else None
-    rows = [("Sem bônus", fmt_money(base), state == "below")]
-    for t in est.tiers:
-        rows.append((t.label, fmt_money(base + hours * t.per_hour),
-                     applied is not None and t == applied))
-    return rows
+    """``(label, value, applied)`` per line of ``[valores_por_bonus]`` — the pay block's own rows
+    (:func:`cogno_praxis.coordinator.pay.bonus_band_rows`, ONE definition: the block the tool
+    prints and the e-mail cannot list different figures). The text and the HTML table read them."""
+    return bonus_band_rows(est)
 
 
 def _bonus_mark(est: PayEstimate) -> str:
-    pct = f"{est.ibope_pct:g}" if est.ibope_pct is not None else ""
-    return f" ← apurado (IBOPE {pct}%)"
+    return bonus_mark(est)
 
 
 def _bonus_condition(est: PayEstimate) -> "list[str]":
