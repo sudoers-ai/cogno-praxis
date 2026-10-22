@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### Added — the calendar's recipient falls back to the institution's REGISTRY when the professors tab has none (P5, 2026-10-22)
+
+- **Why.** Measured on a production tenant: a coordinator asked to mail a professor's classes;
+  the professors tab had no address for him and the tool refused («there is no e-mail address on
+  file»), though the institution's own registry of identities holds one. The calendar never went.
+- **What.**
+  - `preview_schedule_to_calendar` and `send_schedule_to_calendar` take `identity_directory`
+    (`[{"label", "email"}]`), injected by the host and never offered to the model.
+  - `CoordinatorService.calendar_recipient(…) → (address, source)`, `source` one of
+    `RECIPIENT_FROM_OWN_IDENTITY` | `RECIPIENT_FROM_SHEET` | `RECIPIENT_FROM_REGISTRY`;
+    `professor_email` is its address half. The order: the caller's own address
+    (`identity_email`), the professors tab, then — for an OVERSIGHT role only, when the tab
+    answered nothing — the registry.
+  - The registry label that counts designates the professor named by the match an oversight
+    `professor=<name>` is resolved with (`_professor_hits`, extracted from
+    `_resolve_professor`, which now reads it — the expression unchanged): exactly ONE person, or
+    nobody. Two labels with different addresses → a refusal naming the labels, never an
+    address; the same address twice is one address; a half-read schedule resolves nobody.
+  - `CalendarProposal.source`. The proposal line names the registry when it is the source:
+    `PROPOSAL: … → <address> (from the Cogno registry — the professors tab has no address for
+    <professor>)`. Every other proposal is the text of before, byte for byte.
+- **Declared.** The match is the one it reuses, limits included: a registry label written in a
+  form the schedule never carries designates nobody. The registry path re-reads the schedule (only
+  when the tab had no address). The `SENT:` line does not name the source; the proposal did.
+- **Tests.** `tests/unit/test_calendar_recipient_from_the_registry.py`, through the real server
+  door: red on `5e654f4` by assertion (6 of 14); the 8 controls green in both worlds — the tab
+  wins and the text is today's, nobody in the registry is today's refusal, two addresses never
+  pick one, a label that fits two professors designates nobody, a professor is not given the
+  registry, malformed entries are ignored, the caller's own address still wins, and no registry
+  address reaches a log line.
+- **Docs.** README «The calendar export», `docs/HOST_INTEGRATION.md` §7 (the host's half).
+
 ### Comments — the herald dependency, as it is (2026-10-22)
 
 - `coordinator/mailer.py`: the docstring named an extra `calendar` that `pyproject.toml` never declared; it
