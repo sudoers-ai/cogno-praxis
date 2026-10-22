@@ -27,7 +27,8 @@ So herald's ``resolve_smtp_config`` is still what normalizes a declaration (port
 ``use_tls``, the defaults) — it is called only once a declaration EXISTS, which makes its
 environment branch unreachable from here by construction rather than by hope.
 
-``cogno-herald`` is an OPTIONAL dependency (extra ``calendar``): a deployment that never sends
+``cogno-herald`` is an OPTIONAL dependency, installed alongside and declared in no extra (see
+``pyproject.toml``): a deployment that never sends
 a calendar should not have to install a mail library, and a missing one degrades to a ``None``
 sender — which the tool reads as "no e-mail is configured here", refuses honestly, and sends
 nothing. The import is lazy for the same reason every other optional adapter imports lazily.
