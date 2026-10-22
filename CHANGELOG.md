@@ -2,6 +2,64 @@
 
 ## Unreleased
 
+### Changed — no persona has e-mail markers in code: the coordination's five are the tenant's FREE tags, and a free tag may hold a LIST OF RECORDS (R-T13, 2026-10-22)
+
+- **Why.** The owner: «preciso de algo genérico. Quando entrar uma persona nova, faço via tags
+  personalizadas, senão teria que fazer via código» — and asked that the coordination follow
+  that rule. The coordination's `[aulas]`, `[disciplinas]`, `[valor_por_aula]`,
+  `[valores_por_bonus]` and `[total]` were filled by a field provider from
+  `CoordinatorService.email_context`. A second persona with data of its own would have needed
+  another provider, in code.
+- **What.**
+  - `FIELD_PROVIDERS` is EMPTY and `EMAIL_FIELDS` is the eight generic markers. `validate_template`
+    answers the same for every persona, and the five names are ordinary company-tag names (their
+    reservation is gone). The provider machinery (`FieldProvider`, `fields_for`,
+    `provider_fields`, `template_needs_month`) stays generic over the empty registry.
+  - A FREE tag's value is TEXT or a LIST OF RECORDS: `free_records_problems` (the rule: simple
+    keys, `MAX_RECORD_KEYS`, `MAX_RECORD_KEY_CHARS`, one-line cells, a number as written; a
+    yes/no, a list or an object refused) and `free_records` (the reading). Its text is
+    `records_text`; an empty list is a value nobody said; a list for a tag the subject cites is
+    `missing` (`fill_email_fields(…, in_subject=…)`).
+  - `record_cells_unverified(records, month=…, is_literal=…)` — where each cell came from: LITERAL
+    by the host's predicate (a successful read of the turn), or a DERIVATION checked here for any
+    record with a `data` cell — `dia` its weekday, `mês` its month, the year from the cell or the
+    send's month. A wrong derivation is unverified like a cell nobody read. Only keys come back.
+  - Two text rules for a record outside the dated form: ONE shown key → its value; TWO filled →
+    «first: second». In HTML, records of one key are a LIST.
+  - The HTML form exists when the body carries a free tag holding a list (`_structured`); that tag
+    alone on a line is its tables (`_records_block`), the colours counted over every list.
+  - Removed with the provider: `CoordinatorService.email_context`, `EmailClass`, the
+    `EmailContext` fields `professor`/`classes`/`estimate`/`schedule_error`/`pay_error`, and every
+    coordinator-only builder of `email_fields` (it imports nothing of the package now).
+- **The proof.** `tests/unit/test_the_coordination_by_the_generic_path.py` runs the REAL tools
+  (previous entry) over a corpus that reaches every bonus state. A scripted executor COPIES their
+  outputs and derives only the weekday and the month's name. Every cell is verified, and the text
+  of each of the five tags is digested against the provider's on `ad935b4`: **equal**, with each
+  declared divergence applied by a named transformation first. Red on the parent (35 of 35, by
+  assertion, with `tests/unit/test_email_free_tag_records.py`).
+- **Declared — what differs from the provider.**
+  - The response-rate CONDITION is not a record. The provider ended `[valores_por_bonus]` with it;
+    the tenant now writes it in the template or a fixed tag.
+  - The HTML `Data` column of `[aulas]` is `dd/mm`, as the read prints it (the provider wrote
+    `dd/mm/aa`). The text never carried the year.
+  - A figure alone (`[total]`, `[valor_por_aula]`) no longer makes the e-mail HTML, and no value
+    is bold by its NAME.
+  - A value no read gives is a free tag nobody filled, and the send asks. Before, the provider
+    named the reason in its own sentence.
+  - The classes are copied from the listing and the figures from the estimate, two reads. Before,
+    one read gave both (the provider's «classes listed = classes paid»). The composer checks
+    every cell against what the reads returned.
+  - Changed sentences: no refusal names the coordination any more, and a coordination name with
+    no tag declared is «não é um marcador» in every persona.
+- **Tests rewritten** where they pinned the provider: `test_email_fields.py`, `_field_providers`,
+  `_fill_by_persona`, `_markers_by_persona`, `_company_tags`, `_free_tags` and `_html`. The
+  per-persona pins are inverted (one verdict for every persona). The parent's two pinned e-mails
+  (`test_render_byte_for_byte_and_deterministic`) now come byte for byte from the copied values.
+  The provider-corpus digests of `test_email_html.py` are superseded by the generic-path proof.
+- **Docs.** README «Templated e-mail fields», `docs/COORDINATOR.md` (the coordination's tags and
+  what they copy), `docs/HOST_INTEGRATION.md` (the cells' provenance and the subject are the
+  host's to ask).
+
 ### Changed — the coordinator's tools print every value a templated e-mail copies (R-T13, 2026-10-22)
 
 - **Why.** The owner: «preciso de algo genérico» — a persona's e-mail is made with the tenant's

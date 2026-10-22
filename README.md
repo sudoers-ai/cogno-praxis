@@ -94,14 +94,16 @@ floating time, never raw UTC.
 
 A tenant writes an e-mail template — a subject and a body — with markers, and the host sends it
 when a request asks for it. This module is the **closed list of markers** and the pure code that
-fills them; the host owns the send, the confirmation and the audit. The model writes exactly one
-marker, `[conteudo]` (the free text of the request); every other value is filled in code.
+fills them; the host owns the send, the confirmation and the audit. The model writes the free
+text of the request (`[conteudo]`) and the values of the tenant's FREE tags, copied from the
+conversation, the persona's rules or a tool it read this turn; every other value is filled in code.
 
-**The default markers serve every persona; a persona's own are added only to its template
-(2026-10-22).** The owner's rule: «vamos deixar somente as tags que servem para todos, tags
-especificas precisam ser adicionadas». `GENERIC_FIELDS` are the default list — `known_markers()`
-with no persona — and come from the tenant's records, the tenant, the request or the clock, so
-every persona's template may use them and every persona fills them:
+**The markers are the eight that serve every persona; a persona's own values are the TENANT's
+tags (R-T13, 2026-10-22).** The owner's rule: «preciso de algo genérico. Quando entrar uma persona
+nova, faço via tags personalizadas, senão teria que fazer via código». `GENERIC_FIELDS` are THE
+list — `known_markers(persona)` answers it for every persona — and come from the tenant's records,
+the tenant, the request or the clock, so every persona's template may use them and every persona
+fills them:
 
 | generic marker | value |
 |---|---|
@@ -113,24 +115,25 @@ every persona's template may use them and every persona fills them:
 | `[solicitante]` | the name of the person who asked for the e-mail |
 | `[conteudo]` | the free text, at most once per template, never in the subject |
 
-Every other marker **belongs to one persona** and is declared by that persona's `FieldProvider`
-in `FIELD_PROVIDERS` (by persona id): it is valid in THAT persona's template only, and only that
-persona fills it. Today there is one, the `COORDINATOR`'s:
+**No persona has markers of its own.** `FIELD_PROVIDERS` is EMPTY, and a test pins it so: a new
+persona is served by the tenant's tags, never by code. Until R-T13 the `COORDINATOR` had five,
+filled by a field provider from one read of its schedule; they are now the tenant's FREE tags
+(below), and the coordination fills them by COPYING what its tools print — the arithmetic stays in
+the tools (`docs/COORDINATOR.md`, «The tools PRINT every value a templated e-mail copies»):
 
-| `COORDINATOR` marker | value |
+| the coordination's tag (the tenant's, FREE) | what the persona passes, copied from |
 |---|---|
-| `[aulas]`, `[disciplinas]` | the month's PAYABLE classes, one per line (`dd/mm hh:mm — discipline — class group`, never an invented hour), and their disciplines |
-| `[valor_por_aula]` | `HOURS_PER_CLASS × PAY_RATE_PER_HOUR` |
-| `[valores_por_bonus]` | «Sem bônus» and one line per DECLARED bonus band, always per month; the applied band is marked only when the bonus is determined |
-| `[total]` | only when the bonus is determined (or the rules declare no band) |
+| `[aulas]` | records `mês · dia · data · horário · disciplina · turma`, one per class, from `get_professor_schedule` (`dia` and `mês` are derivations of `data`, checked by code) |
+| `[disciplinas]` | records `{disciplina}`, the disciplines of those classes |
+| `[valor_por_aula]` | text: the `Valor por aula` line of `estimate_professor_pay` |
+| `[valores_por_bonus]` | records `{faixa, valor}`: the `*Valores por faixa de bônus*` section |
+| `[total]` | text: the line under `*Total*` (or the base, when the rules declare no band) |
 
-`EMAIL_FIELDS` is the union of the two, derived: every name the fill knows, and every name a
-company tag may never take. A provider **declares** fields; it reads
-nothing, and this module imports no service — which service answers for a provider is the
-host's wiring. `provider_fields(fields)` tells the host which providers a template needs (`{}`
-for a template of generic markers alone: nothing persona-specific is read to compose it), and
-`template_needs_month(fields)` whether it needs the month at all (it says `[mes]`, or it uses a
-monthly figure) — a template that needs none must never make anybody invent one.
+`EMAIL_FIELDS` is the eight. The provider machinery stays, generic, over the empty registry: a
+`FieldProvider` would **declare** fields and read nothing (this module imports no service);
+`provider_fields(fields)` answers `{}` for every template, and `template_needs_month(fields)`
+whether it needs the month at all (it says `[mes]`) — a template that needs none must never make
+anybody invent one.
 
 `[cpf_cnpj]` was removed by the owner's decision (no personal data beyond the recipient's own
 name and address) and `[contrato]` arrives with the attachment in phase E3; a template using
@@ -141,10 +144,9 @@ persona and `[solicitante]` the person who asked, and no marker quotes a third p
 **The tenant's own markers — company tags with a FIXED value (2026-10-21).** Beside the
 markers above, a tenant may declare tags of its own, `{name: value}`, valid in EVERY persona's
 template: `[horario_atendimento]` → «de segunda a sexta, das 8h às 18h». The name is
-`CUSTOM_TAG_NAME` (`[a-z][a-z0-9_]{1,30}`: lowercase, no accent, no space) and is never one of
-the thirteen of `EMAIL_FIELDS` — the coordination's five included, in every persona, although the
-default list is the eight («[aulas] já é uma tag da coordenação (…); escolha outro nome») — nor a
-reserved name (`[cpf_cnpj]`, `[contrato]`). The value is plain text, one line
+`CUSTOM_TAG_NAME` (`[a-z][a-z0-9_]{1,30}`: lowercase, no accent, no space) and is never a marker
+of `EMAIL_FIELDS` nor a reserved name (`[cpf_cnpj]`, `[contrato]`); the coordination's five are
+ordinary names since R-T13. The value is plain text, one line
 or several (line breaks and tabs are the only control characters), at most
 `MAX_CUSTOM_TAG_CHARS` (500) characters, and a tenant holds at most `MAX_CUSTOM_TAGS` (50). It is
 the business's DATA and never an instruction: a host that lets it into a prompt fences it like
@@ -164,24 +166,41 @@ any other text of the tenant.
   in any persona — the value is the tenant's, not a persona's read. A tag the context no longer
   carries is `missing` with «tag personalizada removida» (its source:
   «as tags personalizadas da empresa»), so the send asks the requester instead of sending.
-- Tags filled by data (a provider, code), tags of one persona only and HTML values are not
-  here: a tag's value is plain text, and the HTML form of an e-mail shows it escaped (a FIXED
-  tag's own `http(s)://` URLs as links, like the template's text; a FREE tag's value is what the
-  conversation said, never linked).
+- Tags filled by code, tags of one persona only and HTML values are not here: a FIXED tag's
+  value is plain text, and the HTML form of an e-mail shows it escaped (its own `http(s)://` URLs
+  as links, like the template's text; a FREE tag's value is what the conversation said, never
+  linked).
 
 **FREE company tags — no fixed value, filled from the conversation (2026-10-22).** The owner:
 «preciso q seja flexivel e chamada pelo usuario»; «o template terá tags que devem ser preenchidas
 conforme as mensagens com o agente». A company tag whose value is EMPTY is FREE: it is stored in
 the SAME map as `{name: ""}` (so every non-empty string stored before still reads as the fixed tag
 it was), and `free_tags(tags)` names the free ones. Everything else is the company tag's: the
-name grammar, the reservation of the thirteen and of the reserved names, the removed path.
+name grammar, the reservation of the standard markers and of the reserved names, the removed
+path.
 
-- The value comes from what the person who asked said: `EmailContext.free_tag_values`
-  (`{name: text}`, the host takes it from the executor's call). `fill_email_fields` fills a free
-  tag from it as ONE line of plain text (`free_value`: every run of blanks and line breaks one
-  space, so it never breaks a subject), at most `MAX_CUSTOM_TAG_CHARS` characters and with no
-  control character (`free_value_problems`). A value given for a fixed tag, a standard marker or
-  a name that is no tag is never read: a fixed tag stays fixed.
+- The value comes from the conversation: `EmailContext.free_tag_values` (`{name: value}`, the
+  host takes it from the executor's call). `fill_email_fields` fills a free tag from it as ONE
+  line of plain text (`free_value`: every run of blanks and line breaks one space, so it never
+  breaks a subject), at most `MAX_CUSTOM_TAG_CHARS` characters and with no control character
+  (`free_value_problems`). A value given for a fixed tag, a standard marker or a name that is no
+  tag is never read: a fixed tag stays fixed.
+- **Or a LIST OF RECORDS (R-T13)** — the rows a tool printed: `[{key: value}, …]`, at most
+  `MAX_RECORDS`, each record at most `MAX_RECORD_KEYS` (12) keys of at most `MAX_RECORD_KEY_CHARS`
+  (40) characters, each cell ONE line of plain text of at most `MAX_CUSTOM_TAG_CHARS` (a number as
+  written, `None` as empty; a yes/no, a list or an object is refused). `free_records_problems` is
+  the rule and `free_records` the reading; a list the rule refuses is `missing` with that
+  sentence, an empty list is a value nobody said. Its text is `records_text`, its HTML a TABLE
+  (below). A list for a tag the SUBJECT cites is `missing` — pass `in_subject=` (the subject's
+  markers); without it `render_email` refuses the multi-line subject.
+- **Where a cell came from.** `record_cells_unverified(records, month=…, is_literal=…)` →
+  `((index, key), …)` of every non-empty cell that is neither LITERAL — the host's
+  `is_literal(cell)`: written in a successful read of this turn, under the host's fold — nor a
+  DERIVATION checked here, generic for any record with a `data` cell: `dia` must be the weekday of
+  that date and `mês` its month, the year from the cell or else from `month` (the send's). A wrong
+  derivation is unverified like a cell nobody read; a record with no `data` holds `dia`/`mês` to
+  the literal rule. Only keys come back, never a cell. The host asks it before handing a list to
+  the fill, and asks the requester instead of composing when anything comes back.
 - Not said → `missing`, with «o pedido não disse o que pôr nesta tag» (its source:
   «o que o solicitante disser na conversa»), so the send ASKS. With the tenant's hint the reason ends
   with it: «… nesta tag: a disciplina da aula remarcada».
@@ -193,38 +212,29 @@ name grammar, the reservation of the thirteen and of the reserved names, the rem
   shapes and fences it like any other text of the tenant.
 
 - `validate_template(subject, body, persona=…)` → the refusals in words, `()` when valid. A
-  template may use `known_markers(persona)`: the eight generic markers and that persona's own
-  (the id is compared as written). A marker of another persona is refused naming it — a template
-  of the front desk that says `[aulas]` is refused with «[aulas] é uma tag da coordenação
-  (COORDINATOR): só pode ser usada no template dessa persona; os marcadores são …». With no `persona`, the
-  default list only. (From 2026-10-21 until 2026-10-22 the thirteen were valid in every persona.)
-- `known_markers(persona=None)` → the markers a template of that persona may use, as a person
-  reads them: with no persona the DEFAULT list (the eight generic markers), with the
-  `COORDINATOR` its thirteen. Every refusal that lists the markers lists exactly these.
-- `fields_for(persona)` → the markers that persona can FILL: the generic ones and its own
-  provider's (the id is compared as written). A host composing an e-mail reads a provider only for
-  the markers in it. With no persona it answers EVERY marker: the fill with no persona reads
-  everything its context carries, byte for byte as before, while the save with no persona offers
-  the default list — two questions, deliberately two answers.
-- `CoordinatorService.email_context(professor=…, role=…, identity_label=…, period="YYYY-MM")` →
-  the classes AND the pay estimate from ONE read of the schedule, so the classes listed are the
-  classes paid (past days of the month included). An access refusal or an unreadable sheet
-  becomes a sentence on the context; only a caller with no identity is refused by raising.
-- `fill_email_fields(fields, context, persona=…)` → `(values, missing)`; a non-empty `missing`
-  names each field, its source and the reason, and the send asks instead of sending. With
-  `persona=`, a marker that persona cannot fill is `missing` with «o template usa [aulas], que
-  esta persona não consegue preencher: só a coordenação (COORDINATOR) o lê», never taken from the
-  context; with no `persona`, every marker is filled from the context, as before. The generic markers
-  are filled from the host's half of `EmailContext` (`recipient_name`, `recipient_email`,
-  `tenant_name`, `month`, `conteudo`, `today`, `persona_name`, `requester_name`); a marker the
-  template does not use is never asked for.
+  template may use `known_markers(persona)` — the eight — and the tenant's tags; the verdict is
+  the same for every persona (R-T13: a template of the front desk that says `[aulas]` is saved
+  when the tenant declared that tag, and refused as an unknown marker when it did not — exactly as
+  the coordination's). From 2026-10-22 until R-T13 the coordination's five were valid in its
+  template only; from 2026-10-21 until 2026-10-22, in every persona.
+- `known_markers(persona=None)` → the eight, as a person reads them. Every refusal that lists the
+  markers lists exactly these.
+- `fields_for(persona)` → the markers that persona can FILL: the eight (no persona has a
+  provider). `CoordinatorService.email_context` is gone with the provider (R-T13): nothing reads a
+  persona's data into an e-mail but the persona itself, through its tools.
+- `fill_email_fields(fields, context, persona=…, in_subject=…)` → `(values, missing)`; a
+  non-empty `missing` names each field, its source and the reason, and the send asks instead of
+  sending. The answer is the same for every `persona=`. The generic markers are filled from
+  `EmailContext` (`recipient_name`, `recipient_email`, `tenant_name`, `month`, `conteudo`,
+  `today`, `persona_name`, `requester_name`); a marker the template does not use is never asked
+  for.
 - `render_email(subject, body, values)` → one-pass substitution (a marker inside a value stays
   text); `email_digest(subject, body)` is what a proposal records and a confirmation compares.
 - `render_email_forms(subject, body, values, context, appearance=…)` → `(subject, text, html)`,
   the ONE place the two forms of an e-mail are joined (2026-10-22). `text` is what the requester
-  is shown and confirms and what `email_digest` covers. `html` is `""` unless the BODY uses a
-  provider's marker; a template of generic markers or company tags stays plain text, byte for
-  byte `render_email`'s.
+  is shown and confirms and what `email_digest` covers. `html` is `""` unless the BODY carries a
+  FREE tag whose value is a list of records (R-T13; until then, a provider's marker); every other
+  e-mail stays plain text, byte for byte `render_email`'s — a figure alone included.
 - **Tables are GENERIC: a list of records in, tables out** (the owner's rule: «preciso de algo
   genérico» — a new persona's e-mail is made with tags, not with code).
   - **The records.** `as_records(value)` reads a list of records: each `{key: text}`, at most
@@ -239,14 +249,18 @@ name grammar, the reservation of the thirteen and of the reserved names, the rem
       (`record_colors`: by first appearance, the tenant's accent first, `DEFAULT_PALETTE`
       cycled);
     - a record whose keys are only `mes`/`dia`/`data`/`horario`/`disciplina`/`turma` is the
-      dated line «06/10 (ter) 19:00 — Disciplina». Any other record is «chave: valor · …».
+      dated line «06/10 (ter) 19:00 — Disciplina».
+  - **Any other record is one line by how many keys it shows** (the group key aside, R-T13): ONE
+    key → its value (a list of values: «Redes»); TWO filled keys → «first: second» («Sem bônus:
+    R$ 2.880,00»); more → «chave: valor · …». In HTML, records of one key are a LIST, not a
+    one-column table.
 - `render_email_html(…)` → the HTML document, after the owner's model e-mail:
-  - `[aulas]` only PRODUCES a list of records (`mês`, `dia`, `data` dd/mm/aa, `horário`,
-    `disciplina`, `turma`) for the generic renderer: one table per class group, Mês · Dia · Data
-    · Horário (when the group has one) · Disciplina, the discipline coloured.
-  - `[valores_por_bonus]` is a list of pairs through the same renderer (Faixa · Valor; the
-    determined band carries the text's own mark). `[disciplinas]` is a list. `[total]` and
-    `[valor_por_aula]` are bold, alone on a line or inside a sentence.
+  - A free tag whose value is a list of records, ALONE on a line of the template, is its tables
+    (`records_html`), the colours counted over every list of the e-mail. The coordination's
+    `[aulas]` is one table per class group, Mês · Dia · Data · Horário (when the group has one) ·
+    Disciplina, the discipline coloured; its `[valores_por_bonus]` a two-column table (Faixa ·
+    Valor); its `[disciplinas]` a list. No value is bold by its NAME (until R-T13 `[total]` and
+    `[valor_por_aula]` were): emphasis is the template's.
   - **The tenant's text is simple rich text — four rules, nothing else of Markdown.** A blank
     line separates paragraphs. A line opened by «•» or «·» is a list item, and a line opened by
     «-» stays a line with its dash. A line that ends with «:» and is at most
@@ -262,10 +276,12 @@ name grammar, the reservation of the thirteen and of the reserved names, the rem
     (`http`/`https`, with `alt`). No style sheet, no script, no tracking pixel.
   - **The same e-mail.** One pass, like the text. A table is drawn only from rows whose text IS
     the value the text part carries.
-- **The text moved in ONE place (2026-10-22, declared).** `[aulas]` is now a «Turma X» block per
-  class group, each line «06/10 (ter) 19:00 — Disciplina» with the weekday. When the e-mail goes
-  out as HTML and the tenant configured a signature, its lines follow the body after a blank line
-  (`email_signature_text`). Everything else is byte for byte as before.
+- **The text of a list of records.** The coordination's `[aulas]` is a «Turma X» block per class
+  group, each line «06/10 (ter) 19:00 — Disciplina» with the weekday — byte for byte what its
+  provider wrote before R-T13, from the records its tools print (pinned over a corpus,
+  `tests/unit/test_the_coordination_by_the_generic_path.py`). When the e-mail goes out as HTML and
+  the tenant configured a signature, its lines follow the body after a blank line
+  (`email_signature_text`).
 - **The tenant's appearance** (`EmailAppearance`): sender name, accent colour (`#RRGGBB`), logo
   URL, department, e-mail, phone, site, and up to four social links (`{label, url, icon_url}`).
   `normalise_email_appearance(raw)` → `(stored, refusals)` is the SAVE door: every refusal is

@@ -16,12 +16,13 @@ one line each:
   whole; without it, the one question is about the free tag and the fixed one is filled;
 * a fixed tag stays fixed: a value the conversation gives for it, for a generic marker or for a
   name that is no tag, changes nothing;
-* the free tag is still a company tag: the thirteen names and the reserved ones are refused
-  whatever the value (the reservation of [R-T8]); a REMOVED free tag is the removed path;
+* the free tag is still a company tag: a standard marker's name and the reserved ones are refused
+  whatever the value (the reservation of [R-T8]; the coordination's five are tag names since
+  R-T13); a REMOVED free tag is the removed path;
 * the conversation's value is plain text on ONE line, at most 500 characters, and is never read
   as a template;
 * the hint is the tenant's plain text, one line, at most 120 characters, and only for a free tag;
-* PER PERSONA, the rows of ``test_email_fill_by_persona.py`` (derived from FIELD_PROVIDERS).
+* PER PERSONA, the rows of ``test_email_fill_by_persona.py``.
 
 Everything here is invented.
 """
@@ -44,7 +45,9 @@ from cogno_praxis.email_fields import (
     template_fields,
     validate_template,
 )
-from tests.unit.test_email_fill_by_persona import EXPECTED_FILLS, T_ALL, _full_context
+from tests.unit.test_email_fields import FREE as FIVE_FREE
+from tests.unit.test_email_fields import VALUES as FIVE_VALUES
+from tests.unit.test_email_fill_by_persona import ROWS, T_ALL, _full_context
 
 FREE = "disciplina"
 FIXED = "horario_atendimento"
@@ -189,9 +192,9 @@ def test_a_value_for_a_fixed_tag_a_generic_marker_or_no_tag_changes_nothing():
 
 @pytest.mark.parametrize("name", sorted(EMAIL_FIELDS) + sorted(REFUSED_FIELDS))
 def test_a_free_tag_cannot_take_a_reserved_name(name):
-    """The reservation of [R-T8]: a FREE tag is a company tag, and the thirteen names (the
-    union — the coordination's five included) and the reserved ones are refused whatever the
-    value. A CONTROL: the name is checked before the value, so this held on the base too."""
+    """The reservation of [R-T8]: a FREE tag is a company tag, and a standard marker's name and
+    the reserved ones are refused whatever the value (the coordination's five are no longer among
+    them: R-T13). A CONTROL: the name is checked before the value, so this held on the base too."""
     (reason,) = ef.custom_tag_problems(name, "")
     assert reason.startswith(f"[{name}] ") and "está vazio" not in reason
     assert ef.normalise_custom_tags({name: ""})[0] == {}
@@ -288,20 +291,19 @@ def test_a_hint_the_fill_is_handed_around_the_door_is_not_used():
 
 # ── per persona ──────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("persona", sorted(EXPECTED_FILLS))
+@pytest.mark.parametrize("persona", ROWS)
 def test_the_free_tag_fills_or_asks_in_every_persona_and_leaves_the_row_as_it_was(persona):
     subject, body = T_ALL[0], T_ALL[1] + "\n\nDisciplina: [disciplina]"
     fields = template_fields(subject, body)
-    tags = {FREE: "", FIXED: FIXED_VALUE}
+    tags = {**FIVE_FREE, FREE: "", FIXED: FIXED_VALUE}
     base = _full_context()
-    values, missing = fill_email_fields(fields, _ctx(tags, {FREE: "Física"}, base=base),
-                                        persona=persona)
-    assert values[FREE] == "Física"
-    assert set(values) == EXPECTED_FILLS[persona] | {FREE}
-    assert {m.field for m in missing} == set(EMAIL_FIELDS) - EXPECTED_FILLS[persona]
-    _, asked = fill_email_fields(fields, _ctx(tags, base=base), persona=persona)
-    assert {m.field for m in asked} == (set(EMAIL_FIELDS) - EXPECTED_FILLS[persona]) | {FREE}
-    assert [m.reason for m in asked if m.field == FREE] == [ef.CUSTOM_TAG_FREE_MISSING]
+    row, _ = fill_email_fields(template_fields(*T_ALL), base, persona=persona)
+    values, missing = fill_email_fields(
+        fields, _ctx(tags, {**FIVE_VALUES, FREE: "Física"}, base=base), persona=persona)
+    assert missing == () and values[FREE] == "Física"
+    assert {k: v for k, v in values.items() if k != FREE} == row
+    _, asked = fill_email_fields(fields, _ctx(tags, FIVE_VALUES, base=base), persona=persona)
+    assert [(m.field, m.reason) for m in asked] == [(FREE, ef.CUSTOM_TAG_FREE_MISSING)]
 
 
 def test_EmailContext_keeps_building_without_free_values_or_hints():

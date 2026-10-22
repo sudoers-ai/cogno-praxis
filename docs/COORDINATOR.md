@@ -181,56 +181,38 @@ Nothing was swapped…»): an oversight caller (`_OVERSIGHT_ROLES`, the predicat
 sees the whole master schedule, and the swap used to take the FIRST class found on
 `original_date`, whoever taught it. Naming the professor swaps that class, as before.
 
-## The e-mail context: the classes and the pay of one month, from ONE read (E1, 2026-10-06)
+## The coordination's e-mail: the tenant's tags, filled from these tools (R-T13, 2026-10-22)
 
-`CoordinatorService.email_context(professor=…, role=…, identity_label=…, period="YYYY-MM")` is
-what a templated e-mail about one professor's month is filled from (`cogno_praxis.email_fields`,
-README «Templated e-mail fields»). It reads the schedule ONCE and returns the month's PAYABLE
-classes and the `PayEstimate` built from those same rows: the pay window (`_pay_window`, the month
-in full) filtered by `_payable`, the rows `estimate_professor_pay` prices. So the classes an e-mail
-lists are the classes it pays — `len(classes) × HOURS_PER_CLASS × rate == estimate.base` — and the
-past days of the month are in it. The listing (`get_professor_schedule`) hides them by default,
-and that is exactly the read an e-mail about a month must not use.
+From E1 (2026-10-06) until R-T13 a templated e-mail about one professor's month was filled by a
+field provider from `CoordinatorService.email_context`, one read of the schedule that gave the
+month's payable classes and the `PayEstimate` together. The owner's rule — «preciso de algo
+genérico. Quando entrar uma persona nova, faço via tags personalizadas, senão teria que fazer via
+código» — removed the provider and the read: `[aulas]`, `[disciplinas]`, `[valor_por_aula]`,
+`[valores_por_bonus]` and `[total]` are the tenant's FREE tags, declared with hints that point at
+this vertical's tools, and the persona fills them by COPYING what the tools print (README,
+«Templated e-mail fields»; the section below says what the tools print):
 
-The doors are `estimate_professor_pay`'s (the two now share `_named_pay_rows`/`_own_pay_rows`, the
-same three calls in the same order): an empty `professor` or the caller's own name is the caller,
-another name is answered for an oversight role and refused to everyone else. It raises only
-for a caller with no identity (the rule of every door); otherwise an access refusal or a sheet that failed becomes `schedule_error`, an undeclared rate `pay_error`,
-each in the vertical's own sentence — because a failed read must stop the e-mail by NAMING what
-is missing, never send one with part of the classes. Read-only.
-`tests/unit/test_email_fields.py`.
+| the tenant's tag | the value the persona passes, copied from |
+|---|---|
+| `[aulas]` | records `mês · dia · data · horário · disciplina · turma`, one per class line of `get_professor_schedule` for the month (`dia` and `mês` are derivations of `data`, checked by code) |
+| `[disciplinas]` | records `{disciplina}` |
+| `[valor_por_aula]` | the `Valor por aula: R$ X` line of `estimate_professor_pay` |
+| `[valores_por_bonus]` | records `{faixa, valor}`: the `*Valores por faixa de bônus*` section |
+| `[total]` | the line under `*Total*` (the base, when the rules declare no band) |
 
-**Which markers this read answers for (E3).** The five markers filled from this context —
-`[disciplinas]`, `[aulas]`, `[valor_por_aula]`, `[valores_por_bonus]`, `[total]` — are the
-coordinator's own: `cogno_praxis.email_fields.FIELD_PROVIDERS["COORDINATOR"]` declares them.
-They are valid in the COORDINATOR's template only (2026-10-22, the owner's rule: the default
-markers are the eight that serve every persona, a persona's own are added to its template): a
-template of another persona that cites one is refused at the save, naming the coordination
-(«[aulas] é uma tag da coordenação (COORDINATOR): …»), and only the coordinator can FILL them
-(`fields_for`). They also stay reserved as company-tag names in every persona. (From 2026-10-21
-until 2026-10-22 any persona's template could use them, and the send asked instead of sending.)
-The declaration reads nothing; a host calls `email_context` only when
-`provider_fields(template_fields(…))` names `coordinator`, so a template of generic markers
-(`[nome]`, `[empresa]`, `[data]`, …) is composed without this read, in any persona.
-`tests/unit/test_email_field_providers.py`.
+**Same records, same e-mail.** With the records the tools print, the generic renderer writes the
+text the provider wrote, byte for byte, over a corpus that reaches every bonus state
+(`tests/unit/test_the_coordination_by_the_generic_path.py`, digests taken on the provider's tree).
+What differs, declared there tag by tag: the response-rate condition is not a record (the tenant
+writes it in the template or in a fixed tag); the HTML `Data` column is `dd/mm`, as the read prints
+it; a figure alone no longer makes the e-mail HTML, and nothing is bold by its name.
 
-**The same five, as tables (2026-10-22).** An e-mail whose body uses one of them also has an HTML
-form, `render_email_html` (README «Templated e-mail fields»):
-- `[aulas]` is one table per class group, under its «Turma X» title, in code order. The columns
-  are Mês · Dia · Data · Horário (when the group has one) · Disciplina, and each discipline has
-  one colour across the e-mail;
-- `[valores_por_bonus]` is a two-column table (the determined band carries its mark);
-- `[disciplinas]` is a list;
-- `[total]` and `[valor_por_aula]` are bold.
-
-Nothing here draws «the classes». The coordinator PRODUCES a list of records (`_aulas_records`:
-`mês`, `dia`, `data`, `horário`, `disciplina`, `turma`), and the GENERIC renderer
-(`records_html`/`records_text`, README) draws it like any other list. That generic renderer is
-what a new persona's tags will use. It reads the classes and the estimate of this SAME context,
-through the same builders as the text (`_aulas_records`, `_subjects`, `_bonus_rows`). A table is drawn only when its rows rebuild
-the very text the e-mail carries, so the table and the text cannot disagree. The TEXT of `[aulas]`
-follows the same shape: a «Turma X» block per class group, each line with the weekday. That is the
-one change to the text, and it is declared. `tests/unit/test_email_html.py`.
+**What moved with the arithmetic.** The provider's guarantees are the tools' now. The listing's
+classes in a month and the pay estimate's come from different reads: the persona asks
+`get_professor_schedule` with the month (`include_past` for days already given) and
+`estimate_professor_pay` with the same period, and the composer checks every cell against what
+those reads returned. A value no read gives — the total while the bonus is undetermined, the bands
+with none declared — is a free tag nobody filled, and the send ASKS.
 
 ## The tools PRINT every value a templated e-mail copies (R-T13, 2026-10-22)
 
