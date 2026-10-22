@@ -427,8 +427,18 @@ def _header_lines(est: PayEstimate, *, title: str) -> list[str]:
     out += _identity_lines(est)
     out += [f"Valor/hora declarado nas regras: {fmt_money(est.rate)}",
             f"Horas por aula declaradas nas regras: {fmt_hours(est.hours_per_class)}",
+            value_per_class_line(est.hours_per_class, est.rate),
             ""]
     return out
+
+
+def value_per_class_line(hours_per_class: float, rate: float) -> str:
+    """``Valor por aula: R$ X`` — ONE class's value, hours per class × the rate (R-T13).
+
+    Printed under the two declared factors in every block, so the value a templated e-mail's
+    «valor por aula» copies is a value this tool PRINTED: a persona filling a tenant's tag from
+    this block copies it, and never multiplies."""
+    return f"Valor por aula: {fmt_money(hours_per_class * rate)}"
 
 
 def _body_lines(est: PayEstimate) -> list[str]:
@@ -494,6 +504,7 @@ def render_faculty_pay_block(fac: FacultyPayEstimate) -> str:
     out: list[str] = [_H.format(f"Remuneração estimada — todos os professores{period}"),
                       f"Valor/hora declarado nas regras: {fmt_money(fac.rate)}",
                       f"Horas por aula declaradas nas regras: {fmt_hours(fac.hours_per_class)}",
+                      value_per_class_line(fac.hours_per_class, fac.rate),
                       ""]
     for est in fac.estimates:
         out.append(_H.format(f"Professor: {est.professor}"))
@@ -521,14 +532,68 @@ def render_faculty_pay_block(fac: FacultyPayEstimate) -> str:
     return "\n".join(out).strip()
 
 
+#: The header of the section that prints the month's value under EVERY declared bonus band.
+BAND_VALUES_HEADER = "Valores por faixa de bônus"
+
+
+def bonus_band_rows(est: PayEstimate) -> "list[tuple[str, str, bool]]":
+    """``(label, value, determined)`` per declared level: «Sem bônus» (the base), then one per
+    DECLARED band (the base plus the band's hourly extra over the month's hours) — always every
+    band, never only the hypotheses still open. ``determined`` marks the one level the bonus IS,
+    only when it is determined (``below`` marks «Sem bônus», ``applied`` its band; ``gap`` and
+    ``not_found`` mark nothing). ONE definition: :data:`BAND_VALUES_HEADER`'s lines read it."""
+    base, hours, state = est.base, est.hours, est.bonus_state
+    applied = est.matched_tier if state == "applied" else None
+    rows = [("Sem bônus", fmt_money(base), state == "below")]
+    for t in est.tiers:
+        rows.append((t.label, fmt_money(base + hours * t.per_hour),
+                     applied is not None and t == applied))
+    return rows
+
+
+def bonus_mark(est: PayEstimate) -> str:
+    """The mark of the determined level: « ← apurado (IBOPE N%)»."""
+    pct = f"{est.ibope_pct:g}" if est.ibope_pct is not None else ""
+    return f" ← apurado (IBOPE {pct}%)"
+
+
+def bonus_band_lines(est: PayEstimate) -> list[str]:
+    """``Sem bônus: R$ X`` and ``<band>: R$ Y`` per declared band — the determined one carrying
+    :func:`bonus_mark`. ``[]`` when the rules declare no band."""
+    if not est.tiers:
+        return []
+    mark = bonus_mark(est)
+    return [f"{label}: {value}" + (mark if determined else "")
+            for label, value, determined in bonus_band_rows(est)]
+
+
+def _band_section(est: PayEstimate) -> list[str]:
+    """The month's value under EVERY declared band, in every bonus state (R-T13, 2026-10-22).
+
+    The section above it says what the bonus IS (or why it cannot be said); this one lists what
+    each declared level comes to, so a templated e-mail's «valores por faixa» is COPIED from a
+    block this tool printed — the arithmetic stays here, in the tool. With no result read the
+    hypotheses above already carry these figures; the section is printed anyway, so a reader
+    looks for the levels in ONE place whatever the state."""
+    lines = bonus_band_lines(est)
+    return ["", _H.format(BAND_VALUES_HEADER), *lines] if lines else []
+
+
 def _bonus_lines(est: PayEstimate) -> list[str]:
     """The bonus section — one of the four worlds of :attr:`PayEstimate.bonus_state`, or the
-    sentence for a tenant that declares no band at all."""
+    sentence for a tenant that declares no band at all — then, when the rules declare bands,
+    :func:`_band_section`."""
     out: list[str] = []
     if not est.tiers:
         out.append(_H.format("Bônus IBOPE"))
         out.append("As regras deste tenant não declaram nenhuma faixa de bônus.")
         return out
+    return _bonus_world_lines(est) + _band_section(est)
+
+
+def _bonus_world_lines(est: PayEstimate) -> list[str]:
+    """The bonus world of an estimate whose rules declare bands."""
+    out: list[str] = []
 
     state = est.bonus_state
     tier = est.matched_tier

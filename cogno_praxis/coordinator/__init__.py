@@ -22,6 +22,7 @@ from cogno_praxis.coordinator.config import (
     pay_refusal,
 )
 from cogno_praxis.coordinator.pay import (
+    BAND_VALUES_HEADER,
     NO_CLASSES_LINE,
     WORKLOAD_HEADER,
     BonusTier,
@@ -30,6 +31,7 @@ from cogno_praxis.coordinator.pay import (
     PayGroup,
     PayHypothesis,
     PayLine,
+    bonus_band_lines,
     fmt_hours,
     fmt_money,
     parse_bonus_tiers,
@@ -95,7 +97,7 @@ __all__ = [
     # the professor's own pay: the estimate, its declared bonus bands, and its block
     "PayEstimate", "PayGroup", "PayLine", "PayHypothesis", "BonusTier",
     "render_pay_block", "parse_bonus_tiers", "parse_money", "fmt_money", "fmt_hours",
-    "WORKLOAD_HEADER",
+    "WORKLOAD_HEADER", "BAND_VALUES_HEADER", "bonus_band_lines",
     # the oversight roles' reach (2026-09-23): a professor by name, or every professor one
     # block each behind the sentinel — never one sum, and never for a non-oversight role
     "ALL_PROFESSORS", "FacultyPayEstimate", "render_faculty_pay_block", "NO_CLASSES_LINE",
