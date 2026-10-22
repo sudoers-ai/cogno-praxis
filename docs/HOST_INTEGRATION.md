@@ -270,6 +270,13 @@ asks its executor for the value from the conversation and hands it over as
 Storing the hints, offering the free tags to the executor and fencing the hint in its prompt are
 yours.
 
+An e-mail whose body uses a provider's marker (the coordinator's classes, pay values or total)
+also has an HTML form, `render_email_html(subject, body, values, context)`: the same `values` and
+the SAME `EmailContext` the fill read. Send it beside the text as `multipart/alternative`
+(`cogno_herald.send_html_email`); `""` means there is no HTML, so send the text alone, as before.
+What the requester confirms, what you audit and what `email_digest` covers stay the TEXT: the HTML
+is the same e-mail in another dress, never a second message.
+
 ## 8. The environment each server reads
 
 A vertical run as `python -m cogno_praxis.<vertical>.server` is configured through the

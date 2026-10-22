@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+### Added — the HTML form of a templated e-mail that carries data: tables (2026-10-22)
+
+- **Why.** The owner's order: «qdo for enviar cronograma ou algum dado especifico, colocar em
+  formato tabular e visualmente agradavel para o usuario». A month of classes and the pay values
+  went out as lines of plain text.
+- **What.** `render_email_html(subject, body, values, context)` returns the HTML document of the
+  SAME e-mail, or `""`.
+  - `[aulas]` is a table with one row per class: Data · Horário (only when some class has an
+    hour) · Disciplina · Turma.
+  - `[valores_por_bonus]` is a two-column table (Faixa · Valor). The determined band is in bold
+    with the text's own mark, and the response-rate condition follows the table.
+  - `[disciplinas]` is a list; `[total]` and `[valor_por_aula]` are bold.
+  - Only when the BODY uses a provider's marker (`_HTML_FORMS`, pinned against
+    `FIELD_PROVIDERS` both ways). A template of generic markers or company tags renders `""`,
+    and the host sends it as the plain text it always was.
+- **Safe by construction.** Every value and the tenant's own template text are escaped
+  (`html.escape`). The styles are inline (system font, light borders, a grey header row, a fluid
+  640px column), and there is no script, style sheet, image, link or URL. The test parses the
+  document and holds its element and attribute alphabet closed, with a control per forbidden
+  shape.
+- **The same e-mail.** One pass, like the text: a marker typed inside a value stays text. A
+  table is drawn only from rows of the context whose text IS the value the text part carries;
+  any other value is shown as escaped text.
+- **The text does not move.** `render_email` and `fill_email_fields` are byte for byte the same.
+  This is pinned by the digests of 96 renderings, taken on `f1fc1e9` and identical on `5d0dc7c`
+  (#177), with a control. The corpus
+  covers four templates, every bonus world, and runs with and without the response-rate
+  condition. It also has a day with an hourless class among timed ones, and a discipline whose
+  case-folded order is not its code-point order. With the missing cases it is 124, held by one
+  corpus SHA. The digest of a proposal is still of the text.
+  - `[aulas]`, `[disciplinas]` and `[valores_por_bonus]` now build their text from the row
+    helpers the HTML also reads (`_ordered_classes`, `_subjects`, `_bonus_rows`), so the table and
+    the text come from the same rows.
+- **Not changed.** `fill_email_fields` returns `(values, missing)` as before. The HTML form is a
+  separate function, so no caller's unpacking moves.
+- **Tests.** `tests/unit/test_email_html.py`. On `5d0dc7c` (and on `f1fc1e9`): 23 failed, 3 passed. The three
+  that pass are constant by design: the text-digest test, its control, and the control of the
+  inertness check.
+- **Docs.** README «Templated e-mail fields», `docs/COORDINATOR.md`, `docs/HOST_INTEGRATION.md`
+  §7, and the module docstring.
+
 ### Added — FREE company tags: an empty value is filled from the conversation, and asked when nobody said it (2026-10-22)
 
 - **Why.** The owner: «preciso q seja flexivel e chamada pelo usuario»; «o template terá tags que
