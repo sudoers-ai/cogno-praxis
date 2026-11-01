@@ -45,6 +45,14 @@
     FastMCP build of all five servers;
   - `test_admin_server.py`, `test_admin_impact.py`, `test_admin_summary.py` and
     `test_admin_prompts.py`.
+  - "Nothing is imported" is checked where it could fail: a planted server that imports
+    cleanly and writes a file when executed, with a control that it fires; and a subprocess
+    whose `sys.modules` holds no sibling vertical after reading them all, with a control that
+    sees a server import. The source detector catches threads, processes, event loops,
+    `Path.open`, async subprocesses, `exec`/`importlib` and a call on import, with one planted
+    case each.
+  - Every path rule of `impact.py` is case-insensitive, so `Admin/`, `admin.py` and
+    `Scope.txt` are large.
 
 ### Added — the scope lock on the admin persona's pull requests (NEO, 2026-11-01)
 

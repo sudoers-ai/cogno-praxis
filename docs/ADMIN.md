@@ -72,6 +72,17 @@ annotations (`Optional[...]`, lists), and the static one does not claim to be.
 A `server.py` that does not parse is reported with a `read_error`, never as a vertical with no
 tools.
 
+**"Nothing is imported" is tested where it could fail.**
+- A planted server that imports cleanly writes a file when it is executed, and a control shows
+  that it does. The reader leaves no file.
+- A fresh subprocess reads every real vertical, then reports the `cogno_praxis` modules in its
+  `sys.modules`: no sibling vertical, and no `server` but the admin one. A control makes the same
+  probe import the scheduler's server and sees it.
+- `test_admin_server.py` also reads the vertical's own source and fails on anything that does
+  more than read: a write, `Path.open`, a thread, process, event loop or executor, an async
+  subprocess, `exec`/`__import__`/`importlib`, the environment, a call on import, or an import
+  of a sibling. It has one planted case per item and a control that only reads.
+
 ## NEO's persona (`prompts/`)
 
 Four slots, in English like the other capability verticals' prompts (`scheduler`, `bookkeeper`,
@@ -116,8 +127,11 @@ The rules are CLOSED, by the owner's decision. A change is **large** when any of
 | `store_or_schema` | a `store.py`, anything under `stores/`, a migration, or the `schema_change` flag (`_ensure_schema` lives inside the store adapters) |
 | `dependency` | `pyproject.toml` |
 | `diff_size` | more than 200 lines added + removed over all paths: 200 is small, 201 is large |
-| `admin_code` | any path under `cogno_praxis/admin/`: NEO's own code |
+| `admin_code` | any path under `cogno_praxis/admin/`, in any case, or a module beside it (`cogno_praxis/admin.py`, `Admin/`): NEO's own code |
 | `doubt` | an unknown path type (`KNOWN_PATH_KINDS`), a path that does not read as a repo-relative POSIX path, a missing or unreadable line count, or no path at all |
+
+Every path rule matches case-insensitively (`Scope.txt`, `Store.py`, `PyProject.toml`). A rule that
+only raises the size reads a name the way the most permissive filesystem would.
 
 Otherwise, and only for a declared correction, it is **small**, with no reasons. Every reason starts with one of the codes in `RULES`.
 
