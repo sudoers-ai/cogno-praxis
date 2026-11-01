@@ -121,7 +121,7 @@ The rules are CLOSED, by the owner's decision. A change is **large** when any of
 
 Otherwise, and only for a declared correction, it is **small**, with no reasons. Every reason starts with one of the codes in `RULES`.
 
-`escalate(classification, *, by="consultor", reason)` records who raised it and why, and always
+`escalate(classification, *, by="reviewer", reason)` records who raised it and why, and always
 answers **large**. It takes no size, so there is no way to ask it for small. A large
 classification stays large and keeps its reasons. A blank reason is refused.
 `Classification` is frozen, so it cannot be lowered in place either.

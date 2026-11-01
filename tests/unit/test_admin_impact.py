@@ -220,14 +220,14 @@ def test_escalate_raises_small_to_large():
     assert small.size == "small"
     up = escalate(small, reason="touches a contract the host reads back")
     assert up.size == "large"
-    assert up.reasons == ("escalated: by consultor: touches a contract the host reads back",)
+    assert up.reasons == ("escalated: by reviewer: touches a contract the host reads back",)
 
 
 def test_escalate_keeps_large_large_and_its_reasons():
     large = _one("pyproject.toml")
-    up = escalate(large, by="reviewer", reason="second look")
+    up = escalate(large, by="owner", reason="second look")
     assert up.size == "large"
-    assert up.reasons[:-1] == large.reasons and up.reasons[-1].startswith("escalated: by reviewer")
+    assert up.reasons[:-1] == large.reasons and up.reasons[-1].startswith("escalated: by owner")
 
 
 @pytest.mark.parametrize("start", ["small", "large"])

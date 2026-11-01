@@ -200,16 +200,16 @@ def _is_count(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
-def escalate(classification: Classification, *, by: str = "consultor", reason: str) -> Classification:
+def escalate(classification: Classification, *, by: str = "reviewer", reason: str) -> Classification:
     """Raise a classification to LARGE, recording who did and why. It takes NO size: there is no
     way to ask it for SMALL, and a LARGE stays LARGE (its reasons kept, this one added).
 
-    ``by`` is the role that escalates — by default the reviewer (``consultor``). A blank
+    ``by`` is the role that escalates — by default ``reviewer``. A blank
     ``reason`` is refused: an escalation nobody can read back is a size nobody can explain.
     """
     if not isinstance(reason, str) or not reason.strip():
         raise ValueError("escalate needs a reason")
-    who = by.strip() if isinstance(by, str) and by.strip() else "consultor"
+    who = by.strip() if isinstance(by, str) and by.strip() else "reviewer"
     return Classification("large", tuple(classification.reasons)
                           + (f"escalated: by {who}: {' '.join(reason.split())}",))
 
