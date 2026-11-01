@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the "DO NOT LAND" in its commit title is a stale status marker left in the PR title — status lives in labels and the body, never in the title.
+
+### Added — the minimum testing standard, `docs/TESTING.md` (2026-11-01)
+
+- **Why.** The owner asked for a minimum quality standard in tests (unit, integration, end-to-end
+  and bench), and for documentation an agent can read to understand a change. The standard lived
+  outside the repositories, so an agent reading only this one never saw it.
+- **What.** `docs/TESTING.md`, a byte-for-byte copy of the shared text (the same in the host,
+  praxis and the dashboard): the four levels, what each requires, and the fixed `Unit:` /
+  `Integration:` / `E2E:` / `Bench:` block every pull request declares (`RUN — …` or `N/A — …`).
+  Linked from the README's Documentation list.
+- **The pin.** `tests/unit/test_testing_standard_is_the_shared_text.py` pins the file's sha256: an
+  edit forces the test to change, and the digest moves only with the shared text. Red without the
+  file and with one character changed. Documentation only: no code moves.
+
 ### Added — the `admin` vertical: what the NEO administrator persona reads (N1, 2026-11-01)
 
 - **Why.** NEO is an administrator persona: it talks only to the platform administrator,
