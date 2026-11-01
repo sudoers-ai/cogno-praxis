@@ -19,7 +19,11 @@ raises the size — none lowers it. A change is LARGE when ANY of these holds:
    it elsewhere says so by the flag);
 4. ``dependency`` — ``pyproject.toml``;
 5. ``diff_size`` — more than :data:`MAX_SMALL_DIFF_LINES` lines added + removed, over all paths;
-6. ``admin_code`` — any path under ``cogno_praxis/admin/``: NEO's own vertical.
+6. ``admin_code`` — any path under ``cogno_praxis/admin/`` (or ``cogno_praxis/admin.py``, ``Admin/``…):
+   NEO's own vertical.
+
+Every path rule matches CASE-INSENSITIVELY: a rule that only raises the size reads a name the way
+the most permissive filesystem would, so ``Scope.txt`` or ``Admin/`` cannot make a change small.
 
 Otherwise SMALL. **When in doubt, LARGE** (``doubt``): a path whose type is not one of the
 :data:`KNOWN_PATH_KINDS`, a path that does not read as a repo-relative POSIX path, a missing line
@@ -66,7 +70,10 @@ KNOWN_PATH_KINDS = (
 KINDS = ("correction", "improvement", "evolution")
 CORRECTION = "correction"
 
-_ADMIN_PREFIX = "cogno_praxis/admin/"
+#: NEO's own vertical. Matched CASE-INSENSITIVELY, by its package segment with any suffix: a
+#: case-insensitive filesystem (or a checkout tool) treats ``Admin/`` and ``admin.py`` as the same
+#: place, and a rule that only raises the size must not be dodged by a capital letter.
+_ADMIN_SEGMENT = "admin"
 _SCOPE_OR_LIMITS = ("scope.txt", "limits.txt")
 _DEPENDENCY_FILES = ("pyproject.toml",)
 
@@ -121,7 +128,7 @@ def _depth_ok(path: str, pattern: str) -> bool:
 
 
 def _created_capability(path: str) -> Optional[str]:
-    parts = path.split("/")
+    parts = path.casefold().split("/")
     if len(parts) == 3 and parts[0] == "cogno_praxis" and parts[2] in ("__init__.py", "server.py"):
         return f"creates {path} (a new vertical)"
     if len(parts) == 4 and parts[0] == "cogno_praxis" and parts[2] == "prompts" \
@@ -130,8 +137,20 @@ def _created_capability(path: str) -> Optional[str]:
     return None
 
 
+def _name(path: str) -> str:
+    """The basename, case-folded: every path rule below only RAISES the size, so it reads a name
+    the way the most permissive filesystem would."""
+    return path.rsplit("/", 1)[-1].casefold()
+
+
+def _is_admin_code(path: str) -> bool:
+    parts = path.casefold().split("/")
+    return (len(parts) >= 2 and parts[0] == "cogno_praxis"
+            and parts[1].split(".", 1)[0] == _ADMIN_SEGMENT)
+
+
 def _store_or_schema(path: str) -> bool:
-    parts = path.split("/")
+    parts = path.casefold().split("/")
     name = parts[-1]
     return (name == "store.py" or "stores" in parts[:-1] or "migrations" in parts[:-1]
             or "migration" in name.lower())
@@ -164,7 +183,7 @@ def classify(change: Change) -> Classification:
             if created:
                 hit("new_capability", created)
     for p in readable:
-        if p.path.rsplit("/", 1)[-1] in _SCOPE_OR_LIMITS:
+        if _name(p.path) in _SCOPE_OR_LIMITS:
             hit("scope_or_limits", p.path)
     if change.schema_change:
         hit("store_or_schema", "declared: a schema change")
@@ -172,14 +191,14 @@ def classify(change: Change) -> Classification:
         if _store_or_schema(p.path):
             hit("store_or_schema", p.path)
     for p in readable:
-        if p.path.rsplit("/", 1)[-1] in _DEPENDENCY_FILES:
+        if _name(p.path) in _DEPENDENCY_FILES:
             hit("dependency", p.path)
     counted = [p for p in readable if _is_count(p.added) and _is_count(p.removed)]
     total = sum(int(p.added or 0) + int(p.removed or 0) for p in counted)
     if total > MAX_SMALL_DIFF_LINES:
         hit("diff_size", f"{total} lines added + removed > {MAX_SMALL_DIFF_LINES}")
     for p in readable:
-        if p.path.startswith(_ADMIN_PREFIX):
+        if _is_admin_code(p.path):
             hit("admin_code", p.path)
 
     if not paths:

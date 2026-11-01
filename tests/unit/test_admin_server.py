@@ -12,6 +12,8 @@ import ast
 import json
 from pathlib import Path
 
+import pytest
+
 from cogno_praxis.admin.server import build_server
 from cogno_praxis.admin.service import AdminService
 
@@ -54,9 +56,28 @@ async def test_an_unknown_id_is_refused_in_words_by_the_tool():
     assert "scheduler" in text and "bookkeeper" in text and "admin" in text
 
 
-# Imports and names that would mean a write, a network call, a database or a secret.
-_FORBIDDEN_IMPORTS = ("os", "socket", "subprocess", "httpx", "requests", "urllib", "psycopg",
-                      "sqlite3", "shutil", "tempfile")
+#: Modules whose import would mean a write, a process, a thread, a network call, a database, an
+#: import by name, or a secret. Matched on the first segment of the module name.
+_FORBIDDEN_IMPORTS = frozenset({
+    "os", "sys", "socket", "ssl", "select", "selectors", "subprocess", "pty", "signal",
+    "threading", "_thread", "multiprocessing", "concurrent", "asyncio", "sched",
+    "httpx", "requests", "urllib", "urllib3", "http", "aiohttp", "smtplib", "ftplib", "telnetlib",
+    "psycopg", "psycopg2", "sqlite3", "dbm", "shelve",
+    "shutil", "tempfile", "importlib", "runpy", "ctypes", "pickle",
+})
+#: Attribute names whose CALL or ACCESS writes, spawns, connects or reads the environment. Read
+#: methods (``read_text``, ``iterdir``, ``glob``, ``is_file``) are not here: the vertical reads.
+_FORBIDDEN_ATTRS = frozenset({
+    "open", "write_text", "write_bytes", "touch", "unlink", "mkdir", "makedirs", "rmdir",
+    "rename", "chmod", "symlink_to", "hardlink_to",
+    "environ", "getenv", "putenv", "system", "popen", "fork",
+    "create_subprocess_exec", "create_subprocess_shell", "run_in_executor",
+    "Thread", "Timer", "Process", "Popen", "start_new_thread",
+    "import_module", "connect", "urlopen",
+})
+#: Bare names whose CALL executes code, opens a file or starts a worker.
+_FORBIDDEN_CALLS = frozenset({"open", "exec", "eval", "compile", "__import__", "breakpoint",
+                              "Thread", "Timer", "Process", "Popen"})
 #: The other verticals, DERIVED — a vertical added tomorrow is a sibling the day it lands.
 _SIBLINGS = tuple(v for v in AdminService().known_ids() if v != "admin")
 
@@ -71,37 +92,96 @@ def _imported(tree: ast.Module) -> "set[str]":
     return names
 
 
-def test_the_vertical_imports_no_io_and_no_sibling():
+def _is_main_guard(node: ast.stmt) -> bool:
+    return (isinstance(node, ast.If) and isinstance(node.test, ast.Compare)
+            and isinstance(node.test.left, ast.Name) and node.test.left.id == "__name__")
+
+
+def _runs_on_import(tree: ast.Module) -> "list[int]":
+    """Line numbers of statements that CALL something when the module is imported: a bare call
+    (``Thread(...).start()``, ``setup()``) at module level or inside a module-level block other
+    than the ``__main__`` guard. Assignments are not here (``ROOT = Path(...)`` is a value); a
+    call that starts a worker through an assignment is caught by its name above."""
+    lines: "list[int]" = []
+    pending: "list[ast.stmt]" = list(tree.body)
+    while pending:
+        stmt = pending.pop()
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if _is_main_guard(stmt):
+            continue
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, (ast.Call, ast.Await)):
+            lines.append(stmt.lineno)
+        for field in ("body", "orelse", "finalbody", "handlers"):
+            pending.extend(getattr(stmt, field, []) or [])
+    return sorted(lines)
+
+
+def _violations(source: str) -> "list[str]":
+    """Everything in ``source`` that would make the vertical do more than READ its package."""
+    tree = ast.parse(source)
+    found: "list[str]" = []
+    for module in sorted(_imported(tree)):
+        if module.split(".")[0] in _FORBIDDEN_IMPORTS:
+            found.append(f"imports {module}")
+        if module.startswith("cogno_praxis.") and module.split(".")[1] in _SIBLINGS:
+            found.append(f"imports a sibling vertical: {module}")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in _FORBIDDEN_ATTRS:
+            found.append(f"line {node.lineno}: .{node.attr}")
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+                and node.func.id in _FORBIDDEN_CALLS:
+            found.append(f"line {node.lineno}: {node.func.id}()")
+    found.extend(f"line {n}: runs a call on import" for n in _runs_on_import(tree))
+    return found
+
+
+def test_the_vertical_does_nothing_but_read():
     assert {"scheduler", "bookkeeper"} <= set(_SIBLINGS)
     sources = sorted(ADMIN.glob("*.py"))
     assert {p.name for p in sources} >= {"server.py", "service.py", "impact.py", "summary.py"}
     for path in sources:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        imported = _imported(tree)
-        bad = {m for m in imported if m.split(".")[0] in _FORBIDDEN_IMPORTS}
-        assert not bad, f"{path.name} imports {bad}"
-        siblings = {m for m in imported
-                    if m.startswith("cogno_praxis.") and m.split(".")[1] in _SIBLINGS}
-        assert not siblings, f"{path.name} imports a sibling vertical: {siblings}"
+        assert _violations(path.read_text(encoding="utf-8")) == [], path.name
 
 
-def test_no_file_is_opened_for_writing_and_no_environment_is_read():
-    for path in sorted(ADMIN.glob("*.py")):
-        text = path.read_text(encoding="utf-8")
-        tree = ast.parse(text)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute) and node.attr in ("write_text", "write_bytes",
-                                                                 "unlink", "mkdir", "environ",
-                                                                 "getenv", "rmdir", "rename"):
-                raise AssertionError(f"{path.name}:{node.lineno} uses .{node.attr}")
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
-                    and node.func.id == "open":
-                raise AssertionError(f"{path.name}:{node.lineno} calls open()")
+#: One planted source per thing the detector must see. Each is the SMALLEST source that has it,
+#: and several deliberately avoid the import so that the attribute or the on-import rule is the
+#: only thing that can catch them.
+_PLANTED = {
+    "a thread module": "import threading\n",
+    "a process module": "import multiprocessing\n",
+    "an event loop module": "import asyncio\n",
+    "an executor module": "from concurrent.futures import ThreadPoolExecutor\n",
+    "Path.open in append mode": "def f(p):\n    return p.open('a')\n",
+    "an async subprocess, no import": (
+        "async def f(loop):\n    return await loop.create_subprocess_exec('ls')\n"),
+    "a thread started on import, no import of threading": (
+        "from somewhere import T\nT(target=print).start()\n"),
+    "a thread started on import": (
+        "import threading\nthreading.Thread(target=print, daemon=True).start()\n"),
+    "a call on import inside a module-level block": (
+        "try:\n    setup()\nexcept Exception:\n    pass\n"),
+    "a thread built by name inside a function": (
+        "from threading import Thread as T2\ndef f():\n    return Thread(target=f)\n"),
+    "exec": "def f(src):\n    exec(src)\n",
+    "an import by name": "def f(name):\n    return __import__(name)\n",
+    "importlib": "import importlib\n",
+    "the environment": "def f(e):\n    return e.environ\n",
+    "a write": "def f(p):\n    p.write_text('x')\n",
+    "a sibling vertical": "from cogno_praxis.scheduler.server import build_server\n",
+}
 
 
-def test_the_control_the_write_detector_sees_a_planted_write():
-    """The detector above fires on what it must: the same walk over a planted source."""
-    planted = ast.parse("from pathlib import Path\nPath('x').write_text('y')\nimport os\n")
-    attrs = {n.attr for n in ast.walk(planted) if isinstance(n, ast.Attribute)}
-    assert "write_text" in attrs
-    assert "os" in _imported(planted)
+@pytest.mark.parametrize("case", sorted(_PLANTED))
+def test_the_detector_sees_each_planted_case(case):
+    assert _violations(_PLANTED[case]), case
+
+
+def test_the_detector_passes_a_source_that_only_reads():
+    """THE CONTROL: reads, values, a function and the ``__main__`` guard are not violations."""
+    clean = ("from pathlib import Path\n"
+             "ROOT = Path(__file__).resolve().parent\n"
+             "NAMES = sorted(p.name for p in ROOT.iterdir())\n"
+             "def f(p):\n    return p.read_text(encoding='utf-8')\n"
+             "if __name__ == '__main__':\n    print(f(ROOT))\n")
+    assert _violations(clean) == []

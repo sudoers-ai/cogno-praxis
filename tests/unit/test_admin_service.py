@@ -206,8 +206,6 @@ def _plant(root: Path) -> Path:
     (pkg / "alpha" / "server.py").write_text(
         "from cogno_praxis.texts import SHARED\n"
         "LOCAL = SHARED + '!'\n"
-        "open('SIDE_EFFECT', 'w').write('imported')\n"
-        "raise SystemExit('this module must never be imported by the reader')\n"
         "def build_server():\n"
         "    @mcp.tool(name='renamed', annotations=ToolAnnotations(readOnlyHint=True))\n"
         "    def original(a: int, b: 'list[str]', c: bool = True) -> str:\n"
@@ -220,6 +218,19 @@ def _plant(root: Path) -> Path:
         "    def bare(*, k: str = 'v') -> str: ...\n"
         "if __name__ == '__main__':\n"
         "    build_server()\n")
+    # THE CANARY: a server that IMPORTS CLEANLY (stdlib only; the names it uses inside
+    # build_server are only looked up if that is called) and writes a file when it is imported.
+    # A reader that executed it (import, exec, runpy) would leave the file behind, and one that
+    # swallowed an error afterwards would still have run it.
+    (pkg / "canary").mkdir()
+    (pkg / "canary" / "__init__.py").write_text("")
+    (pkg / "canary" / "server.py").write_text(
+        "import pathlib\n"
+        f"pathlib.Path({str(root / 'IMPORTED')!r}).write_text('imported')\n"
+        "def build_server():\n"
+        "    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))\n"
+        "    def ping() -> str:\n"
+        "        \"\"\"Ping.\"\"\"\n")
     (pkg / "broken").mkdir()
     (pkg / "broken" / "__init__.py").write_text("")
     (pkg / "broken" / "server.py").write_text("def (:\n")
@@ -233,12 +244,78 @@ def _plant(root: Path) -> Path:
     return pkg
 
 
-def test_the_planted_tree_is_read_without_importing_anything(tmp_path, monkeypatch):
+def test_the_canary_fires_when_imported(tmp_path):
+    """THE CONTROL the next test needs: the canary is valid Python and DOES write its file when it
+    is executed. Without this, "the file is absent" could mean "the canary never works"."""
+    import runpy
+    pkg = _plant(tmp_path)
+    runpy.run_path(str(pkg / "canary" / "server.py"))
+    assert (tmp_path / "IMPORTED").read_text() == "imported"
+
+
+def test_a_server_that_imports_cleanly_is_never_executed(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    pkg = _plant(tmp_path)
+    found = {v.id: v for v in discover_verticals(pkg)}
+    AdminService(pkg).list_verticals()
+    AdminService(pkg).get_vertical_config("canary")
+    assert not (tmp_path / "IMPORTED").exists()
+    assert [t.name for t in found["canary"].tools] == ["ping"]
+
+
+_PROBE = """
+import json, sys
+from cogno_praxis.admin.service import AdminService
+svc = AdminService()
+svc.list_verticals()
+for v in svc.known_ids():
+    svc.get_vertical_config(v)
+for extra in sys.argv[1:]:
+    __import__(extra)
+print(json.dumps(sorted(m for m in sys.modules if m.startswith("cogno_praxis"))))
+"""
+
+
+def _modules_after_reading(*extra: str) -> "list[str]":
+    """The ``cogno_praxis`` modules a FRESH interpreter holds after reading every vertical.
+
+    A subprocess, so nothing this test session imported earlier can hide or fake an import. Its
+    environment carries no ``COGNO_*`` / ``PG*`` variable, so even a regression cannot connect.
+    """
+    import os
+    import subprocess
+    import sys
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("COGNO", "PG"))}
+    env["PYTHONPATH"] = str(PKG.parent)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    out = subprocess.run([sys.executable, "-c", _PROBE, *extra], env=env, capture_output=True,
+                         text=True, timeout=60, check=True)
+    return json.loads(out.stdout.strip().splitlines()[-1])
+
+
+def test_reading_every_vertical_imports_no_other_vertical():
+    loaded = _modules_after_reading()
+    siblings = [v for v in AdminService().known_ids() if v != SELF_ID]
+    assert {"scheduler", "bookkeeper", "coordinator", "companies"} <= set(siblings)
+    imported = [m for m in loaded if len(m.split(".")) > 1 and m.split(".")[1] in siblings]
+    assert imported == [], imported
+    servers = [m for m in loaded if m.endswith(".server") and m != "cogno_praxis.admin.server"]
+    assert servers == [], servers
+
+
+def test_control_the_probe_sees_a_server_import():
+    """The same probe, told to import the scheduler's server after reading: it must show it, or
+    the empty list above would prove nothing."""
+    loaded = _modules_after_reading("cogno_praxis.scheduler.server")
+    assert "cogno_praxis.scheduler.server" in loaded
+
+
+def test_the_planted_tree_is_read_statically(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     pkg = _plant(tmp_path)
     found = {v.id: v for v in discover_verticals(pkg, self_id="alpha")}
-    assert set(found) == {"alpha", "broken"}          # no __init__, _private, a plain lib: out
-    assert not (tmp_path / "SIDE_EFFECT").exists()   # the server.py was never executed
+    # no __init__, _private, a plain lib: out
+    assert set(found) == {"alpha", "broken", "canary"}
     alpha = found["alpha"]
     assert alpha.is_self and alpha.has_entry_point
     assert alpha.prompt_slots == ("voice", "extra")  # the four slots first, then the rest

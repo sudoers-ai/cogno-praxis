@@ -172,8 +172,33 @@ def test_admin_code_twin(path):
     assert twin.size == "large" and "admin_code" in _rules(twin)
 
 
+@pytest.mark.parametrize("path", ["cogno_praxis/Admin/service.py", "cogno_praxis/ADMIN/server.py",
+                                  "cogno_praxis/admin.py", "cogno_praxis/Admin.py",
+                                  "Cogno_Praxis/admin/impact.py", "cogno_praxis/admin.md"])
+def test_admin_code_is_case_insensitive_twin(path):
+    """A capital letter or a module beside the package is still NEO's own code: the rule only
+    raises, so it reads the name the way a case-insensitive filesystem would."""
+    assert "admin_code" in _rules(_one(path, 1, 0)), path
+
+
+@pytest.mark.parametrize("path,rule", [
+    ("cogno_praxis/scheduler/prompts/Scope.txt", "scope_or_limits"),
+    ("cogno_praxis/scheduler/prompts/LIMITS.txt", "scope_or_limits"),
+    ("cogno_praxis/scheduler/Store.py", "store_or_schema"),
+    ("cogno_praxis/bookkeeper/Stores/postgres.py", "store_or_schema"),
+    ("PyProject.toml", "dependency")])
+def test_every_path_rule_is_case_insensitive_twin(path, rule):
+    assert rule in _rules(_one(path, 1, 0)), path
+
+
+def test_a_created_vertical_is_seen_in_any_case():
+    assert "new_capability" in _rules(_one("cogno_praxis/Florist/Server.py", created=True))
+
+
 def test_admin_code_control():
     assert _one("cogno_praxis/administrative/service.py", 1, 0).size == "small"
+    assert _one("cogno_praxis/Administrative/service.py", 1, 0).size == "small"
+    assert _one("cogno_praxis/scheduler/admin.py", 1, 0).size == "small"   # not the package
     assert _one("docs/ADMIN.md", 1, 0).size == "small"
 
 
