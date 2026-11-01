@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Fixed — the pt clause negation reads «nada» and «nenhuma»/«nenhumas» (R-T41d, 2026-11-01)
+
+- **Why.** `LOCALES["pt"].neg` (also `NEG_RE`) is the clause negation every pt grounding
+  backstop shares, the host's generic `performative_without_commit` net included: the host has
+  no copy of its own and reads this object through `LOCALES`. It had no «nada», and
+  `\bnenhum\b` does not match «nenhuma» or «nenhumas». So an honest «nada foi enviado» or
+  «nenhuma mensagem foi enviada» on a turn that wrote nothing read as the receipt it denies,
+  and the net replaced a true reply with its canned «not done». Measured offline over the
+  replies a host's net blocked in production: 4 replies and 1 draft are this shape. The other
+  honest blocks of that sample are a different shape, and this fix does not touch them.
+- **What.** The pt pattern is now `\bn[ãa]o\b|\bnenhum(?:as?)?\b|\bnunca\b|\bsem\s|\bnada\b`,
+  case-insensitive as before. The es and en negations do not move (es already had «nada»).
+- **What does not move.** The scope is still the CLAUSE (`clauses`, `affirmed`): «Não houve
+  nada de errado, a consulta foi marcada para 10/11» still affirms in its second clause.
+- **Declared cost.** «nada» in the SAME clause as a claim masks the claim («Agendei para 10/11 e
+  nada mais precisa ser feito»). That is the cost «não» already had.
+- **Who else reads it.** The scheduler's dated-booking rules (`_affirms_booking`,
+  `affirmed(..., neg=b.loc.neg)`) and the bookkeeper's (`affirmed(..., neg=b.loc.neg)`): a
+  clause carrying «nada»/«nenhuma» is no longer an affirmation there either.
+- **Tests:** `tests/unit/test_pt_negation_reads_nada_and_nenhuma.py`. 13 red on `232e72d` (the
+  denials, the words in any case, the scheduler twins); the controls are green there and after
+  (the affirmative receipt, the claim in the next clause, «não»/«nenhum», word boundaries).
+  Mutations: dropping «nada» turns its 6 cases red, dropping «nenhuma» its 7.
+
 ### Fixed — a dark accent colour no longer paints table cells nobody can read (2026-10-22)
 
 - **Why.** The tenant's accent colour (`EmailAppearance.accent_color`) is the FIRST colour of the
