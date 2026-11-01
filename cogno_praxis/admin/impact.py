@@ -19,8 +19,8 @@ raises the size — none lowers it. A change is LARGE when ANY of these holds:
    it elsewhere says so by the flag);
 4. ``dependency`` — ``pyproject.toml``;
 5. ``diff_size`` — more than :data:`MAX_SMALL_DIFF_LINES` lines added + removed, over all paths;
-6. ``admin_code`` — any path under ``cogno_praxis/admin/`` (or ``cogno_praxis/admin.py``, ``Admin/``…):
-   NEO's own vertical.
+6. ``admin_code`` — any path under ``cogno_praxis/admin/``, or a package-root module or package
+   named ``admin.*`` / ``admin_*`` (``admin.py``, ``admin_x.py``), in any case: NEO's own vertical.
 
 Every path rule matches CASE-INSENSITIVELY: a rule that only raises the size reads a name the way
 the most permissive filesystem would, so ``Scope.txt`` or ``Admin/`` cannot make a change small.
@@ -36,6 +36,7 @@ read would be the size decided by the gap.
 from __future__ import annotations
 
 import fnmatch
+import re
 from dataclasses import dataclass
 from typing import Literal, Optional
 
@@ -70,10 +71,12 @@ KNOWN_PATH_KINDS = (
 KINDS = ("correction", "improvement", "evolution")
 CORRECTION = "correction"
 
-#: NEO's own vertical. Matched CASE-INSENSITIVELY, by its package segment with any suffix: a
-#: case-insensitive filesystem (or a checkout tool) treats ``Admin/`` and ``admin.py`` as the same
-#: place, and a rule that only raises the size must not be dodged by a capital letter.
-_ADMIN_SEGMENT = "admin"
+#: NEO's own vertical: the package-root segment ``admin`` followed by nothing, a ``.`` or a ``_``
+#: (``admin/``, ``admin.py``, ``admin_x.py``, ``admin_tools/``), matched CASE-INSENSITIVELY. A
+#: case-insensitive filesystem (or a checkout tool) treats ``Admin/`` and ``admin/`` as one place,
+#: and a module beside the package is NEO's code all the same; a rule that only raises the size
+#: must not be dodged by a capital letter or a suffix. ``administrative/`` is not this.
+_ADMIN_SEGMENT = re.compile(r"admin(?:[._].*)?")
 _SCOPE_OR_LIMITS = ("scope.txt", "limits.txt")
 _DEPENDENCY_FILES = ("pyproject.toml",)
 
@@ -146,7 +149,7 @@ def _name(path: str) -> str:
 def _is_admin_code(path: str) -> bool:
     parts = path.casefold().split("/")
     return (len(parts) >= 2 and parts[0] == "cogno_praxis"
-            and parts[1].split(".", 1)[0] == _ADMIN_SEGMENT)
+            and _ADMIN_SEGMENT.fullmatch(parts[1]) is not None)
 
 
 def _store_or_schema(path: str) -> bool:

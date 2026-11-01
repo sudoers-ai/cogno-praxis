@@ -127,7 +127,7 @@ The rules are CLOSED, by the owner's decision. A change is **large** when any of
 | `store_or_schema` | a `store.py`, anything under `stores/`, a migration, or the `schema_change` flag (`_ensure_schema` lives inside the store adapters) |
 | `dependency` | `pyproject.toml` |
 | `diff_size` | more than 200 lines added + removed over all paths: 200 is small, 201 is large |
-| `admin_code` | any path under `cogno_praxis/admin/`, in any case, or a module beside it (`cogno_praxis/admin.py`, `Admin/`): NEO's own code |
+| `admin_code` | any path under `cogno_praxis/admin/`, or a package-root module or package named `admin.*` / `admin_*` (`admin.py`, `admin_x.py`), in any case (`Admin/`): NEO's own code. `administrative/` and `scheduler/admin.py` are not |
 | `doubt` | an unknown path type (`KNOWN_PATH_KINDS`), a path that does not read as a repo-relative POSIX path, a missing or unreadable line count, or no path at all |
 
 Every path rule matches case-insensitively (`Scope.txt`, `Store.py`, `PyProject.toml`). A rule that

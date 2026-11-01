@@ -181,6 +181,22 @@ def test_admin_code_is_case_insensitive_twin(path):
     assert "admin_code" in _rules(_one(path, 1, 0)), path
 
 
+@pytest.mark.parametrize("path", ["cogno_praxis/admin_x.py", "cogno_praxis/admin_tools.py",
+                                  "cogno_praxis/Admin_Tools.py", "cogno_praxis/ADMIN_X.PY",
+                                  "cogno_praxis/admin_tools/service.py", "cogno_praxis/admin.pyi"])
+def test_admin_code_covers_the_module_form_twin(path):
+    """``cogno_praxis/admin.*`` and ``admin_*`` beside the package are NEO's code too (the same
+    rule as the host's lock), in any case."""
+    assert "admin_code" in _rules(_one(path, 1, 0)), path
+
+
+@pytest.mark.parametrize("path", ["cogno_praxis/administrative.py", "cogno_praxis/adminx.py",
+                                  "cogno_praxis/scheduler/admin_x.py", "cogno_praxis/sysadmin.py"])
+def test_admin_code_module_form_control(path):
+    """No separator after ``admin``, or not at the package root: not NEO's code."""
+    assert "admin_code" not in _rules(_one(path, 1, 0)), path
+
+
 @pytest.mark.parametrize("path,rule", [
     ("cogno_praxis/scheduler/prompts/Scope.txt", "scope_or_limits"),
     ("cogno_praxis/scheduler/prompts/LIMITS.txt", "scope_or_limits"),

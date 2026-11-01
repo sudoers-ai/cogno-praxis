@@ -51,8 +51,9 @@
     sees a server import. The source detector catches threads, processes, event loops,
     `Path.open`, async subprocesses, `exec`/`importlib` and a call on import, with one planted
     case each.
-  - Every path rule of `impact.py` is case-insensitive, so `Admin/`, `admin.py` and
-    `Scope.txt` are large.
+  - Every path rule of `impact.py` is case-insensitive, so `Admin/` and `Scope.txt` are large.
+    `admin_code` also covers a package-root `admin.*` / `admin_*` module (`admin.py`,
+    `admin_x.py`), the same rule as the host's lock.
 
 ### Added — the scope lock on the admin persona's pull requests (NEO, 2026-11-01)
 
