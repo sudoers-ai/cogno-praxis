@@ -21,6 +21,25 @@ Exit codes: 0 = every changed path is in scope; 1 = refused, one line per offend
 the rule it broke; 2 = the diff could not be read (usage, git failure, malformed input). Every
 exit but 0 is a refusal: a checker that cannot read the diff must not pass it.
 
+**A NEO head is LINEAR on ONE merge base**, and in ``<base> <head>`` mode the checker refuses
+anything else before it reads a path (``history``). The three-dot diff is taken from ONE merge
+base, while GitHub's merge (``ort``/``recursive``) builds a VIRTUAL base from ALL of them. So on a
+criss-cross history the diff can show an in-scope prompt edit while landing the pull request
+REVERTS a file the diff never showed. Measured on a throwaway repository: a head of
+``B + merge -s ours A + a prompt edit`` against a main that merged ``A`` (hardening a workflow)
+and ``B`` read "ok, 1 record", and merging it put the old workflow back. Two conditions, either
+one refuses:
+
+* ``git merge-base --all <base> <head>`` must print EXACTLY one commit. Zero bases (unrelated
+  histories) is refused too, with a rule, rather than reaching ``git diff`` and failing there.
+* ``git rev-list --merges <base>..<head>`` must be empty: no merge commit in the head's own
+  history. With two or more bases this one always fires as well, because whatever joins the
+  bases is a merge that the base cannot reach. The base-count check is the second wall, and on its
+  own it is the one that names unrelated histories.
+
+``--stdin`` reads a diff and knows no history: it is for tests and ad-hoc use, and the workflow
+never calls it.
+
 Why ``--raw`` and not ``--name-status``: ``--name-status`` prints a ``chmod +x`` as ``M`` and a new
 symlink as ``A``, so neither can be seen there. ``--raw`` carries the old and new MODE of every
 record. ``-z`` keeps a path byte for byte (no C-quoting) and lets nothing in a name split a record.
@@ -98,6 +117,9 @@ RULES = {
     "mode_change": "a mode change",
     "rename_across": "a rename or copy whose source and destination are not both in scope",
     "test_add": "a test change other than adding a new tests/unit/test_<lowercase>.py",
+    "merge_bases": "the head does not have exactly one merge base with the base (a criss-cross "
+                   "history: the diff is taken from one base, GitHub merges over all of them)",
+    "merge_commit": "a merge commit in the head's history (a NEO head is linear)",
 }
 
 
@@ -244,13 +266,44 @@ def _git_diff(base: str, head: str) -> str:
     return done.stdout.decode("utf-8", "surrogateescape")
 
 
+def _git_lines(*args: str, ok_rcs: Sequence[int] = (0,)) -> List[str]:
+    done = subprocess.run(["git", *args], capture_output=True)
+    if done.returncode not in ok_rcs:
+        raise MalformedDiff(f"git {args[0]} failed (rc={done.returncode}): "
+                            f"{done.stderr.decode('utf-8', 'replace').strip()[:200]}")
+    return done.stdout.decode("utf-8", "replace").split()
+
+
+def history_refusals(base: str, head: str) -> List[Refusal]:
+    """The refusals the head's HISTORY earns: a NEO head is linear on exactly one merge base.
+
+    Returns ``[]`` for a linear head. A merge-base count other than one is refused before the
+    merge-commit walk, and with zero bases the caller must not take the three-dot diff at all."""
+    for ref in (base, head):
+        _git_lines("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+    # rc 1 with no output is "no common ancestor"; anything above 1 is an error.
+    bases = _git_lines("merge-base", "--all", base, head, ok_rcs=(0, 1))
+    if len(bases) != 1:
+        return [Refusal(f"(merge bases: {len(bases)})", "merge_bases")]
+    merges = _git_lines("rev-list", "--merges", f"{base}..{head}")
+    return [Refusal(f"(commit {sha[:12]})", "merge_commit") for sha in merges]
+
+
 def main(argv: Optional[Sequence[str]] = None, stdin: Optional[str] = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    history: List[Refusal] = []
     try:
         if args == ["--stdin"]:
             data = sys.stdin.buffer.read().decode("utf-8", "surrogateescape") if stdin is None \
                 else stdin
         elif len(args) == 2 and not any(a.startswith("-") for a in args):
+            history = history_refusals(args[0], args[1])
+            # With no single merge base the three-dot diff has nothing honest to say.
+            if any(r.rule == "merge_bases" for r in history):
+                for refusal in history:
+                    print(refusal.line())
+                print(f"NEO scope: REFUSED — history, 0 record(s) read, {len(history)} refusal(s)")
+                return 1
             data = _git_diff(args[0], args[1])
         else:
             print("usage: neo_scope_check.py <base> <head> | --stdin", file=sys.stderr)
@@ -259,7 +312,7 @@ def main(argv: Optional[Sequence[str]] = None, stdin: Optional[str] = None) -> i
     except MalformedDiff as exc:
         print(f"NEO scope: cannot read the diff — {exc}", file=sys.stderr)
         return 2
-    refusals = check(records)
+    refusals = history + check(records)
     for refusal in refusals:
         print(refusal.line())
     verdict = "REFUSED" if refusals else "ok"

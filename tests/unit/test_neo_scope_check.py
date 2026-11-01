@@ -306,11 +306,13 @@ def test_the_exit_codes_and_the_lines(capsys):
 
 
 # ── real git ────────────────────────────────────────────────────────────────────────────
-def _git(cwd: Path, *args: str) -> str:
+def _git(cwd: Path, *args: str, date: "str | None" = None) -> str:
     env = {"PATH": os.environ.get("PATH", ""), "HOME": str(cwd), "GIT_CONFIG_NOSYSTEM": "1",
            "GIT_CONFIG_GLOBAL": os.devnull, "GIT_AUTHOR_NAME": "Test", "GIT_COMMITTER_NAME":
            "Test", "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT_COMMITTER_EMAIL":
            "t@example.invalid", "LC_ALL": "C"}
+    if date:
+        env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = date
     return subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, text=True,
                           check=True).stdout
 
@@ -394,6 +396,90 @@ def test_real_git_an_unknown_ref_is_rc_2_not_ok(repo):
     assert done.returncode == 2, done.stdout + done.stderr
 
 
+# ── history: a NEO head is linear on one merge base ─────────────────────────────────────
+def _check(repo: Path) -> "tuple[int, str]":
+    return _run_empty(repo)
+
+
+def _commit(repo: Path, msg: str, date: str) -> None:
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", msg, date=date)
+
+
+def test_real_git_a_criss_cross_head_is_refused_though_its_diff_looks_in_scope(repo):
+    """The measured bypass. Main merged A (a hardening of pyproject.toml) and B (an unrelated
+    in-scope file). The head is ``B + merge -s ours A + a prompt edit``: it has TWO merge bases
+    with main, the three-dot diff is taken from B and shows the prompt edit only, and landing it
+    (git's merge over a virtual base, as GitHub's) puts the OLD pyproject.toml back."""
+    _git(repo, "branch", "A")
+    _git(repo, "branch", "B")
+    _git(repo, "checkout", "-q", "A")
+    (repo / "pyproject.toml").write_text("[project]\nhardened = true\n")
+    _commit(repo, "A", "2026-01-01T00:00:01")
+    _git(repo, "checkout", "-q", "B")
+    (repo / "cogno_praxis/scheduler/extra.txt").write_text("b\n")
+    _commit(repo, "B", "2026-01-01T00:00:02")
+    _git(repo, "checkout", "-q", "main")
+    _git(repo, "merge", "-q", "--no-edit", "A", date="2026-01-01T00:00:03")
+    _git(repo, "merge", "-q", "--no-edit", "B", date="2026-01-01T00:00:04")
+    _git(repo, "checkout", "-q", "-B", "neo/r1", "B")
+    _git(repo, "merge", "-q", "-s", "ours", "--no-edit", "A", date="2026-01-01T00:00:05")
+    (repo / "cogno_praxis/scheduler/prompts/system.txt").write_text("Be kind and brief.\n")
+    _commit(repo, "prompt", "2026-01-01T00:00:06")
+    # The broken world, proved before the verdict is read: the diff the paths are judged on
+    # holds only the in-scope prompt edit, and a real merge reverts the hardening.
+    assert len(_git(repo, "merge-base", "--all", "main", "neo/r1").split()) == 2
+    seen = nsc.check(nsc.parse_raw_z(_git(repo, "diff", "--raw", "-z", "-M", "main...neo/r1")))
+    assert seen == [], "precondition: the three-dot diff must look in scope"
+    _git(repo, "checkout", "-q", "-b", "landed", "main")
+    _git(repo, "merge", "-q", "--no-edit", "neo/r1", date="2026-01-01T00:00:07")
+    assert "hardened" not in (repo / "pyproject.toml").read_text(), "precondition: landing reverts"
+    _git(repo, "checkout", "-q", "neo/r1")
+    rc, out = _check(repo)
+    assert rc == 1, out
+    assert "REFUSED (merge bases: 2): merge_bases" in out
+
+
+def test_real_git_a_merge_commit_on_one_base_is_refused(repo):
+    """One merge base, every path in scope, and a merge commit in the head: refused on the
+    merge alone. A NEO head is linear."""
+    _git(repo, "checkout", "-q", "-b", "side")
+    (repo / "cogno_praxis/scheduler/prompts/system.txt").write_text("Be kind and brief.\n")
+    _commit(repo, "side", "2026-01-01T00:00:01")
+    _git(repo, "checkout", "-q", "neo/r1")
+    _git(repo, "merge", "-q", "--no-ff", "--no-edit", "side", date="2026-01-01T00:00:02")
+    assert len(_git(repo, "merge-base", "--all", "main", "neo/r1").split()) == 1
+    assert nsc.check(nsc.parse_raw_z(_git(repo, "diff", "--raw", "-z", "-M",
+                                           "main...neo/r1"))) == []
+    rc, out = _check(repo)
+    assert rc == 1, out
+    assert out.count(": merge_commit") == 1
+    assert "1 record(s) read" in out
+
+
+def test_real_git_an_unrelated_history_is_refused_with_its_rule_not_a_git_error(repo):
+    _git(repo, "checkout", "-q", "--orphan", "neo/r2")
+    (repo / "cogno_praxis/scheduler/prompts/system.txt").write_text("Be kind and brief.\n")
+    _commit(repo, "orphan", "2026-01-01T00:00:01")
+    done = subprocess.run([sys.executable, str(SCRIPT), "main", "neo/r2"], cwd=repo,
+                          capture_output=True, text=True,
+                          env={"PATH": os.environ.get("PATH", ""), "HOME": str(repo),
+                               "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull})
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "REFUSED (merge bases: 0): merge_bases" in done.stdout
+
+
+def test_real_git_a_linear_head_has_no_history_refusal(repo):
+    """The control: two plain commits on one base are judged on their paths alone."""
+    (repo / "cogno_praxis/scheduler/prompts/system.txt").write_text("Be kind and brief.\n")
+    _commit(repo, "one", "2026-01-01T00:00:01")
+    (repo / "cogno_praxis/scheduler/service.py").write_text("x = 2\n")
+    _commit(repo, "two", "2026-01-01T00:00:02")
+    rc, out = _check(repo)
+    assert rc == 0, out
+    assert "merge_" not in out and "2 record(s) read" in out
+
+
 # ── the workflow ────────────────────────────────────────────────────────────────────────
 def _workflow() -> dict:
     doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
@@ -428,6 +514,16 @@ def test_the_workflow_judges_with_the_base_and_never_the_head():
     assert not any("pip" in t for t in runs)
     assert all(s.get("with", {}).get("ref", "").endswith("base.sha }}") for s in steps
                if str(s.get("uses", "")).startswith("actions/checkout@"))
+
+
+def test_every_action_of_the_lock_is_pinned_by_commit_sha():
+    steps = _workflow()["jobs"]["scope"]["steps"]
+    uses = [s["uses"] for s in steps if "uses" in s]
+    assert len(uses) == 2
+    for ref in uses:
+        name, _, sha = ref.partition("@")
+        assert name in ("actions/checkout", "actions/setup-python")
+        assert len(sha) == 40 and all(c in "0123456789abcdef" for c in sha), ref
 
 
 def test_ci_lints_and_typechecks_the_checker():

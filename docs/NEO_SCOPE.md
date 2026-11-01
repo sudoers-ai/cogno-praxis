@@ -25,6 +25,7 @@ A path under `cogno_praxis/`, except the admin package, of a type the package is
 | a character outside `[A-Za-z0-9._/-]`: a backslash, a space, a control character, a non-ASCII letter (a homoglyph such as a dotless `ı`) | `path_chars` |
 | a dotfile inside the package. A `.gitattributes` with `-diff` would show the reviewer "Binary files differ" in place of the change | `hidden` |
 | a file type the package does not hold today: only `.py`, `.txt` and `py.typed`. An extension module (`.so`) is imported BEFORE the `.py` of the same name | `file_type` |
+| a head that is not LINEAR on ONE merge base: a merge commit anywhere in `<base>..<head>`, or a merge-base count other than one (a criss-cross history, or unrelated histories). See below | `merge_commit`, `merge_bases` |
 | an empty diff | `empty_diff` |
 | an unknown or unmerged status | `status` |
 
@@ -39,6 +40,29 @@ passes.
 plain `M` and a new symlink as a plain `A`: neither can be seen there. `--raw` carries both modes
 of every record, and `-z` keeps every path byte for byte.
 
+## A NEO head is linear
+
+The checker judges the three-dot diff, which git takes from ONE merge base. GitHub merges a pull
+request over a VIRTUAL base built from ALL of them. On a criss-cross history the two disagree, and
+the diff can show an in-scope prompt edit while landing the pull request REVERTS a file the diff
+never showed.
+
+Measured on a throwaway repository:
+- main merged A, which hardened a file outside the scope, and B, an unrelated in-scope change;
+- the head was `B + merge -s ours A + a prompt edit`;
+- the diff read "ok, 1 record", and merging the head put the old file back.
+
+So before reading a path the checker refuses, in `<base> <head>` mode:
+- **`merge_bases`**: `git merge-base --all <base> <head>` does not print exactly one commit. Zero
+  (unrelated histories) is refused with this rule instead of failing inside `git diff`.
+- **`merge_commit`**: `git rev-list --merges <base>..<head>` is not empty.
+
+With two or more bases the second check always fires as well, because whatever joins the bases is a
+merge the base cannot reach. The first is the second wall, and the one that names unrelated
+histories.
+
+`--stdin` reads a diff and knows no history. It is for tests, and the workflow never calls it.
+
 ## Why `pull_request_target`
 
 On `pull_request`, GitHub runs the workflow and the checkout of the pull request's own merge
@@ -47,7 +71,7 @@ edited copy. On `pull_request_target` the workflow comes from the base branch, a
 out the base SHA, so the checker that runs is the base's. The pull request's head is fetched as git
 objects to diff against and nothing from it is executed, installed or imported, which is what makes
 `pull_request_target` safe here. The token is read-only. The SHAs reach the shell through `env`,
-never interpolated into a `run:` block.
+never interpolated into a `run:` block. Both actions are pinned by commit SHA, not by tag (a tag can be moved).
 
 ## Tests: NEO never edits one; it may create new ones only behind a switch (`NEO_MAY_ADD_TESTS`)
 

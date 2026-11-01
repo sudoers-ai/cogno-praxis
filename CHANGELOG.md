@@ -18,6 +18,13 @@
     on `pull_request_target`, so the BASE's workflow and checker judge the pull request, never its
     own edited copy. The head is fetched as objects and nothing from it runs.
   - `ci.yml` lints and type-checks `scripts/` too.
+- **A NEO head is linear.** The three-dot diff is taken from ONE merge base, and GitHub merges over
+  a virtual base built from ALL of them. On a throwaway criss-cross repository, a head of
+  `B + merge -s ours A + a prompt edit` read "ok", and landing it reverted the file A had hardened.
+  In `<base> <head>` mode the checker therefore refuses a merge-base count other than one
+  (`merge_bases`, unrelated histories included) and any merge commit in `<base>..<head>`
+  (`merge_commit`), before it reads a path.
+- **Actions pinned by commit SHA** in `neo-scope.yml` (checkout v4.4.0, setup-python v5.6.0).
 - **Why `--raw`.** `--name-status` prints a `chmod +x` as `M` and a new symlink as `A`. A test
   pins it over a real repository.
 - **Tests: NEO never edits one, and may create new ones only behind a switch.** This is the
