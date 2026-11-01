@@ -100,10 +100,11 @@ constant in the checker, `NEO_MAY_ADD_TESTS`, and the two settings mean:
 No command-line flag opens the switch. The constant lives in the BASE's copy of the checker, which a
 NEO pull request cannot change, and flipping it is a person's pull request.
 
-**Why tests matter here.** Many tests pin prompt text. Measured on `232e72d`: appending one neutral
-sentence to the five executor prompts (`*/prompts/system.txt`) fails 21 unit tests; appending it to
-all 21 prompt files fails 95. So a prompt improvement will often need a pinned test updated. That
-edit is always a person's, under either setting.
+**Why tests matter here.** Many tests pin prompt text. Measured with the admin vertical in (25 prompt
+files, six of them executor prompts): appending one neutral sentence to the six executor prompts
+(`*/prompts/system.txt`) fails 22 unit tests; appending it to all 25 prompt files fails 95. (On
+`232e72d`, with 21 files, the same probe fails 21 and 90.) So a prompt improvement will often need a
+pinned test updated. That edit is always a person's, under either setting.
 
 **What the switch cannot promise.** A new test cannot touch an old one by path. But it runs in the
 same pytest process, so code at the top of the new module could still patch what other tests read.

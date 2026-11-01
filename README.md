@@ -26,6 +26,7 @@ Two layers of "business rules" stay separate: **orchestration** rules live in th
 | **bookkeeper** | the financial capability — ships the **BOOKKEEPER** persona (parent SaaS ANALYST): records income/expenses, tracks clients, produces summaries. See [`docs/BOOKKEEPER.md`](docs/BOOKKEEPER.md) | `add_income`, `add_outcome`, `get_summary`, `list_clients`, `search`, `remove_by_search`, `get_usage`, `math`, `help` |
 | **coordinator** | the academic capability — ships the **COORDINATOR** persona: reads class schedules across a tenant's course spreadsheets, checks grade/attendance deadlines, estimates a professor's OWN pay from tenant-declared figures (a coordinator/supervisor: any professor's, or every professor's one block each), finds open slots, swaps a class, and mails a professor their classes as a calendar. See [`docs/COORDINATOR.md`](docs/COORDINATOR.md) | `get_professor_schedule`, `get_professor_info`, `check_deadlines`, `get_weekly_briefing`, `check_ibope_status`, `daily_checks`, `estimate_professor_pay`, `find_replacement_slot`, `preview_schedule_to_calendar`, `send_schedule_to_calendar`, `confirm_swap`, `record_class_response` |
 | **companies** | the brand-registration capability — **transversal**: it belongs to no persona's domain, and a front-desk persona carries it beside its own vertical. Rows are keyed by the accent-folded company name (a frozen key fold, deliberately not the ecosystem's `casefold`: changing it needs a key migration), so registering one again UPDATES it — and a field a registration or an update is not given is left exactly as it was. Scoped by identity: staff see the business's companies, anyone else sees the ones they registered | `company_registration`, `list_companies`, `company_search`, `company_update`, `company_delete` |
+| **admin** | the READ-ONLY vertical of the **NEO** administrator persona, which talks only to the platform administrator and proposes improvements to the other verticals' skills. It reads the package (each vertical's prompts and tool surface, read from the source and never by building its server), and ships two pure rule modules: the size of a proposed change and its three-layer summary. It writes nothing. See [`docs/ADMIN.md`](docs/ADMIN.md) | `list_verticals`, `get_vertical_config` |
 
 The tool lists are the `@mcp.tool` functions of each vertical's `server.py`, in the order the
 server registers them; a host's RBAC decides which of them a given reader is offered.
@@ -497,6 +498,9 @@ Every `.md` of this repository.
   that names nothing, the free slot, the holiday read by its base name, `confirm_swap`'s empty
   professor, the coordination's e-mail through the tenant's tags and what the tools print for it,
   the rehearsal seed.
+- [`docs/ADMIN.md`](docs/ADMIN.md) — the read-only vertical of the NEO administrator persona: its
+  two tools, why the tool surface is read from the source, the closed rules of a change's size, and
+  the three-layer summary. Wiring it into a host is the host's.
 - [`docs/BOOKKEEPER_PLAN.md`](docs/BOOKKEEPER_PLAN.md) — **historical.** The approved plan that
   ported the bookkeeper, in three phases across this repository and the host. It names files in
   other repositories and a count of tools that has since grown; `docs/BOOKKEEPER.md` is the

@@ -103,8 +103,11 @@ NOW = {
     "scheduler": "b2f942c84374955d9aad03f951ce4082d4cc4d0c45638cad4d1c6b9f89b3448f",
 }
 
-#: The scopes NOT given the line, at ``origin/main`` 5c57490.
+#: The scopes NOT given the line, at ``origin/main`` 5c57490 — plus ``admin``, which arrived after
+#: it (NEO talks only to the platform administrator and is not offered ``notify_user``), pinned at
+#: the commit that added it.
 NEIGHBOURS_AT_MAIN = {
+    "admin": "15f14dc166c659b8419498a4f4e188fc79fa0c3672ed831decebca8db2d19150",
     "closer": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
     "companies": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
     "coordinator": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
