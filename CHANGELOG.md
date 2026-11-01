@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### Added — the scope lock on the admin persona's pull requests (NEO, 2026-11-01)
+
+- **Why.** NEO is an admin persona. When the owner approves a change to a vertical's skills, a code
+  agent opens a pull request from a `neo/<request_id>` branch. The rule is that such a pull request
+  improves the verticals' skills and never changes the system or NEO itself. Nothing enforced it.
+- **What.**
+  - `scripts/neo_scope_check.py` reads `git diff --raw -z -M <base>...<head>`. It allows a path
+    under `cogno_praxis/` that is not the admin package, in any case, and is of a type the package
+    holds (`.py`, `.txt`, `py.typed`). Everything else is refused: the build, the lock files, the
+    workflows, the checker, the docs, the tests, renames across the boundary in both directions,
+    symlinks, executables, mode changes, traversal, dotfiles, non-ASCII paths and the empty diff.
+    Each offending path is printed with the rule it broke; rc 0 / 1 / 2 (unreadable).
+  - `.github/workflows/neo-scope.yml` runs it only when the head branch starts with `neo/`. It runs
+    on `pull_request_target`, so the BASE's workflow and checker judge the pull request, never its
+    own edited copy. The head is fetched as objects and nothing from it runs.
+  - `ci.yml` lints and type-checks `scripts/` too.
+- **Why `--raw`.** `--name-status` prints a `chmod +x` as `M` and a new symlink as `A`. A test
+  pins it over a real repository.
+- **Tests stay refused** (`NEO_MAY_EDIT_TESTS = False`). Measured on `232e72d`: one neutral
+  sentence appended to the five `system.txt` prompts fails 21 unit tests, and appended to all 21
+  prompt files, 95. A narrow allowance (add or modify a regular `tests/unit/test_*.py`, never the
+  lock's own tests) is written and tested, off by default.
+- **Not here:** making the check required and restricting which branches NEO's account may push.
+  Both are repository settings.
+- **Docs:** `docs/NEO_SCOPE.md`; the README's documentation index and lint line.
+- **Tests:** `tests/unit/test_neo_scope_check.py`, fake diffs, a throwaway git repository, and the
+  workflow parsed as YAML.
+
 ### Fixed — the pt clause negation reads «nada» and «nenhuma»/«nenhumas» (R-T41d, 2026-11-01)
 
 - **Why.** `LOCALES["pt"].neg` (also `NEG_RE`) is the clause negation every pt grounding
