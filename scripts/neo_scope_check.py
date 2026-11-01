@@ -58,14 +58,23 @@ ABSENT = "000000"
 # or a case fold is how `cogno_praxis/admın/` or `Cogno_Praxis/` would pass for something else.
 _PATH_CHARS = re.compile(r"[A-Za-z0-9._/-]+")
 
-# Whether a NEO pull request may also change tests. STRICT (False) until the owner decides.
-# Measured on 232e72d: appending one neutral sentence to each of the 21 prompt files fails 95 unit
-# tests, so a real prompt improvement will often need its pinned test updated, and under the
-# strict rule that pull request stays red until a person edits the test. The other side: a NEO
-# that may edit tests may weaken the tests that hold its own output. When True, only ADDING or
-# MODIFYING a regular `tests/unit/test_*.py` is allowed: never a deletion, a rename, a helper, a
-# conftest, an integration test, or one of PROTECTED_TESTS.
-NEO_MAY_EDIT_TESTS = False
+# The owner's rule on tests: NEO may never EDIT a test, but may CREATE new ones. This constant is
+# the switch for the second half, and it is OFF (strict) by default: with False every test path
+# is refused. With True the ONLY test change allowed is ADDING A NEW FILE: status `A` (the path
+# did not exist at the merge base), a regular non-executable file, directly in `tests/unit/`,
+# named `test_<lowercase>.py`. Never a modification, a deletion, a rename or copy, a mode change,
+# a conftest, a helper, an integration test, or one of PROTECTED_TESTS. The lowercase name is
+# what keeps an "added" `test_Neo_Scope_Check.py` from being, on a case-insensitive filesystem,
+# an edit of an existing file. There is no command-line flag: the switch lives in the BASE's copy
+# of this file, which a NEO pull request cannot change.
+#
+# Why it matters: measured on 232e72d, one neutral sentence appended to the 21 prompt files fails
+# 95 unit tests, so a prompt improvement often needs a pinned test updated, and that edit is
+# always a person's. A new test cannot weaken an old one by path, but it runs in the same pytest
+# process, so module-level code in it could still patch what other tests read: the switch keeps
+# a reviewer reading every new test.
+NEO_MAY_ADD_TESTS = False
+_NEW_TEST_NAME = re.compile(r"test_[a-z0-9_]+\.py")
 TESTS_ROOT = "tests/unit"
 PROTECTED_TESTS = frozenset({
     "tests/unit/test_neo_scope_check.py",        # the tests of this lock
@@ -88,7 +97,7 @@ RULES = {
     "mode": "not a regular non-executable file (symlink, executable, submodule)",
     "mode_change": "a mode change",
     "rename_across": "a rename or copy whose source and destination are not both in scope",
-    "test_edit": "a test change the test allowance does not cover",
+    "test_add": "a test change other than adding a new tests/unit/test_<lowercase>.py",
 }
 
 
@@ -183,15 +192,14 @@ def _path_rule(path: str, *, allow_tests: bool, status: str, new_mode: str) -> O
             return "file_type"
         return None
     if allow_tests and path.startswith(TESTS_ROOT + "/"):
-        name = parts[-1]
-        ok = (len(parts) == 3 and name.startswith("test_") and name.endswith(".py")
-              and path not in PROTECTED_TESTS and status in ("A", "M")
+        ok = (len(parts) == 3 and _NEW_TEST_NAME.fullmatch(parts[-1]) is not None
+              and path not in PROTECTED_TESTS and status == "A"
               and new_mode == REGULAR_FILE)
-        return None if ok else "test_edit"
+        return None if ok else "test_add"
     return "outside_scope"
 
 
-def check(records: Iterable[Record], *, allow_tests: bool = NEO_MAY_EDIT_TESTS) -> List[Refusal]:
+def check(records: Iterable[Record], *, allow_tests: bool = NEO_MAY_ADD_TESTS) -> List[Refusal]:
     """Every refusal the records earn, in diff order. Empty means in scope."""
     records = list(records)
     if not records:

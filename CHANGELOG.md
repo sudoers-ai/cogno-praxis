@@ -20,10 +20,14 @@
   - `ci.yml` lints and type-checks `scripts/` too.
 - **Why `--raw`.** `--name-status` prints a `chmod +x` as `M` and a new symlink as `A`. A test
   pins it over a real repository.
-- **Tests stay refused** (`NEO_MAY_EDIT_TESTS = False`). Measured on `232e72d`: one neutral
-  sentence appended to the five `system.txt` prompts fails 21 unit tests, and appended to all 21
-  prompt files, 95. A narrow allowance (add or modify a regular `tests/unit/test_*.py`, never the
-  lock's own tests) is written and tested, off by default.
+- **Tests: NEO never edits one, and may create new ones only behind a switch.** This is the
+  owner's rule. `NEO_MAY_ADD_TESTS = False` is the default and is strict: every test path is
+  refused. `True` allows exactly one test change, ADDING a new regular
+  `tests/unit/test_<lowercase>.py`. A modification, deletion, rename, copy or mode change of a
+  test is always refused, and so are a conftest, a helper, an integration test, and the lock's own
+  tests or the CI-coverage guard. Why it matters, measured on `232e72d`: one neutral sentence
+  appended to the five `system.txt` prompts fails 21 unit tests; appended to all 21 prompt files,
+  95. Those pinned-test edits stay a person's.
 - **Not here:** making the check required and restricting which branches NEO's account may push.
   Both are repository settings.
 - **Docs:** `docs/NEO_SCOPE.md`; the README's documentation index and lint line.

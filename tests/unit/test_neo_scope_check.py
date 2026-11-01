@@ -231,34 +231,65 @@ def test_the_empty_diff_is_refused():
     assert nsc.main(["--stdin"], stdin="") == 1
 
 
-# ── the test allowance (off by default) ─────────────────────────────────────────────────
-def test_the_test_allowance_is_off_by_default():
-    assert nsc.NEO_MAY_EDIT_TESTS is False
-    assert verdict(rec("M", "tests/unit/test_coordinator_prompts.py")) == \
-        [("tests/unit/test_coordinator_prompts.py", "outside_scope")]
+# ── tests: NEO may never edit one, and may create new ones only behind the switch ─────
+_TEST_PATHS = [
+    rec("A", "tests/unit/test_new_rule.py"),
+    rec("M", "tests/unit/test_coordinator_prompts.py"),
+    rec("D", "tests/unit/test_coordinator_prompts.py"),
+    rec("R100", "tests/unit/test_b.py", "tests/unit/test_a.py"),
+    rec("A", "tests/unit/conftest.py"),
+    rec("A", "tests/integration/test_new.py"),
+]
 
 
-def test_the_test_allowance_when_on_covers_only_adding_and_editing_unit_tests():
-    on = {"allow_tests": True}
-    assert verdict(rec("M", "tests/unit/test_coordinator_prompts.py"), **on) == []
-    assert verdict(rec("A", "tests/unit/test_new_rule.py"), **on) == []
-    refused = [
-        rec("D", "tests/unit/test_coordinator_prompts.py"),
-        rec("R100", "tests/unit/test_b.py", "tests/unit/test_a.py"),
-        rec("M", "tests/unit/test_neo_scope_check.py"),
-        rec("M", "tests/unit/test_ci_runs_every_test_file.py"),
-        rec("M", "tests/unit/conftest.py"),
-        rec("M", "tests/unit/_log_calls.py"),
-        rec("M", "tests/unit/sub/test_x.py"),
-        rec("M", "tests/integration/test_scheduler_via_mcp.py"),
-        rec("M", "tests/conftest.py"),
-    ]
-    for r in refused:
-        got = verdict(r, **on)
-        assert got and all(rule in ("test_edit", "outside_scope", "rename_across")
-                           for _, rule in got), (r, got)
-    head = f":100644 100755 {SHA} {SHA} M\0tests/unit/test_x.py\0"
-    assert ("tests/unit/test_x.py", "test_edit") in verdict(head, **on)
+def test_the_switch_is_named_for_adding_and_is_off_by_default():
+    assert nsc.NEO_MAY_ADD_TESTS is False
+    assert not hasattr(nsc, "NEO_MAY_EDIT_TESTS")
+
+
+@pytest.mark.parametrize("record", _TEST_PATHS)
+def test_with_the_switch_off_every_test_path_is_refused(record):
+    """Through the DEFAULT, not an explicit False: `check()` with no keyword and `main()`, so a
+    default flipped to True is seen here and not only by the constant's own assertion."""
+    records = nsc.parse_raw_z(record)
+    got = nsc.check(records)
+    assert got and all(r.rule in ("outside_scope", "rename_across") for r in got), got
+    assert nsc.main(["--stdin"], stdin=record) == 1
+
+
+def test_with_the_switch_on_a_new_unit_test_file_is_allowed():
+    assert verdict(rec("A", "tests/unit/test_new_rule.py"), allow_tests=True) == []
+    assert verdict(rec("A", "tests/unit/test_x.py"),
+                   rec("M", "cogno_praxis/scheduler/prompts/system.txt"), allow_tests=True) == []
+
+
+@pytest.mark.parametrize("record,path", [
+    (rec("M", "tests/unit/test_coordinator_prompts.py"), "tests/unit/test_coordinator_prompts.py"),
+    (rec("D", "tests/unit/test_coordinator_prompts.py"), "tests/unit/test_coordinator_prompts.py"),
+    (rec("R100", "tests/unit/test_b.py", "tests/unit/test_a.py"), "tests/unit/test_a.py"),
+    (rec("R100", "tests/unit/test_b.py", "tests/unit/test_a.py"), "tests/unit/test_b.py"),
+    (rec("C100", "tests/unit/test_b.py", "tests/unit/test_a.py"), "tests/unit/test_b.py"),
+    (rec("R100", "tests/unit/test_moved.py", "cogno_praxis/scheduler/x.py"),
+     "tests/unit/test_moved.py"),
+    (rec("A", "tests/unit/conftest.py"), "tests/unit/conftest.py"),
+    (rec("A", "tests/unit/_helpers.py"), "tests/unit/_helpers.py"),
+    (rec("A", "tests/unit/sub/test_x.py"), "tests/unit/sub/test_x.py"),
+    (rec("A", "tests/unit/test_Neo_Scope_Check.py"), "tests/unit/test_Neo_Scope_Check.py"),
+    (rec("A", "tests/unit/test_neo_scope_check.py"), "tests/unit/test_neo_scope_check.py"),
+    (rec("A", "tests/unit/test_ci_runs_every_test_file.py"),
+     "tests/unit/test_ci_runs_every_test_file.py"),
+    (rec("A", "tests/unit/test_x.txt"), "tests/unit/test_x.txt"),
+    (rec("A", "tests/integration/test_new.py"), "tests/integration/test_new.py"),
+    (rec("A", "tests/conftest.py"), "tests/conftest.py"),
+    (rec("A", "tests/unit/test_x.py", new_mode="100755"), "tests/unit/test_x.py"),
+    (rec("A", "tests/unit/test_x.py", new_mode="120000"), "tests/unit/test_x.py"),
+    (f":100644 100755 {SHA} {SHA} M\0tests/unit/test_x.py\0", "tests/unit/test_x.py"),
+    (f":100644 120000 {SHA} {SHA} T\0tests/unit/test_x.py\0", "tests/unit/test_x.py"),
+])
+def test_with_the_switch_on_anything_but_a_new_file_is_refused(record, path):
+    got = verdict(record, allow_tests=True)
+    assert got, "refused nothing"
+    assert any(p == path and rule in ("test_add", "outside_scope", "mode") for p, rule in got), got
 
 
 # ── the command line ────────────────────────────────────────────────────────────────────

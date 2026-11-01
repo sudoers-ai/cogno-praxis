@@ -17,7 +17,7 @@ A path under `cogno_praxis/`, except the admin package, of a type the package is
 
 | | Refused, with the rule the checker prints |
 |---|---|
-| anything outside `cogno_praxis/`: `pyproject.toml`, lock files, `.github/**`, `scripts/**` (the checker), `docs/**`, `tests/**`, `examples/**`, the README and the changelog | `outside_scope` (`hidden` for a dotted path such as `.github/`) |
+| anything outside `cogno_praxis/`: `pyproject.toml`, lock files, `.github/**`, `scripts/**` (the checker), `docs/**`, `tests/**` (see *Tests* below), `examples/**`, the README and the changelog | `outside_scope` (`hidden` for a dotted path such as `.github/`) |
 | `cogno_praxis/admin/**`, or a module `cogno_praxis/admin.*`, **in any case** (`Admin/`, `ADMIN/`): on a case-insensitive filesystem they are the same package | `admin` |
 | a rename or a copy with either side out of scope, in either direction. Both sides are checked: checking only the destination would let a pull request move a test, or the checker, into the package and so delete it from where it ran | the side's own rule, plus `rename_across` |
 | a symlink, an executable, a submodule, or any mode change (`chmod -x` included) | `mode`, `mode_change` |
@@ -49,20 +49,41 @@ objects to diff against and nothing from it is executed, installed or imported, 
 `pull_request_target` safe here. The token is read-only. The SHAs reach the shell through `env`,
 never interpolated into a `run:` block.
 
-## Tests stay refused (`NEO_MAY_EDIT_TESTS = False`)
+## Tests: NEO never edits one; it may create new ones only behind a switch (`NEO_MAY_ADD_TESTS`)
 
-Many tests pin prompt text. Measured on `232e72d`: appending one neutral sentence to the five
-executor prompts (`*/prompts/system.txt`) fails 21 unit tests; to all 21 prompt files, 95. So a
-real prompt improvement will often need a pinned test updated, and under the strict rule that pull
-request stays red until a person edits the test.
+**The owner's rule: NEO may not edit tests, but may create new ones.** It is written as one
+constant in the checker, `NEO_MAY_ADD_TESTS`, and the two settings mean:
 
-The other side is that a NEO that may edit tests may weaken the tests that hold its own output.
-The rule therefore stays strict. The allowance is written and tested, behind one constant in the
-checker, for the day the owner turns it on. It allows only ADDING or MODIFYING a regular
-`tests/unit/test_*.py`. It never allows a deletion, a rename, a helper or conftest, an integration
-test, the tests of this lock, or the guard that every test file runs in CI. There is no command-line
-flag that opens it: the constant is in the base's copy of the checker, which the pull request cannot
-change.
+- **`False`, the default: strict.** Every path under `tests/` is refused (`outside_scope`), new
+  files included. This is the rule today.
+- **`True`: new test files, and nothing else.** The one test change allowed is ADDING A NEW
+  FILE that meets all of these:
+  - its status is `A`: the path did not exist at the merge base;
+  - it is a regular, non-executable file;
+  - it sits directly in `tests/unit/`;
+  - it is named `test_<lowercase letters, digits, _>.py`.
+
+  Every other test change is refused with `test_add`:
+  - a modification, a deletion, a rename or a copy (from or to a test path), or a mode change;
+  - a symlink;
+  - a `conftest.py` or a helper (`_helpers.py`);
+  - a subdirectory, or an integration test;
+  - the tests of this lock or the guard that every test file runs in CI (`PROTECTED_TESTS`).
+
+  The name is lowercase so that an "added" `test_Neo_Scope_Check.py` cannot be, on a
+  case-insensitive filesystem, an edit of an existing file.
+
+No command-line flag opens the switch. The constant lives in the BASE's copy of the checker, which a
+NEO pull request cannot change, and flipping it is a person's pull request.
+
+**Why tests matter here.** Many tests pin prompt text. Measured on `232e72d`: appending one neutral
+sentence to the five executor prompts (`*/prompts/system.txt`) fails 21 unit tests; appending it to
+all 21 prompt files fails 95. So a prompt improvement will often need a pinned test updated. That
+edit is always a person's, under either setting.
+
+**What the switch cannot promise.** A new test cannot touch an old one by path. But it runs in the
+same pytest process, so code at the top of the new module could still patch what other tests read.
+A reviewer reads every new test.
 
 ## What this lock does not do
 
