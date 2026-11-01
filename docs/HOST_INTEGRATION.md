@@ -362,5 +362,8 @@ only when `build_server` was given neither `sender=` nor `sender_for=`.
 | `COGNO_RENDER_CHANNEL` | `cogno_praxis.render`, *at call time* | unset = WhatsApp | which channel's bold delimiter a listing uses when the caller names none; an unrecognised name falls to plain text |
 | `COGNO_PG_DSN` | bookkeeper, companies | — | the shared DSN the two fall back to |
 
+The admin server (`python -m cogno_praxis.admin.server`) reads no variable at all: it reads the
+package's own files (`docs/ADMIN.md`).
+
 The integration tests read two more, never the library: `COGNO_TEST_PG_DSN` and the libpq
 variables (`PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`) — see the README, «Development».

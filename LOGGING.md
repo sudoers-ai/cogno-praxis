@@ -73,9 +73,14 @@ opens with `stage=coordinator`; a line of the scheduler with `stage=scheduler`.
 
 ## Modules that log nothing
 
-The bookkeeper, the companies vertical, the closer and the interviewer log nothing.
+The admin vertical, the bookkeeper, the companies vertical, the closer and the interviewer log nothing.
 
 - `cogno_praxis`
+- `cogno_praxis.admin`
+- `cogno_praxis.admin.impact`
+- `cogno_praxis.admin.server`
+- `cogno_praxis.admin.service`
+- `cogno_praxis.admin.summary`
 - `cogno_praxis.bookkeeper`
 - `cogno_praxis.bookkeeper.arithmetic`
 - `cogno_praxis.bookkeeper.durability`

@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+### Added — the `admin` vertical: what the NEO administrator persona reads (N1, 2026-11-01)
+
+- **Why.** NEO is an administrator persona: it talks only to the platform administrator,
+  analyses the business verticals and proposes improvements to their skills. It needs to READ the
+  verticals, and a proposal needs a size and a summary that do not depend on a model. This is that
+  part, and it works wherever a host decides NEO's later steps live (requesting, running, merging).
+- **What** (`cogno_praxis/admin/`, `docs/ADMIN.md`):
+  - `server.py`: a FastMCP server with exactly two tools, both `readOnlyHint=True`.
+    `list_verticals()` lists every vertical with its server, its `python -m` entry, its prompt
+    slots and its tools with their annotations. `admin` lists itself, flagged `is_self`.
+    `get_vertical_config(vertical)` returns one vertical's prompt texts and its tool surface
+    (name, description, input schema, annotations). An unknown id is refused in words, naming
+    the known ones. Neither tool writes, connects, or reads a database or the environment.
+  - `service.py`: the verticals are found on the disk, never in a hand-written list. The tool
+    surface is read from each `server.py` with `ast`, never by building the server, because
+    importing the bookkeeper's server opens Postgres when its DSN is set.
+  - `prompts/`: NEO's four slots, in English like the other capability verticals, with no
+    placeholder.
+  - `impact.py`: `classify(change)` answers small or large, pure, by the owner's closed rules.
+    Three questions decide it:
+    - does the change correct or add? Only a declared `correction` can be small; an
+      `improvement` or an `evolution` is large, and so is a missing or unknown `kind`;
+    - what does it touch? A new vertical, persona or tool, `scope.txt`/`limits.txt`, a store or a
+      schema, `pyproject.toml`, or `cogno_praxis/admin/` makes it large;
+    - how big is it? Over 200 lines added + removed is large (200 is small).
+
+    In doubt it is large. `escalate()` takes no size and always answers large.
+  - `summary.py`: `render()` writes the Diretor / Gerencial / Técnico layers in pt-BR,
+    deterministically. The line limits are enforced, and an unfilled field reads `não informado`.
+- **Not registered anywhere.** No host, persona binding or RBAC is touched. Wiring it in is the
+  host's (`docs/HOST_INTEGRATION.md` §7). The admin server reads no environment variable (§8).
+- **Structural tests that had to place the new vertical:**
+  - `test_messages_to_the_team_are_in_scope.py`: `admin` is a neighbour, since NEO is not offered
+    `notify_user`;
+  - `test_bookkeeper_ai_cost_comes_from_the_cost_tool.py`: its four slots join the neighbour
+    table;
+  - `LOGGING.md`: the five modules log nothing;
+  - `pyproject.toml`: the prompts as package data.
+- **Tests** (red on the base: the module does not exist, so the five files fail at collection):
+  - `test_admin_service.py`, including the parity pair: the static reading against a real
+    FastMCP build of all five servers;
+  - `test_admin_server.py`, `test_admin_impact.py`, `test_admin_summary.py` and
+    `test_admin_prompts.py`.
+
 ### Added — the scope lock on the admin persona's pull requests (NEO, 2026-11-01)
 
 - **Why.** NEO is an admin persona. When the owner approves a change to a vertical's skills, a code

@@ -112,8 +112,13 @@ OLD_CLAIMS = ('AI "tokens/usage" (get_usage)', "AI token/usage → get_usage()")
 SYSTEM_AT_MAIN = "8fc3ec6856ef0964406e59c16b032fad2f5d9a24ae5613895dd8c9db9bf30596"
 LIMITS_AT_MAIN = "d1e1abdbb376861fe42b923037bf3341927306836c4e181247887b48608b7c54"
 
-#: ``sha256`` of every OTHER prompt of every vertical at ``origin/main`` 45d2ed6.
+#: ``sha256`` of every OTHER prompt of every vertical at ``origin/main`` 45d2ed6 — plus the
+#: ``admin/*`` slots (NEO), which arrived after it and are pinned at the commit that added them.
 NEIGHBOURS_AT_MAIN = {
+    "admin/limits.txt": "e0ef09e03c75105a1d1ba85373a28fed0696db1a717637f79ae2c26c373b4b4f",
+    "admin/scope.txt": "15f14dc166c659b8419498a4f4e188fc79fa0c3672ed831decebca8db2d19150",
+    "admin/system.txt": "3ef89cf45df8fb8a4106f23e612fa3d0f29b4d4ad3666465b85eaa4032363810",
+    "admin/voice.txt": "40f2b35db24ddd38e3e395a4c7b49fe81bf04ad7bc9e1e05cb68c72825d5ee4b",
     "bookkeeper/scope.txt": "ed4a8c112f11d2c2bf480c4e8be806f9d1f707e12c1bf638e541e5f17f3ee342",
     "bookkeeper/voice.txt": "1b65181573edc71b964a686d96c92ab94b664bb094b88d4911e034536c95d347",
     "closer/limits.txt": "2c8bf84a2625317e363f8fc175029b7d85d9a28fb90190b5c254391981f10e4c",
