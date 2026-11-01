@@ -477,7 +477,7 @@ pytest tests/integration -q     # scheduler server over stdio via cogno-mcp (the
                                 # database NAME is never taken from any of them: it is always
                                 # `cogno_praxis_test`. COGNO_TEST_PG_DSN overrides, and a name
                                 # without "test" in it is refused at collection.
-ruff check cogno_praxis tests examples && mypy cogno_praxis      # as CI runs them
+ruff check cogno_praxis tests examples scripts && mypy cogno_praxis scripts   # as CI runs them
 python examples/host_min.py     # spawn the server + run a reception flow
 ```
 
@@ -501,6 +501,11 @@ Every `.md` of this repository.
   ported the bookkeeper, in three phases across this repository and the host. It names files in
   other repositories and a count of tools that has since grown; `docs/BOOKKEEPER.md` is the
   vertical as built.
+- [`docs/NEO_SCOPE.md`](docs/NEO_SCOPE.md) — the scope lock on the admin persona's pull requests
+  (`neo/…` branches). It allows only `cogno_praxis/`, never the admin package, the build, the
+  workflows, the checker or the docs, and the head must be linear on one merge base. It never allows editing a test; new unit tests are allowed
+  only behind `NEO_MAY_ADD_TESTS`, which is off by default. The doc lists what it refuses, by rule,
+  and why it runs on `pull_request_target`.
 - [`LOGGING.md`](LOGGING.md) — every log event the library emits, the class of every value a line carries, and what is never logged (no name, no id, no text of the tenant's).
 - [`CHANGELOG.md`](CHANGELOG.md) — every change, newest first.
 

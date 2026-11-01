@@ -1,0 +1,62 @@
+name: NEO scope
+
+# The scope lock for the pull requests the NEO bridge opens (docs/NEO_SCOPE.md). NEO is an admin
+# persona: when the owner approves a change to a vertical's skills, a code agent opens a pull
+# request from a branch named `neo/<request_id>`, and that pull request may change the skills
+# under `cogno_praxis/` and nothing else — never the system, never NEO itself.
+# `scripts/neo_scope_check.py` is the rule; this workflow runs it on those pull requests only.
+#
+# `pull_request_target`, NOT `pull_request`, and that is the whole lock. On `pull_request` GitHub
+# runs the workflow file and the checkout of the PR's own MERGE commit, so a pull request that
+# edits this file, or the checker, is judged by its own edited copy: `run: true` would pass it.
+# On `pull_request_target` the workflow comes from the BASE branch and so does the checker (the
+# checkout below pins the base SHA). The PR's head is fetched only as git objects to diff
+# against: nothing from it is executed, installed or imported, which is what makes
+# `pull_request_target` safe here. Its token is cut to read-only all the same.
+on:
+  pull_request_target:
+    branches: [main]
+    # `edited` is in the list because changing a PR's base branch is an `edited` event.
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+# One in-flight run per pull request (ci.yml explains the cancelling). The key is the PR NUMBER
+# and not `github.ref` as in ci.yml: on `pull_request_target` github.ref is the BASE branch, so a
+# ref key would put every NEO pull request in one group and let each push cancel the others' check.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  scope:
+    # Exactly the branch prefix the bridge uses. Every other pull request skips this job, and a
+    # skipped job reports success to a required check, so other PRs are untouched.
+    if: startsWith(github.event.pull_request.head.ref, 'neo/')
+    runs-on: ubuntu-latest
+    steps:
+      # Actions pinned by commit SHA, not by tag: a tag can be moved, and this job is the lock.
+      # The comment names the release the SHA was resolved from (lightweight tags, verified).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.12"
+      # The head as DATA. The SHAs come in through env, never interpolated into the script, and
+      # the fetched head must be the SHA the event names (a push after the event is a new run).
+      - name: Fetch the pull request's head (objects only; nothing from it runs)
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/neo/head"
+          test "$(git rev-parse refs/neo/head)" = "$HEAD_SHA"
+      - name: Scope check (the base's checker over the PR's diff)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python scripts/neo_scope_check.py "$BASE_SHA" "$HEAD_SHA"

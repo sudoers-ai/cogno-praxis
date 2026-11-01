@@ -64,9 +64,9 @@ jobs:
           # instead of skipping — a skipped adapter is an adapter nobody measured.
           pip install "cogno-herald @ git+https://github.com/sudoers-ai/cogno-herald.git"
       - name: Lint (ruff)
-        run: ruff check cogno_praxis tests examples
+        run: ruff check cogno_praxis tests examples scripts
       - name: Type-check (mypy)
-        run: mypy cogno_praxis
+        run: mypy cogno_praxis scripts
       # ONE step, and it names no CHILD of `tests/`. Naming them by name is how a suite
       # goes missing: `tests/test_closer_prompts.py` sat at the root of `tests/` until #90,
       # merged and reviewed and collected by nothing, and the day someone adds a third

@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### Added — the scope lock on the admin persona's pull requests (NEO, 2026-11-01)
+
+- **Why.** NEO is an admin persona. When the owner approves a change to a vertical's skills, a code
+  agent opens a pull request from a `neo/<request_id>` branch. The rule is that such a pull request
+  improves the verticals' skills and never changes the system or NEO itself. Nothing enforced it.
+- **What.**
+  - `scripts/neo_scope_check.py` reads `git diff --raw -z -M <base>...<head>`. It allows a path
+    under `cogno_praxis/` that is not the admin package, in any case, and is of a type the package
+    holds (`.py`, `.txt`, `py.typed`). Everything else is refused: the build, the lock files, the
+    workflows, the checker, the docs, the tests, renames across the boundary in both directions,
+    symlinks, executables, mode changes, traversal, dotfiles, non-ASCII paths and the empty diff.
+    Each offending path is printed with the rule it broke; rc 0 / 1 / 2 (unreadable).
+  - `.github/workflows/neo-scope.yml` runs it only when the head branch starts with `neo/`. It runs
+    on `pull_request_target`, so the BASE's workflow and checker judge the pull request, never its
+    own edited copy. The head is fetched as objects and nothing from it runs.
+  - `ci.yml` lints and type-checks `scripts/` too.
+- **A NEO head is linear.** The three-dot diff is taken from ONE merge base, and GitHub merges over
+  a virtual base built from ALL of them. On a throwaway criss-cross repository, a head of
+  `B + merge -s ours A + a prompt edit` read "ok", and landing it reverted the file A had hardened.
+  In `<base> <head>` mode the checker therefore refuses a merge-base count other than one
+  (`merge_bases`, unrelated histories included) and any merge commit in `<base>..<head>`
+  (`merge_commit`), before it reads a path.
+- **Actions pinned by commit SHA** in `neo-scope.yml` (checkout v4.4.0, setup-python v5.6.0).
+- **Why `--raw`.** `--name-status` prints a `chmod +x` as `M` and a new symlink as `A`. A test
+  pins it over a real repository.
+- **Tests: NEO never edits one, and may create new ones only behind a switch.** This is the
+  owner's rule. `NEO_MAY_ADD_TESTS = False` is the default and is strict: every test path is
+  refused. `True` allows exactly one test change, ADDING a new regular
+  `tests/unit/test_<lowercase>.py`. A modification, deletion, rename, copy or mode change of a
+  test is always refused, and so are a conftest, a helper, an integration test, and the lock's own
+  tests or the CI-coverage guard. Why it matters, measured on `232e72d`: one neutral sentence
+  appended to the five `system.txt` prompts fails 21 unit tests; appended to all 21 prompt files,
+  95. Those pinned-test edits stay a person's.
+- **Not here:** making the check required and restricting which branches NEO's account may push.
+  Both are repository settings.
+- **Docs:** `docs/NEO_SCOPE.md`; the README's documentation index and lint line.
+- **Tests:** `tests/unit/test_neo_scope_check.py`, fake diffs, a throwaway git repository, and the
+  workflow parsed as YAML.
+
 ### Fixed — the pt clause negation reads «nada» and «nenhuma»/«nenhumas» (R-T41d, 2026-11-01)
 
 - **Why.** `LOCALES["pt"].neg` (also `NEG_RE`) is the clause negation every pt grounding
