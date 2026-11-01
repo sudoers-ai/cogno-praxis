@@ -489,6 +489,10 @@ CI runs the two suites together under a coverage gate
 
 Every `.md` of this repository.
 
+- [`docs/TESTING.md`](docs/TESTING.md) — the minimum testing standard every pull request meets:
+  the four levels (unit, integration, end-to-end, bench), each declared RUN or N/A in the PR's
+  fixed declaration block. The same text, byte for byte, in host, praxis and the dashboard;
+  `tests/unit/test_testing_standard_is_the_shared_text.py` pins its digest.
 - [`docs/HOST_INTEGRATION.md`](docs/HOST_INTEGRATION.md) — how a host connects a vertical: the
   boundary, connect + bind, the personas and their prompt slots, persistence, the tool policy the
   EGO's gates read, adding a vertical, and §8, the environment each vertical's server reads.
