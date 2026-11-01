@@ -62,8 +62,12 @@ class Locale:
 
 _PT = Locale(
     lang="pt",
-    # "não", "nenhum", "nunca", "sem "
-    neg=re.compile(r"\bn[ãa]o\b|\bnenhum\b|\bnunca\b|\bsem\s", re.IGNORECASE),
+    # "não", "nenhum/nenhuma/nenhumas", "nunca", "sem ", "nada". «nada» and the feminine forms
+    # were missing until R-T41d, so an honest «nada foi enviado» read as the receipt it denies.
+    # The scope is still the CLAUSE (see `affirmed`); the word inside the SAME clause as a
+    # claim masks it, the cost «não» already had.
+    neg=re.compile(r"\bn[ãa]o\b|\bnenhum(?:as?)?\b|\bnunca\b|\bsem\s|\bnada\b",
+                   re.IGNORECASE),
     date=re.compile(_DATE_CORE + _CLOCK + _PT_MONTHS, re.IGNORECASE),
     # "R$ 500", "500,00", "1.234,56"
     money=re.compile(r"R\$\s?\d|\b\d{1,3}(?:\.\d{3})*,\d{2}\b"),
