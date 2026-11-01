@@ -61,6 +61,9 @@ async def test_an_unknown_id_is_refused_in_words_by_the_tool():
 _FORBIDDEN_IMPORTS = frozenset({
     "os", "sys", "socket", "ssl", "select", "selectors", "subprocess", "pty", "signal",
     "threading", "_thread", "multiprocessing", "concurrent", "asyncio", "sched",
+    # anyio / trio: the natural way to push work out of an async tool (to_thread.run_sync,
+    # run_process), so they are a thread or a process by another name.
+    "anyio", "trio",
     "httpx", "requests", "urllib", "urllib3", "http", "aiohttp", "smtplib", "ftplib", "telnetlib",
     "psycopg", "psycopg2", "sqlite3", "dbm", "shelve",
     "shutil", "tempfile", "importlib", "runpy", "ctypes", "pickle",
@@ -127,6 +130,18 @@ def _violations(source: str) -> "list[str]":
         if module.startswith("cogno_praxis.") and module.split(".")[1] in _SIBLINGS:
             found.append(f"imports a sibling vertical: {module}")
     for node in ast.walk(tree):
+        # A sibling reached through the PACKAGE (`from cogno_praxis import coordinator`): the
+        # module path is just "cogno_praxis", so the rule above cannot see it, and importing
+        # coordinator/__init__ builds its server from the environment.
+        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module == "cogno_praxis":
+            for alias in node.names:
+                if alias.name in _SIBLINGS:
+                    found.append(f"line {node.lineno}: imports a sibling vertical: {alias.name}")
+        # ANY relative import: the vertical's own modules import absolutely, and `from ..x` or
+        # `from .. import x` is the way out of the package that names no `cogno_praxis`.
+        if isinstance(node, ast.ImportFrom) and node.level > 0:
+            found.append(f"line {node.lineno}: a relative import (level {node.level})")
+    for node in ast.walk(tree):
         if isinstance(node, ast.Attribute) and node.attr in _FORBIDDEN_ATTRS:
             found.append(f"line {node.lineno}: .{node.attr}")
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
@@ -169,6 +184,15 @@ _PLANTED = {
     "the environment": "def f(e):\n    return e.environ\n",
     "a write": "def f(p):\n    p.write_text('x')\n",
     "a sibling vertical": "from cogno_praxis.scheduler.server import build_server\n",
+    "a sibling through the package, in a tool body": (
+        "def tool():\n    from cogno_praxis import coordinator\n    return coordinator\n"),
+    "a sibling's server by relative import": "from ..scheduler.server import build_server\n",
+    "a sibling by relative package import": "from .. import scheduler\n",
+    "anyio offloading to a thread": (
+        "import anyio\nasync def tool(f):\n    return await anyio.to_thread.run_sync(f)\n"),
+    "anyio running a process": (
+        "from anyio import run_process\nasync def tool():\n    return await run_process(['ls'])\n"),
+    "trio": "import trio\n",
 }
 
 
@@ -180,6 +204,8 @@ def test_the_detector_sees_each_planted_case(case):
 def test_the_detector_passes_a_source_that_only_reads():
     """THE CONTROL: reads, values, a function and the ``__main__`` guard are not violations."""
     clean = ("from pathlib import Path\n"
+             "from cogno_praxis import render\n"                  # a module, not a vertical
+             "from cogno_praxis.admin.service import AdminService\n"  # its own, absolutely
              "ROOT = Path(__file__).resolve().parent\n"
              "NAMES = sorted(p.name for p in ROOT.iterdir())\n"
              "def f(p):\n    return p.read_text(encoding='utf-8')\n"
