@@ -113,12 +113,13 @@ SYSTEM_AT_MAIN = "8fc3ec6856ef0964406e59c16b032fad2f5d9a24ae5613895dd8c9db9bf305
 LIMITS_AT_MAIN = "d1e1abdbb376861fe42b923037bf3341927306836c4e181247887b48608b7c54"
 
 #: ``sha256`` of every OTHER prompt of every vertical at ``origin/main`` 45d2ed6 — plus the
-#: ``admin/*`` slots (NEO), which arrived after it and are pinned at the commit that added them.
+#: ``admin/*`` slots (NEO), which arrived after it and are pinned at the commit that last changed
+#: them on purpose: NEO's prompt v2 (change requests to the bridge).
 NEIGHBOURS_AT_MAIN = {
-    "admin/limits.txt": "e0ef09e03c75105a1d1ba85373a28fed0696db1a717637f79ae2c26c373b4b4f",
-    "admin/scope.txt": "15f14dc166c659b8419498a4f4e188fc79fa0c3672ed831decebca8db2d19150",
-    "admin/system.txt": "3ef89cf45df8fb8a4106f23e612fa3d0f29b4d4ad3666465b85eaa4032363810",
-    "admin/voice.txt": "40f2b35db24ddd38e3e395a4c7b49fe81bf04ad7bc9e1e05cb68c72825d5ee4b",
+    "admin/limits.txt": "b79236e0c3fd2b33ec0cc40e0e5254687d98c43a4f3387e9495d8718067f00bb",
+    "admin/scope.txt": "fc13d890a05b68e2da9d5749a98709edf6243338fd997dfaf4c557506db3fc90",
+    "admin/system.txt": "4ff28caeafe90601fb3648c8d673e688455c07fec50c0af139eea227015b37f2",
+    "admin/voice.txt": "0beb08f024cbb799a36b1a944666d8b66f0fcab9a2f96c425cd417667ac4599c",
     "bookkeeper/scope.txt": "ed4a8c112f11d2c2bf480c4e8be806f9d1f707e12c1bf638e541e5f17f3ee342",
     "bookkeeper/voice.txt": "1b65181573edc71b964a686d96c92ab94b664bb094b88d4911e034536c95d347",
     "closer/limits.txt": "2c8bf84a2625317e363f8fc175029b7d85d9a28fb90190b5c254391981f10e4c",

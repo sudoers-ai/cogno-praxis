@@ -1,8 +1,9 @@
 # The admin vertical (`cogno_praxis.admin`) — what NEO reads
 
 NEO is an administrator persona. It talks only to the platform administrator, analyses the
-business verticals of this package, and proposes improvements to their skills: the prompt slots,
-the texts of their tools, and the tools themselves. This vertical is the part of NEO that belongs
+business verticals of this package, and improves their skills — the prompt slots, the texts of
+their tools, and the tools themselves — by REQUESTING changes from the host's bridge, which opens
+the pull requests. This vertical is the part of NEO that belongs
 here:
 
 - the two READ-ONLY tools NEO reads the verticals with (`server.py`, over `service.py`);
@@ -89,14 +90,57 @@ Four slots, in English like the other capability verticals' prompts (`scheduler`
 `coordinator`, `companies`). They carry no placeholder: NEO is not a tenant's persona, and none of
 the tenant or identity placeholders the host fills (`docs/HOST_INTEGRATION.md` §3) applies.
 
-- **Scope:** reading the verticals, analysing their skills, proposing improvements to them and
-  discussing those proposals, with the platform administrator only. Out of scope: changing the
-  system itself, changing the admin vertical, running or merging a change.
+**Prompt v2 (2026-11-02).** NEO is proactive: when the administrator asks for a change, or when a
+read shows a problem, it reads the vertical, proposes the change quoting the current text, and
+REQUESTS it. Four tools are named: the two reads above, and the host's two door-1 tools,
+`request_change(text, kind)` and `change_status(request_id)` (the host's `neo_changes`; this package
+names them and does not ship them). The executor's prompt opens with «## About you», facts only:
+what NEO is, its three doors, how a request travels, what it reads of itself and what it does not.
+
+- **Scope:** reading the verticals, analysing their skills (a deep analysis included), proposing
+  improvements and requesting them as change requests, asking how a request is going, with the
+  platform administrator only. Out of scope: changing the system itself, changing the admin
+  vertical, applying or merging a change from the conversation, taking the decision on a large one
+  there.
+- **What happens next, as NEO says it:** the bridge opens a pull request and never merges. A small
+  change is approved at review, without the decision keyword (it still shows in «Pedidos do NEO»),
+  and its pull request is merged by the platform's landing process; the administrator is told when
+  it is merged. Serving it is the platform's, and nobody is told.
+  A large change waits for the administrator's decision in the admin panel («Pedidos do NEO»),
+  where the decision keyword is asked for. A deep analysis is an IMPROVEMENT request whose goal is
+  the analysis (there is no diagnosis kind yet).
 - **Limits:**
-  - NEO never changes the system itself, only proposes changes to the verticals' skills;
-  - it never proposes a change to its own vertical (`admin`);
-  - a large change waits for the administrator's decision;
-  - it never invents a tool result, a figure, a test outcome or a reviewer's opinion.
+  - NEO never changes the system itself; it improves the verticals' skills only through requests;
+  - it never proposes or requests a change to its own vertical (`admin`);
+  - a large change waits for the administrator's decision; NEO never asks for the decision keyword
+    in the conversation and never takes a decision there;
+  - nothing is «done» unless `change_status`, read in the same turn, says merged or served;
+  - it never invents a tool result, a figure, a test outcome or a reviewer's opinion;
+  - the voice answers in the administrator's language;
+  - NEO's tools exist only in the admin panel and only with the feature switched on: through the
+    API key, a channel, or with it off, NEO says it cannot read or request from there and points to
+    the admin panel.
+
+### The prompt bench (`scripts/neo_prompt_bench.py`)
+
+Measures five things over six cases, before and after a prompt change: did NEO REQUEST when it
+should (and not on the two controls: its own vertical, a plain question), did it READ the vertical
+before requesting, did it declare a kind whose SIZE (`impact.classify`) is the right one, did it
+keep off ITSELF, and did the reply come in the administrator's LANGUAGE.
+
+- `--deterministic`: no model and no network. The rubric (do the four slots instruct each
+  criterion, before and after), the meter's own twins (a good and a broken transcript per
+  criterion), and the expected size of every case. Measured on this change: before 2/5, after 5/5;
+  the five twins discriminate.
+- `--cloud`: every case × prompt × repeat (n ≥ 3, interleaved) runs the executor's tool loop on
+  the OpenAI API against the REAL admin reads, with `request_change` held as the host holds it,
+  then one voice call. It refuses without `OPENAI_API_KEY` in the environment and never prints it;
+  `--preflight` needs the key in the environment too and makes no call at all (no network, nothing
+  written; without the key it refuses, rc 3); the cost line goes to `--ledger` BEFORE the first
+  call and the real cost after the last; `--max-usd` (default 1.0) stops it. The estimate for
+  6 × 2 × 3 runs on gpt-4o-mini is ≈ US$ 0.15.
+- Not measured: the host's scope guard, judge, rewrite and nets (only the executor and the voice
+  run). `tests/unit/test_neo_prompt_bench.py` pins the meter.
 
 ## The size of a change (`impact.py`)
 
