@@ -26,7 +26,7 @@ This library follows the Cogno house rule: **libraries emit, the host configures
   (`SchedulerError`, `BookkeeperError`, `CompanyError`, `CoordinatorError`), which the FastMCP
   layer surfaces as a tool error (`isError=True`) → cogno-mcp maps it to `ToolResult(ok=False)`
   and the EGO self-corrects. The host decides how to surface real failures.
-- **WARNING** — 18 calls. A degradation or a refusal the operator has to know about, where
+- **WARNING** — 19 calls. A degradation or a refusal the operator has to know about, where
   raising would be worse than continuing: a sheet that could not be read, a configuration line
   that was skipped, a mailbox variable that is not valid JSON, an index that could not be
   built, a seed file that could not be read whole.
@@ -53,6 +53,7 @@ the logger, the event, the level, the `key=` fields and whether the line carries
 | `cogno_praxis.coordinator.service` | `sheet_unreadable` (`tab=schedule\|hours\|ibope\|professors`, `sheet_sha`, `error`, `status`) | WARNING | a tab of a spreadsheet could not be read; the other spreadsheets are still read |
 | `cogno_praxis.coordinator.service` | `hours_columns_missing` (`sheet_sha`, `missing=hours\|subject\|hours,subject`) | WARNING | the hours tab has no hours column, or no discipline column: the workload context is skipped, the estimate is unaffected |
 | `cogno_praxis.coordinator.service` | `hours_unreadable` (`sheet_sha`, `row`) | DEBUG | a row of the hours tab names a discipline and carries no readable hour total |
+| `cogno_praxis.coordinator.service` | `email_refused` (`reason=invalid_recipient`, `path=calendar`, `source=professors_tab`, `count`) | WARNING | the professors tab HAS an e-mail for the professor whose calendar was asked for, and it is not ONE address (`email_address.is_one_address`, the host's rule): the calendar is not sent and nothing falls through to the registry (2026-11-02). The host's line for the same refusal has the same `event`, `reason` and `path`. How many cells, never which |
 | `cogno_praxis.coordinator.service` | `faculty_names_not_joined` (`pairs`) | WARNING | rows of the professors tab share an e-mail address and neither name is the other written out: they are NOT joined |
 | `cogno_praxis.coordinator.mailer` | `calendar_mail_not_accepted` | WARNING | the calendar mail was not accepted by the server |
 | `cogno_praxis.coordinator.mailer` | `smtp_env_ignored` (`reason=not_json\|not_an_object`, `var`) | WARNING | the mailbox variable is not valid JSON, or is JSON and not an object: ignored |
@@ -113,6 +114,7 @@ The admin vertical, the bookkeeper, the companies vertical, the closer and the i
 - `cogno_praxis.coordinator.stores.google_sheets`
 - `cogno_praxis.coordinator.types`
 - `cogno_praxis.declared_values`
+- `cogno_praxis.email_address`
 - `cogno_praxis.email_fields`
 - `cogno_praxis.grounding`
 - `cogno_praxis.interviewer`
@@ -152,6 +154,7 @@ There is no class for text.
 | Field | Class | What the value is |
 |---|---|---|
 | `action` | closed | the fixed query that lists the duplicate rows |
+| `count` | count | how many e-mail cells of the professors tab were refused for one calendar |
 | `country_sha` | digest | the holiday calendar's country, as the host configured it — the tenant's configuration, unbounded, so never in clear |
 | `error` | type | the class of the exception |
 | `excerpts` | count | how many sentences of the rules were recognised |
@@ -159,12 +162,14 @@ There is no class for text.
 | `kept` | count | how many professionals stayed |
 | `missing` | closed | `hours`, `subject`, or both |
 | `pairs` | count | how many pairs of rows were not joined |
+| `path` | constant | `calendar` — the host's word for this send path |
 | `reason` | closed | the SQLSTATE of the Postgres error, or `unknown`; otherwise a literal |
 | `row` | count | the row within the range read, the header being row 1 |
 | `rows` | count | how many rows a seed file put into the store, all tabs |
 | `scope_sha` | digest | the scheduler scope |
 | `sheet_sha` | digest | the KEY the tenant gave the spreadsheet — never its id |
 | `sheets` | count | how many spreadsheets a seed file seeded |
+| `source` | constant | `professors_tab` — the recipient source refused (`RECIPIENT_FROM_SHEET`) |
 | `state_sha` | digest | the holiday calendar's state, or `-` when none is configured |
 | `status` | count | the HTTP status the store's exception carried, or `0` |
 | `tab` | closed | `schedule`, `hours`, `ibope` or `professors` — never the name the tenant gave the tab |

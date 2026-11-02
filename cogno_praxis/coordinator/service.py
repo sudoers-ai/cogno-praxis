@@ -2370,8 +2370,10 @@ class CoordinatorService:
                         return value, RECIPIENT_FROM_SHEET
                     refused += 1
         if refused:
-            _log.warning("stage=coordinator event=email_refused reason=%s path=calendar "
-                         "source=%s count=%d", INVALID_RECIPIENT, RECIPIENT_FROM_SHEET, refused)
+            # `reason`, `path` and `source` are LITERALS (the host's spelling, LOGGING.md):
+            # only the count is a value, and the cell never is.
+            _log.warning("stage=coordinator event=email_refused reason=invalid_recipient "
+                         "path=calendar source=professors_tab count=%d", refused)
             return "", RECIPIENT_INVALID
         if role.upper() in _OVERSIGHT_ROLES:
             found = self._registry_address(target, identity_directory)

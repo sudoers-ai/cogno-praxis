@@ -28,7 +28,10 @@ Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the
   server door (four forms: refused, nothing sent, the reply and the log line carry no address), the
   preview, no fall-through to the registry, the closed marker; the controls (a valid address is
   sent as written; no address is today's refusal); the predicate; the boundary.
-- **Docs.** `README.md` (the calendar export's recipient rule).
+- **Docs.** `README.md` (the calendar export's recipient rule), `docs/COORDINATOR.md`, `LOGGING.md`
+  (the new `email_refused` row, its `count`/`path`/`source` fields, `email_address` among the modules
+  that log nothing, WARNING 18 → 19 calls; the pin of `count` in
+  `tests/unit/test_logs_carry_no_third_party_text.py`).
 
 ### Added — the minimum testing standard, `docs/TESTING.md` (2026-11-01)
 
