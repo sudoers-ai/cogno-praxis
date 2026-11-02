@@ -5,8 +5,8 @@ NEO is an admin persona. When the owner approves a change to a vertical's skills
 agent edits a worktree of this repo and opens a pull request from a branch named
 ``neo/<request_id>``. The owner's rule is that NEO only improves the verticals' skills: it never
 changes the system, and it never changes itself. This script is that rule as code. CI runs it on
-every pull request whose head branch starts with ``neo/`` (``.github/workflows/neo-scope.yml``)
-and nowhere else.
+EVERY pull request to ``main`` (``.github/workflows/neo-scope.yml``), and the first thing it does
+is decide whether the lock APPLIES (see *Who the lock applies to*).
 
 **Allowed:** a path under ``cogno_praxis/`` that is not the admin package (``cogno_praxis/admin``,
 in any case, as a directory or a module). **Everything else is refused**, the build configuration,
@@ -14,12 +14,30 @@ the workflows, this script, the docs and the tests included.
 
 Usage::
 
-    python scripts/neo_scope_check.py <base> <head>   # runs git itself (three-dot: merge base)
+    # what the workflow runs: decide first, then judge the head when the lock applies
+    python scripts/neo_scope_check.py --author <login> --branch <ref> <base> <head>
+    python scripts/neo_scope_check.py <base> <head>   # the lock applies; runs git itself
     git diff --raw -z -M <base>...<head> | python scripts/neo_scope_check.py --stdin
 
-Exit codes: 0 = every changed path is in scope; 1 = refused, one line per offending path naming
-the rule it broke; 2 = the diff could not be read (usage, git failure, malformed input). Every
-exit but 0 is a refusal: a checker that cannot read the diff must not pass it.
+Exit codes: 0 = every changed path is in scope, or the lock does not apply to this pull request;
+1 = refused, one line per offence naming the rule it broke; 2 = the input could not be read
+(usage, git failure, malformed input, an unreadable bridge-logins file). Every exit but 0 is a
+refusal: a checker that cannot read its input must not pass it.
+
+**Who the lock applies to** (``--author``/``--branch`` mode). The job used to carry an ``if:`` on
+the branch prefix, and a SKIPPED job reports success to a required check: a pull request from the
+bridge on any other branch (the host's bridge named its branch ``neo-<id>`` until it was fixed)
+was never judged and read green. So the workflow has no ``if:`` at all, and this script decides:
+
+* the AUTHOR (``github.event.pull_request.user.login``) is one of the bridge's accounts, read from
+  ``scripts/neo_bridge_logins`` in the BASE's checkout, next to this file; or
+* the BRANCH starts with ``neo/`` (in any case, as GitHub's ``startsWith`` did); or
+* the BRANCH imitates the prefix (``neo-x``, ``NEO_x``, ``neo.x``, ``neo``, ``ne0/x``,
+  ``refs/heads/neo/x``), or holds any non-ASCII character (a homoglyph, a zero-width joiner).
+
+When none holds the script prints ``NEO scope: not a NEO pull request (…)`` and exits 0: the job
+RAN and decided, it was not skipped. When one holds, two more rules join the path rules:
+``branch_name`` (the branch is not exactly ``neo/<request_id>``) and ``branch_lookalike``.
 
 **A NEO head is LINEAR on ONE merge base**, and in ``<base> <head>`` mode the checker refuses
 anything else before it reads a path (``history``). The three-dot diff is taken from ONE merge
@@ -53,6 +71,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable, List, Optional, Sequence
 
 # The one directory NEO may change, and the one subtree of it NEO may never change: its own code.
@@ -120,7 +139,26 @@ RULES = {
     "merge_bases": "the head does not have exactly one merge base with the base (a criss-cross "
                    "history: the diff is taken from one base, GitHub merges over all of them)",
     "merge_commit": "a merge commit in the head's history (a NEO head is linear)",
+    "branch_name": "the lock applies, and the head branch is not exactly neo/<request_id> (the "
+                   "one branch the bridge creates)",
+    "branch_lookalike": "the head branch imitates the neo/ prefix (neo-x, neo_x, neo.x): it would "
+                        "read as NEO's to a person and escape a prefix check",
 }
+
+# Who counts as the bridge: one GitHub login per line, in the BASE's checkout next to this file,
+# so a pull request cannot add itself or remove the bridge (``scripts/**`` is outside the scope).
+# Not a repository variable: a variable changes without a pull request.
+BRIDGE_LOGINS_FILE = Path(__file__).resolve().parent / "neo_bridge_logins"
+# A GitHub login (letters, digits, single hyphens, at most 39) or an app's ``<name>[bot]``.
+_LOGIN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?")
+# The host's ``REQUEST_ID_RE`` (cogno_host/neo/changes.py), restated: this script imports nothing.
+_REQUEST_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
+NEO_PREFIX = "neo/"
+# A ref-path prefix a branch name can carry in front of ``neo/``: ``refs/heads/neo/x`` and
+# ``heads/neo/x`` are branches GitHub names exactly so, and they read as NEO's to a person.
+_REF_PREFIX = re.compile(r"(?:refs/heads/|heads/)", re.IGNORECASE)
+# What a decision line may print of a branch or a login: anything else becomes ``?``.
+_PRINTABLE = re.compile(r"[^A-Za-z0-9._/@+\[\]-]")
 
 
 @dataclass(frozen=True)
@@ -256,6 +294,93 @@ def check(records: Iterable[Record], *, allow_tests: bool = NEO_MAY_ADD_TESTS) -
     return out
 
 
+class BadLogins(ValueError):
+    """``scripts/neo_bridge_logins`` is missing or holds a line that is not a login."""
+
+
+def read_logins(path: Path = BRIDGE_LOGINS_FILE) -> "frozenset[str]":
+    """The bridge's logins, case-folded (GitHub logins are case-insensitive). Blank lines and
+    ``#`` comments are skipped; any other line must be ONE login, or the whole file is refused:
+    a file nobody can read must not shrink the set of pull requests the lock applies to."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise BadLogins(f"cannot read {path.name}: {type(exc).__name__}") from None
+    out = set()
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if not _LOGIN.fullmatch(line):
+            raise BadLogins(f"{path.name} line {n} is not a GitHub login")
+        out.add(line.casefold())
+    return frozenset(out)
+
+
+def is_lookalike(branch: str) -> bool:
+    """A branch that imitates the ``neo/`` prefix without being a plain ``neo/…`` branch. It FAILS
+    CLOSED: a lookalike makes the lock apply and is then refused.
+
+    * Any NON-ASCII branch. A homoglyph (Cyrillic U+0435 for ``e``, full-width U+FF4E for
+      ``n``, Greek U+039D for ``N``) or an invisible character (U+200D, the zero-width joiner)
+      is how a name reads as ``neo/`` and is not.
+      Measured on 2026-11-02 over the last 130 pull requests of this repository: 0 non-ASCII
+      branches, so nobody's ordinary work is caught.
+    * Otherwise, after removing every leading ``refs/heads/`` and ``heads/`` and reading a ``0`` in
+      the first three characters as ``o``, the name starts with ``neo`` followed by the end or by
+      a character that is not a letter or a digit: ``neo-x``, ``NEO_x``, ``neo.x``, ``neo``,
+      ``ne0/x``, ``refs/heads/neo/x``. Not ``neon-x``, ``neo2``, ``neo4j-…``, ``fix/neo-x``.
+    * Any component that is not the first or the last, read with ``0`` as ``o``, is exactly
+      ``neo``: a remote prefix (``origin/neo/x``, ``remotes/origin/neo/x``,
+      ``refs/remotes/origin/neo/x``, ``upstream/neo/x``). Not ``fix/neo-x``: that is the last.
+    * The one exception is a plain ``neo/…`` (any case, no ref prefix, no zero): that is the
+      prefix itself, judged by ``branch_name``. A zero in the request id is not in the prefix."""
+    if not branch.isascii():
+        return True
+    # A remote prefix in front of the prefix (``origin/neo/x``, ``refs/remotes/origin/neo/x``):
+    # a component that is not the last, read with 0 as o, is exactly ``neo``.
+    if any(part.lower().replace("0", "o") == "neo" for part in branch.split("/")[1:-1]):
+        return True
+    name = branch
+    while (m := _REF_PREFIX.match(name)) is not None:
+        name = name[m.end():]
+    head, rest = name[:3], name[3:]
+    if head.lower().replace("0", "o") != "neo":
+        return False
+    if rest[:1].isalnum():
+        return False                                   # neon, neo2, ne0n: another word
+    plain_prefix = name == branch and head.lower() == "neo" and rest.startswith("/")
+    return not plain_prefix
+
+
+def applies(author: str, branch: str, logins: "frozenset[str]") -> "Optional[str]":
+    """Why the lock applies to a pull request (``author``, ``branch``, ``lookalike``), or None.
+    The author is asked FIRST: the bridge's pull request is judged whatever branch it names."""
+    if author.casefold() in logins:
+        return "author"
+    if branch.lower().startswith(NEO_PREFIX):
+        return "branch"
+    if is_lookalike(branch):
+        return "lookalike"
+    return None
+
+
+def branch_refusals(branch: str) -> List[Refusal]:
+    """The branch rules, for a pull request the lock applies to."""
+    where = f"(branch {_shown(branch)})"
+    out: List[Refusal] = []
+    if not (branch.startswith(NEO_PREFIX)
+            and _REQUEST_ID.fullmatch(branch[len(NEO_PREFIX):]) is not None):
+        out.append(Refusal(where, "branch_name"))
+    if is_lookalike(branch):
+        out.append(Refusal(where, "branch_lookalike"))
+    return out
+
+
+def _shown(value: str) -> str:
+    return _PRINTABLE.sub("?", value[:100]) or "?"
+
+
 def _git_diff(base: str, head: str) -> str:
     cmd = ["git", "-c", "core.quotePath=false", "diff", "--raw", "-z", "-M",
            "--no-ext-diff", "--no-textconv", f"{base}...{head}"]
@@ -289,15 +414,35 @@ def history_refusals(base: str, head: str) -> List[Refusal]:
     return [Refusal(f"(commit {sha[:12]})", "merge_commit") for sha in merges]
 
 
-def main(argv: Optional[Sequence[str]] = None, stdin: Optional[str] = None) -> int:
+def main(argv: Optional[Sequence[str]] = None, stdin: Optional[str] = None,
+         logins_file: Path = BRIDGE_LOGINS_FILE) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     history: List[Refusal] = []
+    # ``--author A --branch B <base> <head>``: positional, so no value is ever read as a flag.
+    if len(args) == 6 and args[0] == "--author" and args[2] == "--branch":
+        author, branch = args[1], args[3]
+        args = args[4:]
+        if any(a.startswith("-") for a in args):
+            print("usage: neo_scope_check.py --author <login> --branch <ref> <base> <head>",
+                  file=sys.stderr)
+            return 2
+        try:
+            why = applies(author, branch, read_logins(logins_file))
+        except BadLogins as exc:
+            print(f"NEO scope: cannot read who the bridge is — {exc}", file=sys.stderr)
+            return 2
+        shown = f"author={_shown(author)}, branch={_shown(branch)}"
+        if why is None:
+            print(f"NEO scope: not a NEO pull request ({shown})")
+            return 0
+        print(f"NEO scope: the lock applies by {why} ({shown})")
+        history = branch_refusals(branch)
     try:
         if args == ["--stdin"]:
             data = sys.stdin.buffer.read().decode("utf-8", "surrogateescape") if stdin is None \
                 else stdin
         elif len(args) == 2 and not any(a.startswith("-") for a in args):
-            history = history_refusals(args[0], args[1])
+            history = history + history_refusals(args[0], args[1])
             # With no single merge base the three-dot diff has nothing honest to say.
             if any(r.rule == "merge_bases" for r in history):
                 for refusal in history:

@@ -4,7 +4,14 @@ name: NEO scope
 # persona: when the owner approves a change to a vertical's skills, a code agent opens a pull
 # request from a branch named `neo/<request_id>`, and that pull request may change the skills
 # under `cogno_praxis/` and nothing else — never the system, never NEO itself.
-# `scripts/neo_scope_check.py` is the rule; this workflow runs it on those pull requests only.
+# `scripts/neo_scope_check.py` is the rule; this workflow runs it on EVERY pull request to main.
+#
+# No `if:` anywhere in the job, on the job or on a step. A skipped job reports success to a
+# required check, so an `if:` on the branch prefix let a bridge pull request on any other branch
+# (the host's bridge named its branch `neo-<id>`) through unjudged and green. The checker DECIDES
+# instead, as the first thing it does: the lock applies when the author is one of the bridge's
+# accounts (`scripts/neo_bridge_logins`, read from the base) or the branch starts with `neo/` or
+# imitates it. Otherwise it prints "not a NEO pull request" and exits 0: the job ran and decided.
 #
 # `pull_request_target`, NOT `pull_request`, and that is the whole lock. On `pull_request` GitHub
 # runs the workflow file and the checkout of the PR's own MERGE commit, so a pull request that
@@ -31,9 +38,6 @@ concurrency:
 
 jobs:
   scope:
-    # Exactly the branch prefix the bridge uses. Every other pull request skips this job, and a
-    # skipped job reports success to a required check, so other PRs are untouched.
-    if: startsWith(github.event.pull_request.head.ref, 'neo/')
     runs-on: ubuntu-latest
     steps:
       # Actions pinned by commit SHA, not by tag: a tag can be moved, and this job is the lock.
@@ -55,8 +59,12 @@ jobs:
         run: |
           git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/neo/head"
           test "$(git rev-parse refs/neo/head)" = "$HEAD_SHA"
-      - name: Scope check (the base's checker over the PR's diff)
+      # The author and the branch come in through env like the SHAs: a branch name is the PR's
+      # own text and is never interpolated into the script.
+      - name: Scope check (decides first; then the base's checker over the PR's diff)
         env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: python scripts/neo_scope_check.py "$BASE_SHA" "$HEAD_SHA"
+        run: python scripts/neo_scope_check.py --author "$PR_AUTHOR" --branch "$HEAD_REF" "$BASE_SHA" "$HEAD_SHA"
