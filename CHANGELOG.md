@@ -13,10 +13,11 @@ Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the
 - **What.** NEO reads the vertical, proposes quoting the current text and REQUESTS the change
   (`request_change`, with its kind); a deep analysis is an improvement request whose goal is the
   analysis; it says what happens next (the bridge opens the pull request and never merges; a small
-  change is approved without a decision and landed by the platform; a large one is decided in the
+  change is approved at review without the decision keyword and landed by the platform; a large one is decided in the
   admin panel, «Pedidos do NEO», with the decision keyword), reads a request's state with
   `change_status`, never asks for the keyword, and the voice answers in the administrator's
-  language. «## About you» gives it the facts about itself. The walls stay: never its own vertical,
+  language. Its tools exist only in the admin panel: elsewhere it says it cannot read or request from
+  there. «## About you» gives it the facts about itself. The walls stay: never its own vertical,
   never the system, never «done» unless the record says merged or served.
 - **The bench**, `scripts/neo_prompt_bench.py` (`docs/ADMIN.md`): a deterministic part (rubric
   before 2/5 → after 5/5; the meter's twins discriminate) and a cloud canary, v1 against v2, n ≥ 3,

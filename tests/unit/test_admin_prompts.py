@@ -97,9 +97,14 @@ def test_the_executor_names_the_four_tools_and_no_other():
     "there is no \"diagnosis\" kind yet",
     "opening an IMPROVEMENT request whose goal is the analysis",
     "The bridge opens a pull request; it never merges",
-    "A small change is approved without the administrator's decision; its pull request is merged "
-    "by the platform's landing process, and the administrator is told when it is merged and when "
-    "it is served",
+    "A small change is approved at review, without the decision keyword (it still shows in «Pedidos "
+    "do NEO»); its pull request is merged by the platform's landing process, and the administrator "
+    "is told when it is merged.",
+    "Your tools exist only in the admin panel. When they are not offered in this turn (the API key, "
+    "a channel, or the feature switched off), say you cannot read or request from here and point to "
+    "the admin panel; never describe a vertical or a request from memory.",
+    "the dependencies or the admin code; when it creates a file a capability is made of (a "
+    "vertical's __init__.py or server.py, a new prompts/*.txt)",
     "A large change waits for the administrator's decision in the admin panel («Pedidos do NEO»), "
     "where the decision keyword is asked for",
     "Never ask for the keyword in this conversation",
@@ -112,8 +117,10 @@ def test_the_executor_is_proactive_and_says_what_happens_next(phrase):
 @pytest.mark.parametrize("phrase", [
     "Calling request_change for a change the administrator asked for",
     "Asking for the decision keyword in the conversation",
-    "a small change is approved without the administrator's decision; its pull request is merged "
-    "by the platform's landing process",
+    "a small change is approved at review, without the decision keyword (it still shows in «Pedidos "
+    "do NEO»); its pull request is merged by the platform's landing process, and the administrator "
+    "is told when it is merged.",
+    "saying it cannot read or request from here and pointing to the admin panel",
     "when no change_status read in this turn says merged or served",
 ])
 def test_the_judge_passes_the_request_and_fails_the_keyword(phrase):
@@ -124,9 +131,10 @@ def test_the_voice_answers_in_the_administrator_s_language():
     voice = _flat(_read("voice"))
     assert "Reply in the administrator's language" in voice
     assert "Never ask for the decision keyword here" in voice
-    assert ("A small change is approved without your decision; its pull request is merged by the "
-            "platform's landing process, and you are told when it is merged and when it is served"
-            in voice)
+    assert ("A small change is approved at review, without the decision keyword (it still shows in "
+            "«Pedidos do NEO»); its pull request is merged by the platform's landing process, and you "
+            "are told when it is merged." in voice)
+    assert "say you cannot read or request from here and point to the admin panel" in voice
 
 
 def test_the_executor_knows_the_facts_about_itself():
@@ -137,8 +145,10 @@ def test_the_executor_knows_the_facts_about_itself():
     flat = _flat(about)
     for fact in ("a system persona, for the platform administrator only",
                  "the admin panel, the API key, and the channel of an identity marked NEO",
+                 "marked NEO alone, the whole channel",
                  "request_change → the queue → the bridge opens a pull request",
-                 "→ merged → served", "yours is `admin`, marked is_self",
+                 "with the decision keyword → merged. Serving it is the platform's, and nobody is told.",
+                 "yours is `admin`, marked is_self",
                  "You do not read or change the host, the bridge, the configuration or the "
                  "decision keyword, and you do not change yourself"):
         assert fact in flat, fact
@@ -147,4 +157,10 @@ def test_the_executor_knows_the_facts_about_itself():
 def test_the_voice_says_only_what_its_instructions_say_about_itself():
     assert ("About yourself, say only what your instructions say; what they do not say, say you do "
             "not know.") in _flat(_read("voice"))
+
+
+@pytest.mark.parametrize("slot", ["system", "limits", "voice"])
+def test_nobody_is_promised_a_notice_when_a_change_is_served(slot):
+    """The host moves nothing to served and tells nobody: the prompts promise the merge only."""
+    assert "when it is served" not in _flat(_read(slot))
 

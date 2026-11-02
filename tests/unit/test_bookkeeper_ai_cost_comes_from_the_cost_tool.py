@@ -116,10 +116,10 @@ LIMITS_AT_MAIN = "d1e1abdbb376861fe42b923037bf3341927306836c4e181247887b48608b7c
 #: ``admin/*`` slots (NEO), which arrived after it and are pinned at the commit that last changed
 #: them on purpose: NEO's prompt v2 (change requests to the bridge).
 NEIGHBOURS_AT_MAIN = {
-    "admin/limits.txt": "8967e338ae9bd41baddbcf3768d56c76be613552d83115d72a503c6eb98e996e",
+    "admin/limits.txt": "b79236e0c3fd2b33ec0cc40e0e5254687d98c43a4f3387e9495d8718067f00bb",
     "admin/scope.txt": "fc13d890a05b68e2da9d5749a98709edf6243338fd997dfaf4c557506db3fc90",
-    "admin/system.txt": "59c886ce240c96c5036ef89e9e5daf9ca9186c71d3f3811f1ac2b66e175bf1f4",
-    "admin/voice.txt": "f467eec276c1ea39c5dc915cbe7b28142421b423edcf183df51ecb2e05319520",
+    "admin/system.txt": "4ff28caeafe90601fb3648c8d673e688455c07fec50c0af139eea227015b37f2",
+    "admin/voice.txt": "0beb08f024cbb799a36b1a944666d8b66f0fcab9a2f96c425cd417667ac4599c",
     "bookkeeper/scope.txt": "ed4a8c112f11d2c2bf480c4e8be806f9d1f707e12c1bf638e541e5f17f3ee342",
     "bookkeeper/voice.txt": "1b65181573edc71b964a686d96c92ab94b664bb094b88d4911e034536c95d347",
     "closer/limits.txt": "2c8bf84a2625317e363f8fc175029b7d85d9a28fb90190b5c254391981f10e4c",

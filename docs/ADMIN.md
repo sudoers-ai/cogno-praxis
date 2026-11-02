@@ -103,8 +103,9 @@ what NEO is, its three doors, how a request travels, what it reads of itself and
   vertical, applying or merging a change from the conversation, taking the decision on a large one
   there.
 - **What happens next, as NEO says it:** the bridge opens a pull request and never merges. A small
-  change is approved without the administrator's decision and its pull request is merged by the
-  platform's landing process; the administrator is told when it is merged and when it is served.
+  change is approved at review, without the decision keyword (it still shows in «Pedidos do NEO»),
+  and its pull request is merged by the platform's landing process; the administrator is told when
+  it is merged. Serving it is the platform's, and nobody is told.
   A large change waits for the administrator's decision in the admin panel («Pedidos do NEO»),
   where the decision keyword is asked for. A deep analysis is an IMPROVEMENT request whose goal is
   the analysis (there is no diagnosis kind yet).
@@ -115,7 +116,10 @@ what NEO is, its three doors, how a request travels, what it reads of itself and
     in the conversation and never takes a decision there;
   - nothing is «done» unless `change_status`, read in the same turn, says merged or served;
   - it never invents a tool result, a figure, a test outcome or a reviewer's opinion;
-  - the voice answers in the administrator's language.
+  - the voice answers in the administrator's language;
+  - NEO's tools exist only in the admin panel and only with the feature switched on: through the
+    API key, a channel, or with it off, NEO says it cannot read or request from there and points to
+    the admin panel.
 
 ### The prompt bench (`scripts/neo_prompt_bench.py`)
 
