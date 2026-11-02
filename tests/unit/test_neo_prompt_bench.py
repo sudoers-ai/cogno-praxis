@@ -168,3 +168,17 @@ def test_a_held_request_change_ends_the_loop():
     assert len(calls) == 3                       # two executor steps, then the voice
     assert "Held for confirmation" in calls[2]["messages"][1]["content"]
     assert all(B.grade(CASE["C1_correction"], t).values())
+
+
+def test_the_ceiling_is_checked_after_every_executor_step_not_only_after_the_voice():
+    calls = []
+
+    def post(payload):
+        calls.append(payload)
+        return _answer(None, [{"id": f"c{len(calls)}", "function": {"name": "list_verticals",
+                                                                   "arguments": "{}"}}],
+                       tin=10_000_000)
+    with pytest.raises(B.OverBudget):
+        B.run_case(CASE["C6_read_only"], B.prompts_at(None), post, B.Meter(), model="m",
+                   max_usd=0.5, svc=B.AdminService())
+    assert len(calls) == 1
