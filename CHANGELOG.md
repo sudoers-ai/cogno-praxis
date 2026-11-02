@@ -4,6 +4,27 @@
 
 Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the "DO NOT LAND" in its commit title is a stale status marker left in the PR title — status lives in labels and the body, never in the title.
 
+### Changed — NEO's prompt v2: proactive, it requests changes from the bridge (2026-11-02)
+
+- **Why.** The four slots predated the change requests: «only proposes, nothing changes», two
+  tools named, no word of the bridge or of what happens to a request. The owner found NEO stuck:
+  it must be proactive, and every construction, improvement and deep analysis goes through the
+  bridge.
+- **What.** NEO reads the vertical, proposes quoting the current text and REQUESTS the change
+  (`request_change`, with its kind); a deep analysis is an improvement request whose goal is the
+  analysis; it says what happens next (the bridge opens the pull request and never merges; a small
+  change is approved without a decision and landed by the platform; a large one is decided in the
+  admin panel, «Pedidos do NEO», with the decision keyword), reads a request's state with
+  `change_status`, never asks for the keyword, and the voice answers in the administrator's
+  language. «## About you» gives it the facts about itself. The walls stay: never its own vertical,
+  never the system, never «done» unless the record says merged or served.
+- **The bench**, `scripts/neo_prompt_bench.py` (`docs/ADMIN.md`): a deterministic part (rubric
+  before 2/5 → after 5/5; the meter's twins discriminate) and a cloud canary, v1 against v2, n ≥ 3,
+  ≈ US$ 0.15, refused without a key in the environment, with a zero-cost preflight and the ledger
+  line written before the first call.
+- **Pins moved on purpose:** `test_admin_prompts.py` (the v2 phrases) and the admin scope's digest
+  in `test_messages_to_the_team_are_in_scope.py` (the team line is still absent from it).
+
 ### Fixed — the NEO scope lock runs on EVERY pull request; a skipped job no longer reads green (2026-11-02)
 
 - **The defect.** `neo-scope.yml` carried `if: startsWith(head.ref, 'neo/')` on its only job, and
