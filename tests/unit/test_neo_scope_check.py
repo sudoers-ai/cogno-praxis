@@ -556,6 +556,44 @@ def test_every_evasive_spelling_of_the_prefix_applies_and_is_refused(logins, bra
     assert [r.rule for r in nsc.branch_refusals(branch)] == ["branch_name", "branch_lookalike"]
 
 
+# A REMOTE prefix in front of neo/: a component that is not the last, read with 0 as o, is
+# exactly "neo". One twin per form.
+_REMOTE_FORMS = [
+    ("origin/neo/x", "origin"),
+    ("remotes/origin/neo/x", "remotes-origin"),
+    ("refs/remotes/origin/neo/x", "refs-remotes-origin"),
+    ("upstream/neo/x", "upstream"),
+    ("origin/ne0/x", "origin-zero-for-o"),
+]
+
+
+@pytest.mark.parametrize("branch", [b for b, _ in _REMOTE_FORMS], ids=[i for _, i in _REMOTE_FORMS])
+def test_a_remote_prefix_in_front_of_the_prefix_applies_and_is_refused(logins, branch):
+    assert nsc.is_lookalike(branch)
+    assert nsc.applies(HUMAN, branch, nsc.read_logins(logins)) == "lookalike"
+    assert [r.rule for r in nsc.branch_refusals(branch)] == ["branch_name", "branch_lookalike"]
+
+
+@pytest.mark.parametrize("branch,lookalike", [
+    ("fix/neo-x", False),            # "neo-x" is the LAST component, and not exactly "neo"
+    ("feature/neo-thing/z", False),  # a middle component that only starts with "neo"
+    ("fix/neon/x", False),
+    ("origin/fix-y", False),         # a remote prefix in front of an ordinary name
+    ("neo-n1-admin-x", True),        # a person's neo-… branch: a lookalike by the dash, as before
+    ("neo/x", False),                # the plain prefix stays branch_name's, not a lookalike
+])
+def test_control_the_component_rule_reads_only_a_middle_component_that_is_neo(branch, lookalike):
+    assert nsc.is_lookalike(branch) is lookalike
+
+
+def test_the_component_rule_has_no_hit_on_real_shapes():
+    """The shapes of the last 130 branch names of this repository (2026-11-02), invented: a
+    prefix, slashes, and two people's neo-… branches. Only the neo-… ones are lookalikes."""
+    shapes = ["fix/calendar-recipient-one-address", "docs-testing-standard", "fix-negation-x",
+              "neo-n4a-x", "neo-n1-x", "review/contrast-x", "pf56-p5-x", "feat/restart-x"]
+    assert [b for b in shapes if nsc.is_lookalike(b)] == ["neo-n4a-x", "neo-n1-x"]
+
+
 @pytest.mark.parametrize("branch", ["refs/heads/fix-y", "heads/fix-y", "ne0n-lights",
                                     "fix/ne0-x", "heads-up", "headsup/neo-x", "refsheads/neo"])
 def test_adverse_the_evasion_folds_do_not_catch_ordinary_branches(logins, branch):

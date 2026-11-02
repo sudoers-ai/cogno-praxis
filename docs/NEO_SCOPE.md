@@ -38,6 +38,10 @@ applies when any of these holds:
     first three characters as `o`: `neo` followed by the end or by a character that is not a
     letter or a digit (`neo-x`, `NEO_x`, `neo.x`, `neo`, `ne0/x`, `refs/heads/neo/x`,
     `heads/neo/x`). Not `neon-x`, `neo2`, `neo4j-…`, `fix/neo-x`, `refs/heads/fix-y`;
+  - a **remote prefix**: any component that is not the first or the last, read with `0` as `o`,
+    is exactly `neo` (`origin/neo/x`, `remotes/origin/neo/x`, `refs/remotes/origin/neo/x`,
+    `upstream/neo/x`). Not `fix/neo-x` (`neo-x` is the last component) nor `feature/neo-thing/z`.
+    Over the same 130 branches it matches none;
   - a plain `neo/…` (any case, no ref prefix, no zero) is the prefix itself, judged by
     `branch_name`. A zero in the request id (`neo/chg-0001`) is not in the prefix.
 

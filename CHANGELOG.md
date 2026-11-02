@@ -19,7 +19,9 @@ Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the
     `env`). The lock applies when the author is listed in `scripts/neo_bridge_logins` (read from
     the BASE's checkout; outside NEO's scope), or the branch starts with `neo/` in any case, or
     imitates the prefix (`neo-x`, `NEO_x`, `neo.x`, `neo`; `ne0/x`; `refs/heads/neo/x` and
-    `heads/neo/x`; and any non-ASCII branch, so a homoglyph or a zero-width joiner fails closed).
+    `heads/neo/x`; a remote prefix such as `origin/neo/x` or `refs/remotes/origin/neo/x`, read as a
+    middle component that is exactly `neo`; and any non-ASCII branch, so a homoglyph or a
+    zero-width joiner fails closed).
     Otherwise it prints
     `NEO scope: not a NEO pull request (author=…, branch=…)` and exits 0: the job ran.
   - Two new rules when it applies: `branch_name` (the branch is not exactly
@@ -35,8 +37,8 @@ Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the
   because the job was skipped on almost every pull request.
 - **The host's half** is a separate pull request: the bridge creates `neo/<request_id>`.
 - **Tests.** `tests/unit/test_neo_scope_check.py`: who the lock applies to (author, branch,
-  lookalike, one twin per evasive spelling — ref prefixes, a zero for the `o`, Cyrillic, full-width,
-  Greek, a zero-width joiner — and the adverse branches that merely contain `neo` or a fold), the
+  lookalike, one twin per evasive spelling — ref prefixes, remote prefixes, a zero for the `o`,
+  Cyrillic, full-width, Greek, a zero-width joiner — and the adverse branches that merely contain `neo` or a fold), the
   branch rules, the logins file (a head that empties it does not change who the bridge is), the
   trigger (`on:` pinned: the four types, no path filter, no `if:`), the in-process twins of the design table with the control (a person's ordinary pull
   request runs and exits 0), and the workflow SIMULATED (its `run:` blocks over a bare origin

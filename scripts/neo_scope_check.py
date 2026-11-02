@@ -330,9 +330,16 @@ def is_lookalike(branch: str) -> bool:
       the first three characters as ``o``, the name starts with ``neo`` followed by the end or by
       a character that is not a letter or a digit: ``neo-x``, ``NEO_x``, ``neo.x``, ``neo``,
       ``ne0/x``, ``refs/heads/neo/x``. Not ``neon-x``, ``neo2``, ``neo4j-…``, ``fix/neo-x``.
+    * Any component that is not the first or the last, read with ``0`` as ``o``, is exactly
+      ``neo``: a remote prefix (``origin/neo/x``, ``remotes/origin/neo/x``,
+      ``refs/remotes/origin/neo/x``, ``upstream/neo/x``). Not ``fix/neo-x``: that is the last.
     * The one exception is a plain ``neo/…`` (any case, no ref prefix, no zero): that is the
       prefix itself, judged by ``branch_name``. A zero in the request id is not in the prefix."""
     if not branch.isascii():
+        return True
+    # A remote prefix in front of the prefix (``origin/neo/x``, ``refs/remotes/origin/neo/x``):
+    # a component that is not the last, read with 0 as o, is exactly ``neo``.
+    if any(part.lower().replace("0", "o") == "neo" for part in branch.split("/")[1:-1]):
         return True
     name = branch
     while (m := _REF_PREFIX.match(name)) is not None:
