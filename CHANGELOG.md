@@ -4,6 +4,42 @@
 
 Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the "DO NOT LAND" in its commit title is a stale status marker left in the PR title — status lives in labels and the body, never in the title.
 
+### Fixed — the NEO scope lock runs on EVERY pull request; a skipped job no longer reads green (2026-11-02)
+
+- **The defect.** `neo-scope.yml` carried `if: startsWith(head.ref, 'neo/')` on its only job, and
+  a skipped job reports success to a required check. The host's bridge named its branch
+  `neo-<id>` (cogno-host `cogno_host/neo/bridge_core.py`), which does not start with `neo/`: every
+  pull request the bridge opened would have been skipped and read green. Measured by simulating
+  the workflow's own `run:` blocks over a throwaway origin on the base tree: a bridge pull request
+  on `neo-x` changing `pyproject.toml`, one on `feature-x`, a person's `neo-abc` and a person's
+  `fix-y` all came out `skipped`.
+- **The fix.**
+  - The job has no `if:`, on the job or on a step, and runs on every pull request to `main`.
+  - The checker decides first (`--author <login> --branch <ref> <base> <head>`, both through
+    `env`). The lock applies when the author is listed in `scripts/neo_bridge_logins` (read from
+    the BASE's checkout; outside NEO's scope), or the branch starts with `neo/` in any case, or
+    imitates the prefix (`neo-x`, `NEO_x`, `neo.x`, `neo`). Otherwise it prints
+    `NEO scope: not a NEO pull request (author=…, branch=…)` and exits 0: the job ran.
+  - Two new rules when it applies: `branch_name` (the branch is not exactly
+    `neo/<request_id>`, the host's `REQUEST_ID_RE`) and `branch_lookalike`.
+  - An unreadable logins file, or a line in it that is not one login, refuses every pull request
+    (rc 2).
+- **`scripts/neo_bridge_logins` ships EMPTY.** The bridge has no GitHub account of its own, and
+  the account people open pull requests from is shared: listing it would refuse every person's
+  pull request. Until a dedicated account exists, the lock applies by the branch.
+- **People's `neo-…` branches are refused** (`branch_lookalike`), by design.
+- **The check is already required.** `scope` is among the required contexts of `main` (read on
+  2026-11-02); the protection is the owner's and was not changed here. It used to be inert there,
+  because the job was skipped on almost every pull request.
+- **The host's half** is a separate pull request: the bridge creates `neo/<request_id>`.
+- **Tests.** `tests/unit/test_neo_scope_check.py`: who the lock applies to (author, branch,
+  lookalike, and the adverse branches that merely contain `neo`), the branch rules, the logins
+  file, the in-process twins of the design table with the control (a person's ordinary pull
+  request runs and exits 0), and the workflow SIMULATED (its `run:` blocks over a bare origin
+  with `refs/pull/7/head`). 54 of them fail on the base tree.
+- **Docs.** `docs/NEO_SCOPE.md` (*Who the lock applies to*, the required check, what it does not
+  do), the README's index line.
+
 ### Fixed — the calendar is never mailed to a professors-tab address that is not ONE e-mail (2026-11-02)
 
 - **The defect.** `CoordinatorService.calendar_recipient` took the professors tab's e-mail cell

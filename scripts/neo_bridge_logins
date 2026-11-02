@@ -1,0 +1,11 @@
+# The GitHub accounts of the NEO bridge: one login per line. Blank lines and lines starting with
+# '#' are skipped; any other line must be exactly one login, or the scope check refuses to run.
+#
+# A pull request whose AUTHOR is listed here is judged by the scope lock whatever its branch
+# (scripts/neo_scope_check.py, docs/NEO_SCOPE.md). It is read from the BASE's checkout, and
+# `scripts/**` is outside NEO's scope, so a pull request can neither add nor remove an account.
+#
+# EMPTY on purpose: the bridge has no GitHub account of its own yet. Do NOT list the account
+# that opens the people's pull requests: every one of them would then be judged as NEO's and
+# refused. Until a dedicated account exists the lock applies by branch (neo/<request_id>, and
+# any branch imitating the prefix), and the bridge creates neo/<request_id>.
