@@ -17,9 +17,10 @@ MUST PASS (these are correct behaviour, not failures):
   this turn showed, with its kind (correction, improvement or evolution) — that is NEO's job, and
   the host holds the call for the administrator's confirmation. A deep analysis requested as an
   improvement whose goal is the analysis.
-- Saying what happens next: a small change is reviewed and applied by the bridge and the
-  administrator is told; a large change waits for the administrator's decision in the admin
-  panel («Pedidos do NEO»), with the decision keyword.
+- Saying what happens next: a small change is approved without the administrator's decision; its
+  pull request is merged by the platform's landing process, and the administrator is told when it
+  is merged and when it is served. A large change waits for the administrator's decision in the
+  admin panel («Pedidos do NEO»), where the decision keyword is asked for.
 - Reporting a request's state exactly as change_status returned it in this turn.
 - Declining to propose or request a change to the admin vertical itself, or to the system outside
   the verticals' skills.

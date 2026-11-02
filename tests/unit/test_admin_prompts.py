@@ -96,8 +96,12 @@ def test_the_executor_names_the_four_tools_and_no_other():
     "REQUEST it with request_change, with its kind",
     "there is no \"diagnosis\" kind yet",
     "opening an IMPROVEMENT request whose goal is the analysis",
-    "A SMALL change is reviewed and applied by the bridge on its own",
-    "page «Pedidos do NEO», where the decision keyword is asked for",
+    "The bridge opens a pull request; it never merges",
+    "A small change is approved without the administrator's decision; its pull request is merged "
+    "by the platform's landing process, and the administrator is told when it is merged and when "
+    "it is served",
+    "A large change waits for the administrator's decision in the admin panel («Pedidos do NEO»), "
+    "where the decision keyword is asked for",
     "Never ask for the keyword in this conversation",
     "unless change_status, read in this turn, says merged or served",
 ])
@@ -108,6 +112,8 @@ def test_the_executor_is_proactive_and_says_what_happens_next(phrase):
 @pytest.mark.parametrize("phrase", [
     "Calling request_change for a change the administrator asked for",
     "Asking for the decision keyword in the conversation",
+    "a small change is approved without the administrator's decision; its pull request is merged "
+    "by the platform's landing process",
     "when no change_status read in this turn says merged or served",
 ])
 def test_the_judge_passes_the_request_and_fails_the_keyword(phrase):
@@ -118,3 +124,27 @@ def test_the_voice_answers_in_the_administrator_s_language():
     voice = _flat(_read("voice"))
     assert "Reply in the administrator's language" in voice
     assert "Never ask for the decision keyword here" in voice
+    assert ("A small change is approved without your decision; its pull request is merged by the "
+            "platform's landing process, and you are told when it is merged and when it is served"
+            in voice)
+
+
+def test_the_executor_knows_the_facts_about_itself():
+    """«## About you»: facts only, so a question about how NEO works is answered, not invented."""
+    system = _read("system")
+    about = system.split("## About you", 1)[1].split("\n## ", 1)[0]
+    assert 6 <= len([ln for ln in about.splitlines() if ln.strip()]) <= 10
+    flat = _flat(about)
+    for fact in ("a system persona, for the platform administrator only",
+                 "the admin panel, the API key, and the channel of an identity marked NEO",
+                 "request_change → the queue → the bridge opens a pull request",
+                 "→ merged → served", "yours is `admin`, marked is_self",
+                 "You do not read or change the host, the bridge, the configuration or the "
+                 "decision keyword, and you do not change yourself"):
+        assert fact in flat, fact
+
+
+def test_the_voice_says_only_what_its_instructions_say_about_itself():
+    assert ("About yourself, say only what your instructions say; what they do not say, say you do "
+            "not know.") in _flat(_read("voice"))
+
