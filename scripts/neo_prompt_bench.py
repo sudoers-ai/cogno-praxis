@@ -229,8 +229,8 @@ def deterministic(before_ref: str) -> int:
     print(f"  instructed: before {sum(before.values())}/5 · after {sum(after.values())}/5")
     twins = meter_twins()
     print("meter twins (the grader tells the good transcript from the broken one):")
-    for crit, case, ok in twins:
-        print(f"  {crit:<11} {case}: {'discriminates' if ok else 'BLIND'}")
+    for crit, which, ok in twins:
+        print(f"  {crit:<11} {which}: {'discriminates' if ok else 'BLIND'}")
     print("expected size per case (impact.classify over the case's fixture):")
     for case in CASES:
         print(f"  {case.id:<15} request={case.request!s:<5} "
