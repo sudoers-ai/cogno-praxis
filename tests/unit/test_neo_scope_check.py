@@ -526,6 +526,52 @@ def test_adverse_branches_that_merely_contain_neo_are_not_lookalikes(logins, bra
     assert nsc.applies(HUMAN, branch, nsc.read_logins(logins)) is None
 
 
+# Each form that escaped a lookalike check written on the literal prefix, one twin per form.
+# The ids are plain ASCII names: the branch itself may not be.
+_EVASIONS = [
+    ("refs/heads/neo/x", "ref-prefix-full"),
+    ("heads/neo/x", "ref-prefix-short"),
+    ("refs/heads/neo-x", "ref-prefix-dash"),
+    ("Refs/Heads/neo/x", "ref-prefix-case"),
+    ("refs/heads/heads/neo/x", "ref-prefix-twice"),
+    ("ne0/x", "zero-for-o-slash"),
+    ("ne0-x", "zero-for-o-dash"),
+    ("NE0/x", "zero-for-o-upper"),
+    ("ne0", "zero-for-o-bare"),
+    ("n\u0435o/x", "cyrillic-ie"),
+    ("\uff4e\uff45\uff4f/x", "fullwidth"),
+    ("\u039deo/x", "greek-capital-nu"),
+    ("ne\u200do/x", "zero-width-joiner"),
+    ("neo\u200d/x", "zwj-before-slash"),
+    ("fix-\u00e9", "any-non-ascii"),
+]
+
+
+@pytest.mark.parametrize("branch", [b for b, _ in _EVASIONS], ids=[i for _, i in _EVASIONS])
+def test_every_evasive_spelling_of_the_prefix_applies_and_is_refused(logins, branch):
+    """A person's branch spelled to look like NEO's, or to slip past a literal prefix: the lock
+    applies (fails CLOSED), and the branch is refused as a lookalike and not the bridge's."""
+    assert nsc.is_lookalike(branch)
+    assert nsc.applies(HUMAN, branch, nsc.read_logins(logins)) == "lookalike"
+    assert [r.rule for r in nsc.branch_refusals(branch)] == ["branch_name", "branch_lookalike"]
+
+
+@pytest.mark.parametrize("branch", ["refs/heads/fix-y", "heads/fix-y", "ne0n-lights",
+                                    "fix/ne0-x", "heads-up", "headsup/neo-x", "refsheads/neo"])
+def test_adverse_the_evasion_folds_do_not_catch_ordinary_branches(logins, branch):
+    """The negative probe for the folds: a ref prefix before an ordinary name, a zero that is
+    not in the prefix, and words that merely start with 'heads'."""
+    assert not nsc.is_lookalike(branch)
+    assert nsc.applies(HUMAN, branch, nsc.read_logins(logins)) is None
+
+
+def test_the_bridges_own_branch_is_not_a_lookalike_whatever_its_id_holds():
+    """A zero in the REQUEST ID is not a zero in the prefix."""
+    for branch in ("neo/chg-0001", "neo/0", "neo/00-x0"):
+        assert not nsc.is_lookalike(branch)
+        assert nsc.branch_refusals(branch) == []
+
+
 @pytest.mark.parametrize("branch,rules", [
     ("neo/abc", []),
     ("neo/chg-0001_b", []),
@@ -651,9 +697,15 @@ def test_an_unreadable_logins_file_refuses_every_pull_request(repo, tmp_path_fac
 
 
 def test_the_decision_line_never_prints_a_character_outside_the_safe_set(capsys, logins):
-    assert nsc.main(["--author", HUMAN, "--branch", "fixıy$x", "a", "b"],
+    assert nsc.main(["--author", HUMAN, "--branch", "fix$y;x", "a", "b"],
                     logins_file=logins) == 0
     assert capsys.readouterr().out.strip().endswith("branch=fix?y?x)")
+    # A non-ASCII branch applies (a lookalike); its line prints '?', never the letter.
+    rc = nsc.main(["--author", HUMAN, "--branch", "fix\u0131y", "a", "b"], logins_file=logins)
+    out = capsys.readouterr()
+    assert rc != 0
+    assert "the lock applies by lookalike (author=" in out.out
+    assert "branch=fix?y)" in out.out and "\u0131" not in out.out + out.err
 
 
 @pytest.mark.parametrize("argv", [
@@ -718,6 +770,18 @@ def test_the_workflow_judges_with_the_base_and_never_the_head():
     assert not any("pip" in t for t in runs)
     assert all(s.get("with", {}).get("ref", "").endswith("base.sha }}") for s in steps
                if str(s.get("uses", "")).startswith("actions/checkout@"))
+
+
+def test_the_trigger_is_every_pull_request_to_main_with_no_filter():
+    """No ``paths:``/``paths-ignore:``/``branches-ignore:`` filter and no ``if:``: a filtered-out
+    run is a check that never reports, and an ``if:`` is a skip that reads green."""
+    doc = _workflow()
+    assert doc["on"] == {"pull_request_target": {
+        "branches": ["main"], "types": ["opened", "synchronize", "reopened", "edited"]}}
+    assert "if" not in doc and all("if" not in job for job in doc["jobs"].values())
+    text = WORKFLOW.read_text(encoding="utf-8")
+    for key in ("paths:", "paths-ignore:", "branches-ignore:"):
+        assert key not in text, key
 
 
 def test_every_action_of_the_lock_is_pinned_by_commit_sha():
@@ -857,3 +921,25 @@ def test_workflow_control_a_persons_pull_request_runs_and_succeeds_without_apply
     status, out = origin(HUMAN, "fix-y", {"pyproject.toml": "[project]\nname = 'x'\n"})
     assert status == "success", out
     assert f"NEO scope: not a NEO pull request (author={HUMAN}, branch=fix-y)" in out
+
+
+def test_workflow_the_head_cannot_remove_the_bridge_from_the_logins(origin):
+    """The bridge's head EMPTIES ``scripts/neo_bridge_logins``. The base's copy decides, so
+    the lock still applies by author and refuses the branch and the path. A checker that read
+    the head's copy would answer "not a NEO pull request" here."""
+    status, out = origin(BRIDGE, "feature-x", {"scripts/neo_bridge_logins": "# nobody\n"})
+    assert status == "failure", out
+    assert "the lock applies by author" in out
+    assert "REFUSED (branch feature-x): branch_name" in out
+    assert "REFUSED scripts/neo_bridge_logins: outside_scope" in out
+
+
+def test_the_logins_are_read_from_the_checkers_directory_never_from_git(repo, logins, capsys,
+                                                                        monkeypatch):
+    """In-process twin of the one above: the head rewrites the file in the tree's own
+    ``scripts/``; the checker reads the file it was GIVEN (the base's, next to it)."""
+    rc, out = _pr(repo, logins, capsys, monkeypatch, author=BRIDGE, branch="feature-x",
+                  files={"scripts/neo_bridge_logins": "# nobody\n"})
+    assert rc == 1, out
+    assert "the lock applies by author" in out
+    assert "REFUSED scripts/neo_bridge_logins: outside_scope" in out

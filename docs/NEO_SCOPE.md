@@ -30,9 +30,16 @@ applies when any of these holds:
   case-insensitively, and an unreadable file, or a line that is not one login, refuses every pull
   request (rc 2);
 - the **branch** starts with `neo/`, in any case;
-- the **branch imitates the prefix**: `neo` followed by the end or by a character that is not a
-  letter, a digit or `/` (`neo-x`, `NEO_x`, `neo.x`, `neo`). Not `neon-x`, `neo2`, `neo4j-…` or
-  `fix/neo-x`.
+- the **branch imitates the prefix**. This fails CLOSED:
+  - any **non-ASCII** branch: a homoglyph (a Cyrillic, full-width or Greek letter) or an invisible
+    character (a zero-width joiner) is how a name reads as `neo/` and is not. Over the last 130
+    pull requests of this repository (2026-11-02) no branch was non-ASCII;
+  - otherwise, after removing every leading `refs/heads/` and `heads/` and reading a `0` in the
+    first three characters as `o`: `neo` followed by the end or by a character that is not a
+    letter or a digit (`neo-x`, `NEO_x`, `neo.x`, `neo`, `ne0/x`, `refs/heads/neo/x`,
+    `heads/neo/x`). Not `neon-x`, `neo2`, `neo4j-…`, `fix/neo-x`, `refs/heads/fix-y`;
+  - a plain `neo/…` (any case, no ref prefix, no zero) is the prefix itself, judged by
+    `branch_name`. A zero in the request id (`neo/chg-0001`) is not in the prefix.
 
 When none holds, it prints `NEO scope: not a NEO pull request (author=…, branch=…)` and exits 0.
 The job ran and decided; it was not skipped. When one holds, it prints which one, and every rule

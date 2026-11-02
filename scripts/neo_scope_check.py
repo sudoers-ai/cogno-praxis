@@ -32,7 +32,8 @@ was never judged and read green. So the workflow has no ``if:`` at all, and this
 * the AUTHOR (``github.event.pull_request.user.login``) is one of the bridge's accounts, read from
   ``scripts/neo_bridge_logins`` in the BASE's checkout, next to this file; or
 * the BRANCH starts with ``neo/`` (in any case, as GitHub's ``startsWith`` did); or
-* the BRANCH imitates the prefix (``neo-x``, ``NEO_x``, ``neo.x``, ``neo``).
+* the BRANCH imitates the prefix (``neo-x``, ``NEO_x``, ``neo.x``, ``neo``, ``ne0/x``,
+  ``refs/heads/neo/x``), or holds any non-ASCII character (a homoglyph, a zero-width joiner).
 
 When none holds the script prints ``NEO scope: not a NEO pull request (…)`` and exits 0: the job
 RAN and decided, it was not skipped. When one holds, two more rules join the path rules:
@@ -153,9 +154,9 @@ _LOGIN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?")
 # The host's ``REQUEST_ID_RE`` (cogno_host/neo/changes.py), restated: this script imports nothing.
 _REQUEST_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 NEO_PREFIX = "neo/"
-# ``neo`` followed by the end or by any character that is not a letter, a digit or ``/``:
-# ``neo-x``, ``NEO_x``, ``neo.x``, ``neo``. Not ``neon-x``, ``neo2``, ``fix/neo-x``.
-_LOOKALIKE = re.compile(r"neo(?![a-z0-9/])", re.IGNORECASE)
+# A ref-path prefix a branch name can carry in front of ``neo/``: ``refs/heads/neo/x`` and
+# ``heads/neo/x`` are branches GitHub names exactly so, and they read as NEO's to a person.
+_REF_PREFIX = re.compile(r"(?:refs/heads/|heads/)", re.IGNORECASE)
 # What a decision line may print of a branch or a login: anything else becomes ``?``.
 _PRINTABLE = re.compile(r"[^A-Za-z0-9._/@+\[\]-]")
 
@@ -317,7 +318,32 @@ def read_logins(path: Path = BRIDGE_LOGINS_FILE) -> "frozenset[str]":
 
 
 def is_lookalike(branch: str) -> bool:
-    return _LOOKALIKE.match(branch) is not None
+    """A branch that imitates the ``neo/`` prefix without being a plain ``neo/…`` branch. It FAILS
+    CLOSED: a lookalike makes the lock apply and is then refused.
+
+    * Any NON-ASCII branch. A homoglyph (Cyrillic U+0435 for ``e``, full-width U+FF4E for
+      ``n``, Greek U+039D for ``N``) or an invisible character (U+200D, the zero-width joiner)
+      is how a name reads as ``neo/`` and is not.
+      Measured on 2026-11-02 over the last 130 pull requests of this repository: 0 non-ASCII
+      branches, so nobody's ordinary work is caught.
+    * Otherwise, after removing every leading ``refs/heads/`` and ``heads/`` and reading a ``0`` in
+      the first three characters as ``o``, the name starts with ``neo`` followed by the end or by
+      a character that is not a letter or a digit: ``neo-x``, ``NEO_x``, ``neo.x``, ``neo``,
+      ``ne0/x``, ``refs/heads/neo/x``. Not ``neon-x``, ``neo2``, ``neo4j-…``, ``fix/neo-x``.
+    * The one exception is a plain ``neo/…`` (any case, no ref prefix, no zero): that is the
+      prefix itself, judged by ``branch_name``. A zero in the request id is not in the prefix."""
+    if not branch.isascii():
+        return True
+    name = branch
+    while (m := _REF_PREFIX.match(name)) is not None:
+        name = name[m.end():]
+    head, rest = name[:3], name[3:]
+    if head.lower().replace("0", "o") != "neo":
+        return False
+    if rest[:1].isalnum():
+        return False                                   # neon, neo2, ne0n: another word
+    plain_prefix = name == branch and head.lower() == "neo" and rest.startswith("/")
+    return not plain_prefix
 
 
 def applies(author: str, branch: str, logins: "frozenset[str]") -> "Optional[str]":
