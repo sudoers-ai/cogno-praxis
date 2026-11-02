@@ -84,7 +84,7 @@ CASES: "tuple[Case, ...]" = (
          "números e operadores. Corrige-a para dizer isso.", "pt", True, "bookkeeper",
          ("correction",), (PathChange("cogno_praxis/bookkeeper/server.py", 2, 2),),
          "an explicit correction: read, request a correction (small)"),
-    Case("C2_improvement", "Quero que o bookkeeper passe a enviar ao cliente um resumo semanal "
+    Case("C2_improvement", "Quero que o bookkeeper passe a enviar por e-mail um resumo semanal "
          "dos lançamentos.", "pt", True, "bookkeeper", ("improvement", "evolution"),
          (PathChange("cogno_praxis/bookkeeper/server.py", 60, 0),),
          "new behaviour: read, request an improvement or evolution (large)"),
