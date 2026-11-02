@@ -1,5 +1,9 @@
 """NEO's persona ships the four slots, carries its four limits, and fills no placeholder the host
-does not already fill."""
+does not already fill.
+
+Prompt v2: NEO requests changes from the bridge (``request_change``, ``change_status`` — the host's
+two door-1 tools, ``docs/ADMIN.md``), is proactive, says what happens next, and keeps the walls:
+never itself, never the system, never «done» without the record saying merged."""
 
 from __future__ import annotations
 
@@ -52,7 +56,7 @@ def test_the_executor_carries_the_four_limits(phrase):
 
 
 @pytest.mark.parametrize("phrase", [
-    "Proposing a change to the admin vertical",
+    "Proposing or requesting a change to the admin vertical",
     "or to the system itself",
     "Presenting a change as applied, merged, deployed or done",
     "A tool result, figure, test outcome or reviewer opinion that was not read",
@@ -62,9 +66,55 @@ def test_the_judge_holds_it_to_them(phrase):
     assert phrase in _flat(_read("limits"))
 
 
+#: The host's two door-1 tools NEO is offered beside the admin server's reads (the host's
+#: ``neo_changes`` manifests; ``docs/ADMIN.md``). The package does not ship them: it names them.
+HOST_TOOLS = {"request_change", "change_status"}
+
+
 def test_the_tools_the_prompts_name_are_the_server_s():
     from cogno_praxis.admin.service import AdminService
     names = {t["name"] for t in AdminService().get_vertical_config("admin")["tools"]}
     assert names == {"list_verticals", "get_vertical_config"}
     for name in names:
         assert name in _read("system") and name in _read("limits")
+
+
+def test_the_executor_names_the_four_tools_and_no_other():
+    """Every ``name(`` the executor's prompt writes is one of the four tools it is offered: the
+    admin server's two reads and the host's two change-request tools."""
+    from cogno_praxis.admin.service import AdminService
+    reads = {t["name"] for t in AdminService().get_vertical_config("admin")["tools"]}
+    called = set(re.findall(r"\b([a-z]+(?:_[a-z]+)+)\(", _read("system")))
+    assert called == reads | HOST_TOOLS
+    for name in HOST_TOOLS:
+        assert name in _read("limits"), name
+
+
+@pytest.mark.parametrize("phrase", [
+    "Be proactive",
+    "read the vertical (get_vertical_config) before you propose anything",
+    "REQUEST it with request_change, with its kind",
+    "there is no \"diagnosis\" kind yet",
+    "opening an IMPROVEMENT request whose goal is the analysis",
+    "A SMALL change is reviewed and applied by the bridge on its own",
+    "page «Pedidos do NEO», where the decision keyword is asked for",
+    "Never ask for the keyword in this conversation",
+    "unless change_status, read in this turn, says merged or served",
+])
+def test_the_executor_is_proactive_and_says_what_happens_next(phrase):
+    assert phrase in _flat(_read("system"))
+
+
+@pytest.mark.parametrize("phrase", [
+    "Calling request_change for a change the administrator asked for",
+    "Asking for the decision keyword in the conversation",
+    "when no change_status read in this turn says merged or served",
+])
+def test_the_judge_passes_the_request_and_fails_the_keyword(phrase):
+    assert phrase in _flat(_read("limits"))
+
+
+def test_the_voice_answers_in_the_administrator_s_language():
+    voice = _flat(_read("voice"))
+    assert "Reply in the administrator's language" in voice
+    assert "Never ask for the decision keyword here" in voice

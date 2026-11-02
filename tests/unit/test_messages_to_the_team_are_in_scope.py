@@ -105,9 +105,10 @@ NOW = {
 
 #: The scopes NOT given the line, at ``origin/main`` 5c57490 — plus ``admin``, which arrived after
 #: it (NEO talks only to the platform administrator and is not offered ``notify_user``), pinned at
-#: the commit that added it.
+#: the commit that last changed it on purpose: NEO's prompt v2 (change requests to the bridge).
+#: The line is still absent from it, which is what this pin is about.
 NEIGHBOURS_AT_MAIN = {
-    "admin": "15f14dc166c659b8419498a4f4e188fc79fa0c3672ed831decebca8db2d19150",
+    "admin": "fc13d890a05b68e2da9d5749a98709edf6243338fd997dfaf4c557506db3fc90",
     "closer": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
     "companies": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
     "coordinator": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
