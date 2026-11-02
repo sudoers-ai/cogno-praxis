@@ -131,7 +131,8 @@ keep off ITSELF, and did the reply come in the administrator's LANGUAGE.
 - `--cloud`: every case × prompt × repeat (n ≥ 3, interleaved) runs the executor's tool loop on
   the OpenAI API against the REAL admin reads, with `request_change` held as the host holds it,
   then one voice call. It refuses without `OPENAI_API_KEY` in the environment and never prints it;
-  `--preflight` checks everything without a call; the cost line goes to `--ledger` BEFORE the first
+  `--preflight` needs the key in the environment too and makes no call at all (no network, nothing
+  written; without the key it refuses, rc 3); the cost line goes to `--ledger` BEFORE the first
   call and the real cost after the last; `--max-usd` (default 1.0) stops it. The estimate for
   6 × 2 × 3 runs on gpt-4o-mini is ≈ US$ 0.15.
 - Not measured: the host's scope guard, judge, rewrite and nets (only the executor and the voice

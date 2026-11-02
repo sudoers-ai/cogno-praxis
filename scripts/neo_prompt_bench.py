@@ -16,8 +16,9 @@ Two parts, one meter.
   change-request tools faked as the host answers them (a ``request_change`` is HELD for the
   administrator's confirmation, which ends the loop, as the host's gate does), then one voice call.
   The transcript is scored by the same grader. It refuses to start without ``OPENAI_API_KEY`` in
-  the environment and never prints it; ``--preflight`` checks everything at zero cost (no network)
-  and prints the estimate; the cost-ledger line is written BEFORE the first call and the real cost
+  the environment and never prints it. ``--preflight`` needs the key in the environment too (it
+  checks it is there, plus the ledger and the estimate against the ceiling) and makes no call at
+  all: no network, nothing written; without the key it refuses like the run (rc 3). The cost-ledger line is written BEFORE the first call and the real cost
   after the last. Over ``--max-usd`` it stops and says so.
 
 What it does NOT measure, declared: the host's scope guard and judge (only the executor and the
