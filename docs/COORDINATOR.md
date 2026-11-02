@@ -264,3 +264,22 @@ the tenant's rules name, and a file that cannot be read whole seeds nothing (a W
 kind of the problem, never the path or the content). The seed is not durable: a write over a
 seeded sheet lives as long as the subprocess. Until a host passes `COGNO_COORDINATOR_TENANT` the
 seed is never applied.
+
+## The calendar's recipient is ONE e-mail address, or nothing is sent (2026-11-02)
+
+The professors tab's e-mail cell is asked `cogno_praxis.email_address.is_one_address`, which is
+the host's rule (cogno-host #1242, `fullmatch`) rewritten here, because praxis does not import the
+host.
+
+A cell that is not one address is refused, and nothing is sent. Such a cell has two «@», a blank
+inside, two addresses or a line break.
+
+- `calendar_recipient` answers `("", RECIPIENT_INVALID)`.
+- The send and the preview raise «NOT SENT — invalid_recipient: …».
+- One log line, `event=email_refused … path=calendar`, carries no address.
+- Nothing falls through to the registry.
+
+The tab reader trims every cell when it reads the tab, so a blank at an END never reaches this
+question; that boundary is declared and pinned by a test. The full recipient order is in the
+[README](../README.md#the-calendar-export-send_schedule_to_calendar);
+`tests/unit/test_calendar_recipient_is_one_address.py` pins all of it.

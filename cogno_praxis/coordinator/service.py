@@ -47,6 +47,7 @@ from cogno_praxis.coordinator.rsvp import (
     state_of,
 )
 from cogno_praxis.coordinator.store import SpreadsheetStore
+from cogno_praxis.email_address import INVALID_RECIPIENT, is_one_address
 from cogno_praxis.logsafe import id_sha
 from cogno_praxis.coordinator.types import (
     ClassEntry,
@@ -82,6 +83,12 @@ ALL_PROFESSORS = "*"
 RECIPIENT_FROM_OWN_IDENTITY = "own_identity"
 RECIPIENT_FROM_SHEET = "professors_tab"
 RECIPIENT_FROM_REGISTRY = "identity_directory"
+#: NOT a source: the professors tab HAS an address for the professor and it is not ONE e-mail
+#: (``email_address.is_one_address`` — two «@», a blank inside or at an end, two addresses in one
+#: cell). The address half is ``""``; the send refuses and says so, and nothing falls through to
+#: the registry — the tab is the address the tenant recorded for this purpose, and mailing another
+#: one would be repairing the tenant's record behind their back.
+RECIPIENT_INVALID = INVALID_RECIPIENT
 
 #: The refusal a non-oversight caller gets for asking about anybody but themselves — by name or
 #: with :data:`ALL_PROFESSORS`. ONE sentence, unchanged since the capability opened: it is the
@@ -2314,7 +2321,10 @@ class CoordinatorService:
                            identity_directory: "Optional[Sequence[Any]]" = None,
                            report: Optional[ReadReport] = None) -> "tuple[str, str]":
         """``(address, source)`` for the target professor's calendar — ``("", "")`` when there
-        is none. ``source`` is one of the ``RECIPIENT_FROM_*`` constants.
+        is none. ``source`` is one of the ``RECIPIENT_FROM_*`` constants — or
+        ``("", RECIPIENT_INVALID)`` when the professors tab HAS an address and it is not ONE
+        e-mail (:func:`cogno_praxis.email_address.is_one_address`, asked of the cell as written):
+        refused, never trimmed, and never replaced by the registry's address.
 
         THREE sources, in a DECLARED order, because they answer the question with different
         authority:
@@ -2349,11 +2359,22 @@ class CoordinatorService:
         own = bool(identity_label.strip()) and _norm(target) == _norm(identity_label)
         if own and identity_email.strip():
             return identity_email.strip(), RECIPIENT_FROM_OWN_IDENTITY
+        refused = 0
         for rec in self.get_professor_info(professor=target, role=role,
                                            identity_label=identity_label, report=report):
             for header, value in rec.items():
                 if "mail" in header and "@" in value:
-                    return value.strip(), RECIPIENT_FROM_SHEET
+                    # ONE address, asked of the cell AS WRITTEN (no strip before deciding): a
+                    # cell that is not one is REFUSED, counted, never named, never trimmed.
+                    if is_one_address(value):
+                        return value, RECIPIENT_FROM_SHEET
+                    refused += 1
+        if refused:
+            # `reason`, `path` and `source` are LITERALS (the host's spelling, LOGGING.md):
+            # only the count is a value, and the cell never is.
+            _log.warning("stage=coordinator event=email_refused reason=invalid_recipient "
+                         "path=calendar source=professors_tab count=%d", refused)
+            return "", RECIPIENT_INVALID
         if role.upper() in _OVERSIGHT_ROLES:
             found = self._registry_address(target, identity_directory)
             if found:
@@ -2457,6 +2478,11 @@ class CoordinatorService:
         recipient, source = self.calendar_recipient(
             professor=professor, role=role, identity_label=identity_label,
             identity_email=identity_email, identity_directory=identity_directory, report=report)
+        if not recipient and source == RECIPIENT_INVALID:
+            raise CoordinatorError(
+                f"NOT SENT — {INVALID_RECIPIENT}: the e-mail address on file for {target} in the "
+                f"professors tab is not ONE valid e-mail address, so the calendar was not sent. "
+                f"It has to be corrected in the professors tab first. Nothing was sent.")
         if not recipient:
             raise CoordinatorError(
                 f"There is no e-mail address on file for {target}, so there is nowhere to send "

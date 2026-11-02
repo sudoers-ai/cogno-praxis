@@ -49,6 +49,7 @@ CLASSES = VALUE_CLASSES + ("constant",)
 #: about.
 _PINNED: "dict[str, set[str]]" = {
     # ── count ──
+    "count": {"refused"},
     "excerpts": {"sum((len(h.excerpts) for h in hints))"},
     "kept": {"kept"},
     "pairs": {"len(unsettled)"},
