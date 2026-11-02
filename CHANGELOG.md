@@ -4,6 +4,32 @@
 
 Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the "DO NOT LAND" in its commit title is a stale status marker left in the PR title — status lives in labels and the body, never in the title.
 
+### Fixed — the calendar is never mailed to a professors-tab address that is not ONE e-mail (2026-11-02)
+
+- **The defect.** `CoordinatorService.calendar_recipient` took the professors tab's e-mail cell
+  when it held an `@` (`"@" in value`), trimmed it, and the send handed it to
+  `cogno_herald.send_email_with_ics` as one recipient. A cell with two «@», a blank inside, two
+  addresses or a line break went to the mail server as written. The host refuses such values on
+  every path it mails from (cogno-host #1331); this one is mailed from praxis, outside the host.
+- **The fix.** `cogno_praxis.email_address.is_one_address`: the host's rule (cogno-host #1242,
+  `fullmatch`), rewritten because praxis does not import the host. The tab's cell is asked it as
+  read. A cell that is not one address is refused: `calendar_recipient` answers
+  `("", RECIPIENT_INVALID)` (`"invalid_recipient"`), the send and the preview raise «NOT SENT —
+  invalid_recipient: the e-mail address on file for <professor> in the professors tab is not ONE
+  valid e-mail address…», nothing falls through to the registry, and one log line
+  `stage=coordinator event=email_refused reason=invalid_recipient path=calendar
+  source=professors_tab count=<n>` says how many, never which.
+- **Declared boundary.** The tab reader (`_faculty_rows`) trims EVERY cell when it reads the tab —
+  the contract every reader of the tab shares — so a blank at an END of the cell never reaches the
+  question, and the address sent is the trimmed one. The predicate itself refuses it; refusing it
+  at the calendar would mean changing what the reader hands every caller. Pinned by a boundary
+  test, so the day the reader stops trimming, it says so.
+- **Tests.** `tests/unit/test_calendar_recipient_is_one_address.py`: the twins through the real
+  server door (four forms: refused, nothing sent, the reply and the log line carry no address), the
+  preview, no fall-through to the registry, the closed marker; the controls (a valid address is
+  sent as written; no address is today's refusal); the predicate; the boundary.
+- **Docs.** `README.md` (the calendar export's recipient rule).
+
 ### Added — the minimum testing standard, `docs/TESTING.md` (2026-11-01)
 
 - **Why.** The owner asked for a minimum quality standard in tests (unit, integration, end-to-end

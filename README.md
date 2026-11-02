@@ -85,6 +85,15 @@ Three things about it are worth knowing before you wire it:
   registry, the proposal's line says so: `→ <address> (from the Cogno registry — the professors
   tab has no address for <professor>)`. Measured on a production tenant (2026-10-22): a professor
   with no address on the tab and one in the registry, and the calendar refused.
+- **The tab's address must be ONE e-mail (2026-11-02).** The cell is asked
+  `cogno_praxis.email_address.is_one_address` — the host's rule (cogno-host #1242), `fullmatch`,
+  rewritten here because praxis does not import the host. A cell that is not one address (two
+  «@», a blank inside, two addresses, a line break) is REFUSED: «NOT SENT — invalid_recipient: …»,
+  on the send and on the preview, one log line `stage=coordinator event=email_refused
+  reason=invalid_recipient path=calendar source=professors_tab count=<n>` with no address, and no
+  fall-through to the registry (the tab is the address the tenant recorded for this; mailing
+  another one would be repairing the record behind them). Declared boundary: the tab reader trims
+  every cell when it reads the tab, so a blank at an END never reaches this question.
 - **Every path that did not send RAISES**, so the MCP bridge reports `ok=False` /
   `side_effect=False` and the turn is never recorded as a write that did not happen. The one
   non-error answer starts with `SENT:`.
