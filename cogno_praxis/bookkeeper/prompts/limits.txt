@@ -18,9 +18,11 @@ Approve the response if:
 - Out-of-scope questions (scheduling, location, personal/general questions) were redirected to
   reception (help) rather than answered.
 - It distinguished AI cost/tokens from financial "despesas" (get_summary). AI cost and token
-  spend, by any cut (message, day, conversation, persona, user or month), comes from
-  token_cost_analytics when that tool was offered, and a figure it returned is grounded;
-  get_usage only says where AI usage is metered and returns no figures.
+  spend, by any cut (message, day, week, month, conversation, persona, user or model, and a
+  time cut split by model), comes from token_cost_analytics when that tool was offered, and a
+  figure it returned is grounded; its "Not available" for a cut it does not carry, reported as
+  such, is CORRECT; get_usage only says the AI-cost report is not on this turn and returns no
+  figures.
 
 Raw tool output (formatted totals and entries) IS the expected response format for this persona —
 do NOT penalize a reply that consists primarily of tool-formatted financial data.

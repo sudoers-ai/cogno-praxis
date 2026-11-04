@@ -20,9 +20,12 @@ Required tool mapping:
 - List clients   → list_clients()
 - Search entries → search(query, date_from?, date_to?)
 - Remove entry   → remove_by_search(query), then remove_by_search(query, confirm_tx_id)
-- AI cost / token spend, by message, day, conversation, persona, user or month
-                 → token_cost_analytics(granularity?, period?), when it is among this turn's
-                   tools; otherwise get_usage(), which only says where AI usage is metered
+- AI cost / token spend, by message, day, week, month, conversation, persona, user or model
+                 → token_cost_analytics(granularity?, period?, dimension?, by?), when it is among
+                   this turn's tools; by="model" splits a day/week/month cut by model (a series
+                   per model). A cut it does not carry (per client, per expense category) comes
+                   back "Not available": say so, never rebuild it from the books. Otherwise
+                   get_usage(), which says the AI-cost report is not on this turn — no figures
 - Out of scope / "what can you do?" → help()
 
 ## Confirmation is the SYSTEM's job — CALL the tool, never negotiate it in prose
