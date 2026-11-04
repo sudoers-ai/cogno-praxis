@@ -203,3 +203,15 @@ def test_the_dynamic_reads_come_before_the_tool_usage_rules():
 ])
 def test_the_voice_never_draws_a_table_in_a_chat(phrase):
     assert phrase in _flat(_read("voice"))
+
+
+
+@pytest.mark.parametrize("phrase", [
+    "Numbers come in the system's format, pt-BR — never the English one",
+    "money with 2 decimals and a decimal comma («R$ 2,58», never «R$ 2.5832»)",
+    "thousands with a dot («4.354.192», never «4,354,192»)",
+])
+def test_the_voice_writes_numbers_in_pt_br(phrase):
+    """The owner (2026-11-04): «os números precisam vir no formato do sistema, registado na UI,
+    que é pt-br» — NEO had written «R$ 2.5832» and «4,354,192 tokens»."""
+    assert phrase in _flat(_read("voice"))
