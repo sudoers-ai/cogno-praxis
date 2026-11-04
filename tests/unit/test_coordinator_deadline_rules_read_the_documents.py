@@ -128,8 +128,8 @@ NEIGHBOURS_AT_MAIN = {
     # regenerated 2026-10-14, deliberately: the CALL convention rewrote its confirmation section
     # (test_the_bookkeeper_calls_the_write.py).
     "bookkeeper/system.txt": "a6db743904c3ebbe812d4a39d781f06724e1248f48240c73b4f1fa59376c4ab8",
-    # bookkeeper voice regenerated 2026-11-04: numbers in pt-BR, only the marks (never rounded)
-    "bookkeeper/voice.txt": "912e36bf8ebbc75940b16cbfd9de35edde1117c53c632e162e54b8138b632096",
+    # bookkeeper voice regenerated 2026-11-04: pt-BR marks in a Portuguese reply, never rounded
+    "bookkeeper/voice.txt": "4360356043abd08b2edc375cf5d288aa0485009fe33c01c71e625e8b7be77f40",
     "closer/limits.txt": "2c8bf84a2625317e363f8fc175029b7d85d9a28fb90190b5c254391981f10e4c",
     "closer/scope.txt": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
     "closer/system.txt": "c5b30b8faf18562ec7936965e16fe59a8570d4bc9d67654c3156f9c170cf623d",

@@ -28,7 +28,7 @@ def _flat(text: str) -> str:
 
 def _rule() -> str:
     flat = _flat(VOICE.read_text(encoding="utf-8"))
-    return flat[flat.index("Write them in the system's format"):]
+    return flat[flat.index("In a reply in Portuguese, write them in the system's format"):]
 
 
 def _pairs() -> "list[tuple[str, str]]":
@@ -36,9 +36,9 @@ def _pairs() -> "list[tuple[str, str]]":
 
 
 @pytest.mark.parametrize("phrase", [
-    "Write them in the system's format, pt-BR — only the MARKS change, never the value or its "
-    "decimals",
-    "the currency as R$, a decimal comma and a thousands dot, every decimal the data carries kept",
+    "In a reply in Portuguese, write them in the system's format, pt-BR — only the MARKS change, "
+    "never the value or its decimals",
+    "the currency as R$, a decimal comma and a thousands dot",
     "«R$ 1.234,5678», never «R$ 1,234.5678»",
     "and dates as dd/mm/aaaa («04/11/2026», never «2026-11-04»)",
     # the line the rule must not contradict
@@ -70,3 +70,22 @@ def test_CONTROLO_the_net_flags_a_figure_the_data_does_not_hold():
     from cogno_anima.stages.superego import SuperegoStage
     _lost, invented = SuperegoStage._draft_divergence("R$ 2.5832", "R$ 2.5832", "R$ 3,10")
     assert invented == ["310"]
+
+
+
+def test_GEMEO_the_pt_br_marks_are_for_a_reply_in_portuguese_only():
+    """The consultor on #199: the bookkeeper also answers in English and Spanish (its grounding
+    bundles), and the voice writes IN the user's language — an English reader of «R$ 1.234,56»
+    reads about 1.23, and of «04/11/2026» reads April 11. So the pt-BR marks are conditioned on
+    a reply in Portuguese; another language keeps its own marks; «never round» holds for all."""
+    flat = _flat(VOICE.read_text(encoding="utf-8"))
+    assert "In a reply in Portuguese, write them in the system's format, pt-BR" in flat
+    assert "In a reply in another language, keep that language's marks." in flat
+    assert "In every language, keep every decimal the data carries and never round." in flat
+    # the unconditioned form is gone: no «pt-BR — never the English one» for every reply
+    assert "never the English one" not in flat
+
+
+def test_CONTROLO_the_three_pairs_are_still_given():
+    assert _pairs() == [("R$ 1.234,5678", "R$ 1,234.5678"), ("R$ 2,5832", "R$ 2.5832"),
+                        ("04/11/2026", "2026-11-04")]
