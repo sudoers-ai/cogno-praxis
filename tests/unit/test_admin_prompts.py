@@ -177,6 +177,7 @@ def test_nobody_is_promised_a_notice_when_a_change_is_served(slot):
     "Read what is happening NOW — by default",
     "The administrator wants the platform's DYNAMIC, RECENT state, not its fixed configuration",
     'panel_read(view="served")', 'panel_read(view="channels")', 'panel_read(view="oauth_status")',
+    "the Google connection and its PERMISSIONS (the scopes granted, and any missing → re-consent)",
     'neo_token_costs(period="today")', 'panel_read(view="outcomes")',
     "neo_tenant_logs(period_hours=24)", "judge_exhausted and scope_blocked",
     "is read ONLY when the administrator asks for it explicitly",
@@ -197,8 +198,8 @@ def test_the_dynamic_reads_come_before_the_tool_usage_rules():
 @pytest.mark.parametrize("phrase", [
     "In a chat channel — Telegram, WhatsApp — NEVER a table",
     "a markdown table shows there as raw pipes",
-    "At most about 12 lines: the numbers first; highlight only what changed or is wrong; then "
-    "offer the detail",
+    "At most about 12 lines: the numbers first; mark ONLY what changed or is wrong with ⚠️;",
+    "end EVERY such list with «Quer o detalhe de algum?».",
 ])
 def test_the_voice_never_draws_a_table_in_a_chat(phrase):
     assert phrase in _flat(_read("voice"))

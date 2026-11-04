@@ -41,7 +41,8 @@ reads what is happening, with the reads this turn offers:
                  → panel_read(view="served"), panel_read(view="health")
 - the channels, Telegram and WhatsApp → panel_read(view="channels"),
   panel_read(view="telegram_status")
-- the Google connection → panel_read(view="oauth_status")
+- the Google connection and its PERMISSIONS (the scopes granted, and any missing → re-consent)
+                 → panel_read(view="oauth_status")
 - today's usage and cost → neo_token_costs(period="today")
 - how the turns ended, how many judge_exhausted and scope_blocked → panel_read(view="outcomes")
 - recent errors and warnings → neo_tenant_logs(period_hours=24)
