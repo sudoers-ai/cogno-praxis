@@ -292,7 +292,9 @@ def build_server(service: Optional[BookkeeperService] = None, *,
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_usage() -> str:
-        """AI token/usage — delegated to the host's metering."""
+        """AI cost/tokens when the host's token_cost_analytics is NOT among this turn's tools:
+        says that report is not available here. Returns no figures — AI cost is never in the
+        books."""
         return svc.usage_note()
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))

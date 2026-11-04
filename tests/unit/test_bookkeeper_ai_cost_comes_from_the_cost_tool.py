@@ -105,6 +105,22 @@ NEW_DISTINGUISH = ('- It distinguished AI cost/tokens from financial "despesas" 
                    '  token_cost_analytics when that tool was offered, and a figure it returned is grounded;\n'
                    '  get_usage only says where AI usage is metered and returns no figures.\n')
 
+#: Request 66a0acf2 (2026-11-04) widened the two lines again — week and model, the split by model,
+#: the "Not available" answer — on top of the B4b text above. The twins read the CURRENT lines;
+#: the reconstruction undoes them first (``tests/unit/test_bookkeeper_ai_cost_by_week_and_model.py``).
+CUR_MAPPING = ("- AI cost / token spend, by message, day, week, month, conversation, persona, user or model\n"
+               "                 → token_cost_analytics(granularity?, period?, dimension?, by?), when it is among\n"
+               "                   this turn's tools; by=\"model\" splits a day/week/month cut by model (a series\n"
+               "                   per model). A cut it does not carry (per client, per expense category) comes\n"
+               "                   back \"Not available\": say so, never rebuild it from the books. Otherwise\n"
+               "                   get_usage(), which says the AI-cost report is not on this turn — no figures\n")
+CUR_DISTINGUISH = ('- It distinguished AI cost/tokens from financial "despesas" (get_summary). AI cost and token\n'
+                   '  spend, by any cut (message, day, week, month, conversation, persona, user or model, and a\n'
+                   '  time cut split by model), comes from token_cost_analytics when that tool was offered, and a\n'
+                   '  figure it returned is grounded; its "Not available" for a cut it does not carry, reported as\n'
+                   '  such, is CORRECT; get_usage only says the AI-cost report is not on this turn and returns no\n'
+                   '  figures.\n')
+
 #: The claim the judge cited, in the two spellings it had at main.
 OLD_CLAIMS = ('AI "tokens/usage" (get_usage)', "AI token/usage → get_usage()")
 
@@ -163,7 +179,7 @@ def test_the_executor_text_maps_ai_cost_to_the_cost_tool():
     """THE TWIN, executor half: the mapping, the read-only list and the scope line name the cost
     tool, once each, and the old mapping is gone under any column."""
     system = _read("system.txt")
-    for new in (NEW_MAPPING, NEW_SCOPE):
+    for new in (CUR_MAPPING, NEW_SCOPE):
         assert system.count(new) == 1, new
     assert ("Read-only tools (get_summary, list_clients, search, get_usage, token_cost_analytics, "
             "help) run immediately") in _flat(system)
@@ -175,7 +191,7 @@ def test_the_executor_text_maps_ai_cost_to_the_cost_tool():
 def test_the_judge_text_counts_the_cost_tool_as_a_source():
     """THE TWIN, judge half: both approve lines are the new ones and the old claim is gone."""
     limits = _read("limits.txt")
-    for new in (NEW_TOOLS, NEW_DISTINGUISH):
+    for new in (NEW_TOOLS, CUR_DISTINGUISH):
         assert limits.count(new) == 1, new
     for claim in OLD_CLAIMS:
         assert _flat(claim) not in _flat(limits), claim
@@ -186,8 +202,8 @@ def test_get_usage_keeps_the_job_it_still_serves():
     the text says what it returns. The tool exists in the server and still says no figure."""
     from cogno_praxis.bookkeeper.service import BookkeeperService
 
-    assert "otherwise get_usage()" in _flat(_read("system.txt"))
-    assert "get_usage only says where AI usage is metered" in _flat(_read("limits.txt"))
+    assert "Otherwise get_usage()" in _flat(_read("system.txt"))
+    assert "get_usage only says the AI-cost report is not on this turn" in _flat(_read("limits.txt"))
     note = BookkeeperService.usage_note()
     assert "host" in note and not any(ch.isdigit() for ch in note)
 
@@ -197,11 +213,15 @@ def test_putting_the_old_lines_back_gives_main_byte_for_byte():
     system = _read("system.txt")
     assert system.count(CALL_SECTION) == 1
     system = system.replace(CALL_SECTION, ASKED_SECTION, 1)
+    assert system.count(CUR_MAPPING) == 1
+    system = system.replace(CUR_MAPPING, NEW_MAPPING, 1)          # 66a0acf2 undone first
     for old, new in ((OLD_MAPPING, NEW_MAPPING), (OLD_READONLY, NEW_READONLY),
                      (OLD_SCOPE, NEW_SCOPE)):
         system = system.replace(new, old, 1)
     assert _sha(system) == SYSTEM_AT_MAIN
     limits = _read("limits.txt")
+    assert limits.count(CUR_DISTINGUISH) == 1
+    limits = limits.replace(CUR_DISTINGUISH, NEW_DISTINGUISH, 1)  # 66a0acf2 undone first
     for old, new in ((OLD_TOOLS, NEW_TOOLS), (OLD_DISTINGUISH, NEW_DISTINGUISH)):
         limits = limits.replace(new, old, 1)
     assert _sha(limits) == LIMITS_AT_MAIN
@@ -259,7 +279,8 @@ def test_the_judge_prompt_no_longer_says_ai_usage_is_only_get_usage():
     claim the live judge cited; over the new text it names the cost tool as the source of a cost
     figure and the claim is gone."""
     new = _read("limits.txt")
-    old = new.replace(NEW_TOOLS, OLD_TOOLS, 1).replace(NEW_DISTINGUISH, OLD_DISTINGUISH, 1)
+    old = (new.replace(CUR_DISTINGUISH, NEW_DISTINGUISH, 1).replace(NEW_TOOLS, OLD_TOOLS, 1)
+           .replace(NEW_DISTINGUISH, OLD_DISTINGUISH, 1))
     assert _sha(old) == LIMITS_AT_MAIN
 
     before = _flat(_judge_prompt(old))
@@ -269,6 +290,7 @@ def test_the_judge_prompt_no_longer_says_ai_usage_is_only_get_usage():
     assert _flat(OLD_CLAIMS[0]) not in after
     assert ("comes from token_cost_analytics when that tool was offered, and a figure it "
             "returned is grounded") in after
+    assert 'its "Not available" for a cut it does not carry, reported as such, is CORRECT' in after
     assert "token_cost_analytics, help) — financial data is NEVER fabricated" in after
 
 

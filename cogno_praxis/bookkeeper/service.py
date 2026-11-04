@@ -232,9 +232,14 @@ class BookkeeperService:
     # ── usage / help ───────────────────────────────────────────────────
     @staticmethod
     def usage_note() -> str:
-        """AI token/usage is metered by the HOST (cogno-meter), not this vertical (decision #4)."""
-        return ("AI usage/token metering is tracked by the host, not the bookkeeper. "
-                "Ask the operator for the usage dashboard.")
+        """AI token/usage is metered by the HOST (cogno-meter), not this vertical (decision #4):
+        the report is the host's ``token_cost_analytics``, offered to staff. When THIS tool is
+        the one called, that report is not on the turn — say so, and keep AI cost out of the
+        books (it is never an expense recorded here)."""
+        return ("The AI-cost report (tokens and cost by day, week, month, model and more) is a "
+                "staff tool of the host, and it is not available on this turn. AI usage is "
+                "metered by the host, not by the bookkeeper: the books hold only the business's "
+                "income and expenses, never AI cost.")
 
     @staticmethod
     def help_note() -> str:
