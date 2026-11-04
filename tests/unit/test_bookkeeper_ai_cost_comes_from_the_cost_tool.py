@@ -123,7 +123,7 @@ NEIGHBOURS_AT_MAIN = {
     # changed or is wrong, every list ends «Quer o detalhe de algum?»; numbers in pt-BR, voice.txt
     # again on 2026-11-04) — deliberate, not the bookkeeper's
     "admin/system.txt": "0531584e54187c8965054c89654031878de40bdeb3029a93df95ae8ed31ae366",
-    "admin/voice.txt": "7bb34efc819da52be71958a75ee24f205cef58273eb719ae19bcedde1fdf25b1",
+    "admin/voice.txt": "d2e5bb64abd61cb6e7c83ad75f7fc05e1f492f7fd66c78668fa7a38d9f52af94",
     "bookkeeper/scope.txt": "ed4a8c112f11d2c2bf480c4e8be806f9d1f707e12c1bf638e541e5f17f3ee342",
     "bookkeeper/voice.txt": "1b65181573edc71b964a686d96c92ab94b664bb094b88d4911e034536c95d347",
     "closer/limits.txt": "2c8bf84a2625317e363f8fc175029b7d85d9a28fb90190b5c254391981f10e4c",

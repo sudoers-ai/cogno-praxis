@@ -208,10 +208,13 @@ def test_the_voice_never_draws_a_table_in_a_chat(phrase):
 
 @pytest.mark.parametrize("phrase", [
     "Numbers come in the system's format, pt-BR — never the English one",
-    "money with 2 decimals and a decimal comma («R$ 2,58», never «R$ 2.5832»)",
-    "thousands with a dot («4.354.192», never «4,354,192»)",
+    "a decimal comma and a thousands dot, keeping every decimal the data carries and NEVER "
+    "rounding",
+    "(«R$ 2,5832», never «R$ 2.5832»; «4.354.192», never «4,354,192»)",
 ])
 def test_the_voice_writes_numbers_in_pt_br(phrase):
     """The owner (2026-11-04): «os números precisam vir no formato do sistema, registado na UI,
-    que é pt-br» — NEO had written «R$ 2.5832» and «4,354,192 tokens»."""
+    que é pt-br» — NEO had written «R$ 2.5832» and «4,354,192 tokens». Only the MARKS change:
+    the core calls a rounded figure invented (anima's ``_FIGURES_HAVE_A_SOURCE`` and the
+    divergence net), so the rule keeps every decimal the data carries."""
     assert phrase in _flat(_read("voice"))
