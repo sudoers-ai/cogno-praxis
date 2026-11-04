@@ -69,6 +69,10 @@ def test_the_judge_holds_it_to_them(phrase):
 #: The host's two door-1 tools NEO is offered beside the admin server's reads (the host's
 #: ``neo_changes`` manifests; ``docs/ADMIN.md``). The package does not ship them: it names them.
 HOST_TOOLS = {"request_change", "change_status"}
+#: …and the host's READ tools (NEO's dynamic reads, lot 5): offered where the platform switches
+#: them on (``COGNO_NEO_READS``), never shipped here. The executor names them for what is
+#: happening NOW; the judge's limits do not need to.
+HOST_READ_TOOLS = {"panel_read", "neo_tenant_logs", "neo_token_costs"}
 
 
 def test_the_tools_the_prompts_name_are_the_server_s():
@@ -85,7 +89,7 @@ def test_the_executor_names_the_four_tools_and_no_other():
     from cogno_praxis.admin.service import AdminService
     reads = {t["name"] for t in AdminService().get_vertical_config("admin")["tools"]}
     called = set(re.findall(r"\b([a-z]+(?:_[a-z]+)+)\(", _read("system")))
-    assert called == reads | HOST_TOOLS
+    assert called == reads | HOST_TOOLS | HOST_READ_TOOLS
     for name in HOST_TOOLS:
         assert name in _read("limits"), name
 
@@ -100,7 +104,8 @@ def test_the_executor_names_the_four_tools_and_no_other():
     "A small change is approved at review, without the decision keyword (it still shows in «Pedidos "
     "do NEO»); its pull request is merged by the platform's landing process, and the administrator "
     "is told when it is merged.",
-    "Your tools exist only in the admin panel. When they are not offered in this turn (the API key, "
+    "Your tools are offered only where the platform switches them on. When they are not offered in "
+    "this turn (the API key, "
     "a channel, or the feature switched off), say you cannot read or request from here and point to "
     "the admin panel; never describe a vertical or a request from memory.",
     "the dependencies or the admin code; when it creates a file a capability is made of (a "
@@ -164,3 +169,37 @@ def test_nobody_is_promised_a_notice_when_a_change_is_served(slot):
     """The host moves nothing to served and tells nobody: the prompts promise the merge only."""
     assert "when it is served" not in _flat(_read(slot))
 
+
+
+
+# ── the owner (2026-11-04): what is happening NOW, by default; the fixed configuration on request ──
+@pytest.mark.parametrize("phrase", [
+    "Read what is happening NOW — by default",
+    "The administrator wants the platform's DYNAMIC, RECENT state, not its fixed configuration",
+    'panel_read(view="served")', 'panel_read(view="channels")', 'panel_read(view="oauth_status")',
+    "the Google connection and its PERMISSIONS (the scopes granted, and any missing → re-consent)",
+    'neo_token_costs(period="today")', 'panel_read(view="outcomes")',
+    "neo_tenant_logs(period_hours=24)", "judge_exhausted and scope_blocked",
+    "is read ONLY when the administrator asks for it explicitly",
+    "Never answer a question about the state with the inventory",
+])
+def test_the_executor_reads_the_dynamic_state_by_default(phrase):
+    """The owner on an «overview» answered with a table of verticals: «não quero saber de coisas
+    fixas, e sim de coisas dinâmicas». The DEFAULT is what is happening; the inventory only when
+    asked."""
+    assert phrase in _flat(_read("system"))
+
+
+def test_the_dynamic_reads_come_before_the_tool_usage_rules():
+    system = _read("system")
+    assert system.index("Read what is happening NOW") < system.index("## Mandatory tool usage")
+
+
+@pytest.mark.parametrize("phrase", [
+    "In a chat channel — Telegram, WhatsApp — NEVER a table",
+    "a markdown table shows there as raw pipes",
+    "At most about 12 lines: the numbers first; mark ONLY what changed or is wrong with ⚠️;",
+    "end EVERY such list with «Quer o detalhe de algum?».",
+])
+def test_the_voice_never_draws_a_table_in_a_chat(phrase):
+    assert phrase in _flat(_read("voice"))
