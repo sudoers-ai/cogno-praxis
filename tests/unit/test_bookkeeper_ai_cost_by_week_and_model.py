@@ -26,13 +26,29 @@ from tests.unit.test_bookkeeper_ai_cost_comes_from_the_cost_tool import (CUR_DIS
 PKG = Path(__import__("cogno_praxis").__file__).resolve().parent
 PROMPTS = PKG / "bookkeeper" / "prompts"
 
+#: Request 777e9b69 (2026-11-04), on top of this one, ADDED one line to each file — the chart the
+#: tool draws (``visual``). Additive on purpose: the lines above are untouched, and the
+#: reconstructions strip these first (``tests/unit/test_bookkeeper_charts_its_ai_cost.py``).
+VISUAL_SYSTEM = ('- A chart, graph, table or comparison of AI cost → the same token_cost_analytics call with\n'
+                 '  visual="auto" (or "table", "comparison", "trend", "distribution"); it is drawn from the\n'
+                 "  tool's own figures, and on a channel that cannot show it the tool sends the text version\n")
+VISUAL_LIMITS = ("- A chart or table token_cost_analytics drew (visual) is part of its output: its bars are a\n"
+                 "  picture of the figures written beside them, never a figure of their own.\n")
+
+
+def without_later_layers(name: str, text: str) -> str:
+    """``text`` with the layers that came AFTER this request taken out (one each, or none)."""
+    layer = VISUAL_SYSTEM if name == "system.txt" else VISUAL_LIMITS
+    return text.replace(layer, "", 1)
+
+
 #: ``sha256`` of the two files at ``origin/main`` 78d3db8, before this request.
 SYSTEM_BEFORE = "a6db743904c3ebbe812d4a39d781f06724e1248f48240c73b4f1fa59376c4ab8"
 LIMITS_BEFORE = "e64431a18082ddbb734a328fbd1a6a2ee51207a2b060036667e7d00ceee5916a"
 
 
 def _read(name: str) -> str:
-    return (PROMPTS / name).read_text(encoding="utf-8")
+    return without_later_layers(name, (PROMPTS / name).read_text(encoding="utf-8"))
 
 
 def _flat(text: str) -> str:

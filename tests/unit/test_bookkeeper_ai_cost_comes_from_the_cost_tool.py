@@ -168,7 +168,12 @@ def _sha(text: str) -> str:
 
 
 def _read(name: str) -> str:
-    return (PROMPTS / name).read_text(encoding="utf-8")
+    """The file with the layers that came after this pin taken out — 777e9b69's visual lines
+    (``test_bookkeeper_ai_cost_by_week_and_model.without_later_layers``); 66a0acf2's are undone
+    by the reconstruction itself (``CUR_*``)."""
+    text = (PROMPTS / name).read_text(encoding="utf-8")
+    from tests.unit.test_bookkeeper_ai_cost_by_week_and_model import without_later_layers
+    return without_later_layers(name, text)
 
 
 def _flat(text: str) -> str:

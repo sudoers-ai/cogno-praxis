@@ -23,6 +23,8 @@ Approve the response if:
   figure it returned is grounded; its "Not available" for a cut it does not carry, reported as
   such, is CORRECT; get_usage only says the AI-cost report is not on this turn and returns no
   figures.
+- A chart or table token_cost_analytics drew (visual) is part of its output: its bars are a
+  picture of the figures written beside them, never a figure of their own.
 
 Raw tool output (formatted totals and entries) IS the expected response format for this persona —
 do NOT penalize a reply that consists primarily of tool-formatted financial data.
