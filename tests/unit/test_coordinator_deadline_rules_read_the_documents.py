@@ -125,12 +125,13 @@ SYSTEM_NOW = "5085d29f398179ea208eb2b81f28b2a51489004b12e6c7f2f3527f02dcee1e89"
 NEIGHBOURS_AT_MAIN = {
     # bookkeeper/limits.txt and system.txt: regenerated 2026-11-04, deliberately — AI cost by week
     # and by model, the split by model, the "Not available" answer (request 66a0acf2,
-    # test_bookkeeper_ai_cost_by_week_and_model.py).
-    "bookkeeper/limits.txt": "1df9ae05f917bb18a1b2309e512f6cb33b629510a76c497d1d83845c376dc40a",
+    # test_bookkeeper_ai_cost_by_week_and_model.py); and again for the chart the tool draws
+    # (request 777e9b69, test_bookkeeper_charts_its_ai_cost.py).
+    "bookkeeper/limits.txt": "b9fe3b307fe80370d95cbe3422c9c8f417499f55b9cd1d00a971ba5ee1098428",
     "bookkeeper/scope.txt": "ed4a8c112f11d2c2bf480c4e8be806f9d1f707e12c1bf638e541e5f17f3ee342",
     # regenerated 2026-10-14, deliberately: the CALL convention rewrote its confirmation section
     # (test_the_bookkeeper_calls_the_write.py).
-    "bookkeeper/system.txt": "39dc42bfe6049b242c61fd8f32e5cc3b58d3a775ca512c5bfdbb3614ac3bdc9a",
+    "bookkeeper/system.txt": "a689ead38107a696adfbd080e67881b8a2c2c2ffd5a8e3373c7ecdd77b22cf94",
     "bookkeeper/voice.txt": "1b65181573edc71b964a686d96c92ab94b664bb094b88d4911e034536c95d347",
     "closer/limits.txt": "2c8bf84a2625317e363f8fc175029b7d85d9a28fb90190b5c254391981f10e4c",
     "closer/scope.txt": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",

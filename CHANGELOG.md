@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — a reusable chart skill, and the bookkeeper's AI cost drawn (request 777e9b69, 2026-11-04)
+
+- **`cogno_praxis.charts`** (new, `docs/CHARTS.md`): tables, comparisons, trends and distributions drawn from a STRUCTURED result. The format follows what the channel can show (`CHANNEL_CAPS`):
+  - WhatsApp: a monospace block with bars;
+  - Markdown: a real table;
+  - Telegram, web and plain: the accessible text version, with the reason.
+- **No invented value:** the number written beside a bar is the caller's own string, verbatim, and nothing is derived for display (no percentage, average or variation). Every limitation is said (the cap, negative values, a chart replaced by text).
+- **The bookkeeper asks for it:** `system.txt` sends a chart/table/comparison request for AI cost to `token_cost_analytics(..., visual=…)`, which the host draws from its own figures. `limits.txt` tells the judge that the bars are a picture of the figures beside them, never a figure of their own. Both are ADDED lines.
+- Tests: `tests/unit/test_charts.py` (every figure written is one handed in, on every channel; the trend's order; the text version and its reason; the table on Markdown only; the cap, the negative value and «not enough to compare»; an unknown kind or channel never raises) and `tests/unit/test_bookkeeper_charts_its_ai_cost.py` (the two lines, the reconstruction of the request-1 head, the judge prompt in both worlds). The earlier pins strip this layer first.
+
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
 - **`bookkeeper/prompts/system.txt`**: AI cost and token spend go to the host's `token_cost_analytics(granularity?, period?, dimension?, by?)`, now by message, day, week, month, conversation, persona, user or model. `by="model"` splits a day, week or month cut by model, which gives a series per model. A cut the AI-cost ledger does not carry (per client, per expense category) comes back «Not available»: the executor says so and never rebuilds it from the books.
