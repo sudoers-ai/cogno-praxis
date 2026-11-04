@@ -47,7 +47,8 @@ AT_MAIN = {
     # regenerated 2026-10-14, deliberately: the CALL convention rewrote its confirmation section
     # (test_the_bookkeeper_calls_the_write.py); the contact's sentence did not move.
     ("bookkeeper", "system"): "a6db743904c3ebbe812d4a39d781f06724e1248f48240c73b4f1fa59376c4ab8",
-    ("bookkeeper", "voice"): "1b65181573edc71b964a686d96c92ab94b664bb094b88d4911e034536c95d347",
+    # bookkeeper voice regenerated 2026-11-04: numbers in pt-BR, only the marks (never rounded)
+    ("bookkeeper", "voice"): "912e36bf8ebbc75940b16cbfd9de35edde1117c53c632e162e54b8138b632096",
     ("closer", "system"): "c5b30b8faf18562ec7936965e16fe59a8570d4bc9d67654c3156f9c170cf623d",
     ("closer", "voice"): "ecf7b265950d2b9797fb2329c430fad558988c07e0e4652228ec81e0a7bb73c1",
     ("coordinator", "system"): "5085d29f398179ea208eb2b81f28b2a51489004b12e6c7f2f3527f02dcee1e89",
