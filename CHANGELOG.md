@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2 — 2026-11-06 — release to PyPI of the changes below
+
+Publishes every «Unreleased» entry below, merged since 0.1.1. No change of its own.
+
 ## Unreleased
 
 Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the "DO NOT LAND" in its commit title is a stale status marker left in the PR title — status lives in labels and the body, never in the title.
