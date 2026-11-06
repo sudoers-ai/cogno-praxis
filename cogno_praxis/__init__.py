@@ -9,4 +9,4 @@ First vertical: ``scheduler`` — the agenda capability, shipping the **SECRETAR
 persona (the universal reception/scheduling front door for any client).
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"
