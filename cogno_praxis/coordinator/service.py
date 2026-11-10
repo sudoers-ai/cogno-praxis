@@ -403,6 +403,7 @@ def _professor_designates(target: str, cell: str) -> bool:
        («silva» inside «ana silva»), the contiguous shape the listing already answered.
     2. the two are one name written in a different number of words — :func:`_is_abbreviation_of`
        in EITHER direction (same first name, every word of the shorter already in the fuller).
+       A one-word cell (the first name alone) designates nobody by reading 2.
 
     The second reading is what the substring misses in ONE direction: the registry's FULL
     spelling finding a class the grade keeps under a SHORTER one. «Belmira Quostral Vendrim»
@@ -421,7 +422,9 @@ def _professor_designates(target: str, cell: str) -> bool:
     if n in c:
         return True
     tn, tc = _name_tokens(target), _name_tokens(cell)
-    return _is_abbreviation_of(tn, tc) or _is_abbreviation_of(tc, tn)
+    # A cell with the first name ALONE is an "abbreviation" of every name that starts with it,
+    # and `confirm_swap` moves `src_matches[0]`: by this reading it designates nobody.
+    return _is_abbreviation_of(tn, tc) or (len(tc) >= 2 and _is_abbreviation_of(tc, tn))
 
 
 def _own_spellings(label: str, spellings: Iterable[str]) -> set[tuple[str, ...]]:

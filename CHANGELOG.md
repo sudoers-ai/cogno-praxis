@@ -21,15 +21,18 @@ Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the
   `_is_abbreviation_of`, in EITHER direction), after the folded substring it keeps byte for byte.
   The cadastro's full name now finds the short grade cell, a query that drops a middle word finds
   the full one, and accents decide neither. It only ADDS matches to the substring; a word of the
-  query the cell does not carry still stops it, so a different professor sharing only the first
-  name is never pulled in. Reaches every oversight read and the two writes `_visible` scopes
+  shorter name that the fuller one does not carry stops it («Belmira Astrade» is not «Belmira
+  Quostral Vendrim»), and a cell with the first name alone designates nobody by the new reading —
+  it could be anyone with that first name — so a swap never moves another professor's class.
+  Reaches every oversight read and the two writes `_visible` scopes
   (`confirm_swap`, `record_class_response`); the privacy-filtered own-name branch
   (`_own_spellings`) and the pay/e-mail resolver anchored to the declared cast (`_professor_hits`)
   are untouched.
 - **Tests.** `tests/unit/test_the_full_name_finds_the_short_grade_class.py` — the full registry
   name finds the short class and swaps it, a partial/middle-dropped and an accent-variant name
   resolve, and the controls (a different same-first-name professor is not matched; the substring
-  shapes still resolve). No model, no network.
+  shapes still resolve). `tests/unit/test_consultor_203_o_nome_proprio_sozinho_nao_e_a_pessoa.py`
+  — the first name alone never moves another professor's class. No model, no network.
 
 ### Changed — NEO's prompt v2: proactive, it requests changes from the bridge (2026-11-02)
 

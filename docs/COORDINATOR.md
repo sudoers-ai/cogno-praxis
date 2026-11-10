@@ -197,11 +197,13 @@ different number of words — same first name, every word of the shorter already
 So the cadastro's full name finds the short grade cell, a query that drops a middle word finds
 the full one, and accents decide neither. It is the token rule the rest of this module already
 names people by: no `difflib`, no edit distance, no threshold of resemblance. It only ADDS
-matches to the substring that was there, and a word of the query the cell does not carry still
-stops it — «Belmira Quostral Vendrim» never pulls in a different «Belmira». It reaches every
-oversight read and the two writes `_visible` scopes (`confirm_swap`, `record_class_response`); the
-non-oversight, privacy-filtered branch (`_own_spellings`) and the pay/e-mail resolver that anchors
-to the declared cast (`_professor_hits` → groups) are untouched.
+matches to the substring that was there. A word of the shorter name that the fuller one does not
+carry stops it («Belmira Astrade» is not «Belmira Quostral Vendrim»), and a cell with the first
+name ALONE designates nobody by the new reading — it could be anyone with that first name, and
+`confirm_swap` moves the first class it finds. It reaches every oversight read and the two writes
+`_visible` scopes (`confirm_swap`, `record_class_response`); the non-oversight, privacy-filtered
+branch (`_own_spellings`) and the pay/e-mail resolver that anchors to the declared cast
+(`_professor_hits` → groups) are untouched.
 `tests/unit/test_the_full_name_finds_the_short_grade_class.py`.
 
 ## The coordination's e-mail: the tenant's tags, filled from these tools (R-T13, 2026-10-22)
