@@ -8,6 +8,29 @@ Publishes every «Unreleased» entry below, merged since 0.1.1. No change of its
 
 Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the "DO NOT LAND" in its commit title is a stale status marker left in the PR title — status lives in labels and the body, never in the title.
 
+### Fixed — the coordination finds a class by the registry's full name when the grade keeps it short (2026-11-10)
+
+- **Why.** The oversight branch of `CoordinatorService._visible` matched a `professor=<name>`
+  against a schedule cell as a folded (accent/case-insensitive) SUBSTRING. A substring is
+  contiguous and one-directional: a shorter query sits inside a fuller cell, but the registry's
+  FULL spelling does not sit inside the grade's SHORTER one — «Belmira Quostral Vendrim» is not
+  inside «Belmira Quostral». So the coordination answered «no class found» about a professor
+  whose class was there, and a swap named by the cadastro spelling could not locate it.
+- **What.** `service._professor_designates` reads the two names as one person written in a
+  different number of words (same first name, every word of the shorter already in the fuller —
+  `_is_abbreviation_of`, in EITHER direction), after the folded substring it keeps byte for byte.
+  The cadastro's full name now finds the short grade cell, a query that drops a middle word finds
+  the full one, and accents decide neither. It only ADDS matches to the substring; a word of the
+  query the cell does not carry still stops it, so a different professor sharing only the first
+  name is never pulled in. Reaches every oversight read and the two writes `_visible` scopes
+  (`confirm_swap`, `record_class_response`); the privacy-filtered own-name branch
+  (`_own_spellings`) and the pay/e-mail resolver anchored to the declared cast (`_professor_hits`)
+  are untouched.
+- **Tests.** `tests/unit/test_the_full_name_finds_the_short_grade_class.py` — the full registry
+  name finds the short class and swaps it, a partial/middle-dropped and an accent-variant name
+  resolve, and the controls (a different same-first-name professor is not matched; the substring
+  shapes still resolve). No model, no network.
+
 ### Changed — NEO's prompt v2: proactive, it requests changes from the bridge (2026-11-02)
 
 - **Why.** The four slots predated the change requests: «only proposes, nothing changes», two

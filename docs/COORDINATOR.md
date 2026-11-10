@@ -181,6 +181,29 @@ Nothing was swapped…»): an oversight caller (`_OVERSIGHT_ROLES`, the predicat
 sees the whole master schedule, and the swap used to take the FIRST class found on
 `original_date`, whoever taught it. Naming the professor swaps that class, as before.
 
+## The full registry name finds a class the grade keeps short (2026-11-10)
+
+The oversight branch of `CoordinatorService._visible` matched a `professor=<name>` as a folded
+(accent/case-insensitive) SUBSTRING of the schedule cell — `"silva"` inside `"ana silva"`. A
+substring is contiguous and one-directional: a SHORTER query sits inside a fuller cell, but the
+registry's FULL spelling does not sit inside the grade's SHORTER one. «Belmira Quostral Vendrim»
+(the cadastro) is not a substring of «Belmira Quostral» (the grade), so the coordination answered
+«no class found» about a professor whose class was right there, and the swap named by the
+registry spelling could not locate it.
+
+`service._professor_designates(target, cell)` now reads the two names as one person written in a
+different number of words — same first name, every word of the shorter already in the fuller
+(`_is_abbreviation_of`), in EITHER direction, after the folded substring it keeps byte for byte.
+So the cadastro's full name finds the short grade cell, a query that drops a middle word finds
+the full one, and accents decide neither. It is the token rule the rest of this module already
+names people by: no `difflib`, no edit distance, no threshold of resemblance. It only ADDS
+matches to the substring that was there, and a word of the query the cell does not carry still
+stops it — «Belmira Quostral Vendrim» never pulls in a different «Belmira». It reaches every
+oversight read and the two writes `_visible` scopes (`confirm_swap`, `record_class_response`); the
+non-oversight, privacy-filtered branch (`_own_spellings`) and the pay/e-mail resolver that anchors
+to the declared cast (`_professor_hits` → groups) are untouched.
+`tests/unit/test_the_full_name_finds_the_short_grade_class.py`.
+
 ## The coordination's e-mail: the tenant's tags, filled from these tools (R-T13, 2026-10-22)
 
 From E1 (2026-10-06) until R-T13 a templated e-mail about one professor's month was filled by a

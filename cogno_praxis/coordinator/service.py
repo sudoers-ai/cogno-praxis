@@ -393,6 +393,37 @@ def _fuller(short: tuple[str, ...], long: tuple[str, ...]) -> bool:
     return _is_abbreviation_of(short, long) and short[-1] == long[-1]
 
 
+def _professor_designates(target: str, cell: str) -> bool:
+    """Does an oversight ``professor=<target>`` name the person a schedule ``cell`` spells —
+    folded for accent and case (:func:`_norm`)?
+
+    Two readings, and the first is the rule the oversight read always had, kept byte for byte:
+
+    1. ``target`` is a folded SUBSTRING of ``cell`` — a family name inside a full name
+       («silva» inside «ana silva»), the contiguous shape the listing already answered.
+    2. the two are one name written in a different number of words — :func:`_is_abbreviation_of`
+       in EITHER direction (same first name, every word of the shorter already in the fuller).
+
+    The second reading is what the substring misses in ONE direction: the registry's FULL
+    spelling finding a class the grade keeps under a SHORTER one. «Belmira Quostral Vendrim»
+    (the cadastro) is not inside «Belmira Quostral» (the grade), but the grade's spelling is
+    an abbreviation of it, so it now resolves; the same reading lets a query that drops a
+    middle name reach the full cell. There is no ``difflib``, no edit distance, no threshold
+    of resemblance — the token rule the rest of this module reads names by.
+
+    A blank on either side designates nobody (a free slot has no professor), as the substring
+    did: ``""`` is inside every string, and the oversight branch already checks ``target``
+    non-empty before it gets here.
+    """
+    n, c = _norm(target), _norm(cell)
+    if not n or not c:
+        return bool(n) and n in c
+    if n in c:
+        return True
+    tn, tc = _name_tokens(target), _name_tokens(cell)
+    return _is_abbreviation_of(tn, tc) or _is_abbreviation_of(tc, tn)
+
+
 def _own_spellings(label: str, spellings: Iterable[str]) -> set[tuple[str, ...]]:
     """Which of ``spellings`` are the CALLER's own name — the rows a non-oversight role may see.
 
@@ -1127,8 +1158,9 @@ class CoordinatorService:
             return [e for e in entries if _name_tokens(e.professor) in mine], None
         if not target:                      # oversight + no professor → the whole master schedule
             return entries, None
-        n = _norm(target)
-        return [e for e in entries if n in _norm(e.professor)], None
+        # Folded substring OR one name written in a different number of words, so the cadastro's
+        # FULL spelling finds a class the grade keeps under a SHORTER one (:func:`_professor_designates`).
+        return [e for e in entries if _professor_designates(target, e.professor)], None
 
     # ── read tools ───────────────────────────────────────────────────────────────────
     def resolve_turmas(self, turma: str) -> list[str]:
