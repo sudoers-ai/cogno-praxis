@@ -272,7 +272,9 @@ Two fixes to what `get_professor_schedule` prints
   row are never a discipline's last class). The listing groups «per (turma+disciplina)»
   (`by_discipline=True`), so an `- Aula adiada`/`- reposição` annotation does not split one
   discipline into several each marked last; `ibope_status`/`check_deadlines` keep the raw-subject
-  grouping they shipped with. The mark is a READ annotation, not part of the discipline — a persona
+  grouping they shipped with. A class the schedule annotates as put off (`- Aula adiada`,
+  `ClassEntry.is_postponed`) is never the discipline's last — the latest class that is HELD carries
+  the mark, never a dated row for a class that will not be given. The mark is a READ annotation, not part of the discipline — a persona
   copying the schedule into e-mail records drops it (the records' `disciplina` stays the discipline
   name).
 

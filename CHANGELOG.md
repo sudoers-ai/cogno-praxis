@@ -22,8 +22,10 @@ Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the
   (`CoordinatorService._last_class_dates`); the listing groups «per (turma+disciplina)» so an
   `- Aula adiada`/`- reposição` annotation does not split one discipline into several each marked
   last, while `ibope_status`/`check_deadlines` keep the raw-subject grouping they shipped with (no
-  behaviour change there). A free slot is never a discipline's last class.
-- `tests/unit/test_schedule_drops_blank_rows.py` and `tests/unit/test_schedule_marks_last_class.py`; `docs/COORDINATOR.md`.
+  behaviour change there). A free slot is never a discipline's last class, and a class the schedule
+  annotates as put off (`- Aula adiada`) is never the discipline's last — the latest class that is
+  held carries the mark.
+- `tests/unit/test_schedule_drops_blank_rows.py`, `tests/unit/test_schedule_marks_last_class.py` and `tests/unit/test_consultor_204_a_aula_adiada_nao_e_a_ultima.py`; `docs/COORDINATOR.md`.
 
 ### Changed — NEO's prompt v2: proactive, it requests changes from the bridge (2026-11-02)
 
