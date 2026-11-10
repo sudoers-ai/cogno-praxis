@@ -71,8 +71,10 @@ class ClassEntry:
         last on its earlier lines. The decision is
         :meth:`~cogno_praxis.coordinator.service.CoordinatorService._last_class_dates` — the one the
         survey (IBOPE) reminder and the grade/attendance deadlines already use — so a free slot or a
-        row with no date is never the last class of anything. A reader that never stamps it (every
-        other listing) reads ``False`` and renders exactly as before."""
+        row with no date is never the last class of anything. A class the schedule annotates as put
+        off («- Aula adiada», :attr:`is_postponed`) is never the discipline's last — the latest
+        class that is HELD carries the mark. A reader that never stamps it (every other listing)
+        reads ``False`` and renders exactly as before."""
         return getattr(self, "_last_class", False)
 
     @property

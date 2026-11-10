@@ -1237,7 +1237,7 @@ class CoordinatorService:
         last_of = self._last_class_dates(entries, by_discipline=True)
         for e in entries:
             e._last_class = (  # type: ignore[attr-defined]
-                e.when is not None and not e.is_free_slot
+                e.when is not None and not e.is_free_slot and not e.is_postponed
                 and last_of.get(self._last_class_key(e, by_discipline=True)) == e.when)
         return self._filter_schedule(entries, month=month, discipline=discipline, turma=turma,
                                      include_past=include_past, apply_horizon=apply_horizon,
@@ -1320,11 +1320,13 @@ class CoordinatorService:
         carry :attr:`~ClassEntry.is_free_slot`. Computed over WHATEVER entries the caller hands
         over — the listing passes the WHOLE visible sheet, so a window that hides a later class does
         not move the last one. ``by_discipline`` is the listing's «per (turma+disciplina)» grouping
-        (annotated variants of one discipline fold together); the survey and deadlines keep the raw
-        subject grouping they shipped with."""
+        (annotated variants of one discipline fold together); under it a class the schedule
+        annotates as put off («- Aula adiada», :attr:`~ClassEntry.is_postponed`) is dropped too, so
+        the latest class that is HELD carries the mark, never one that will not be given. The survey
+        and deadlines keep the raw subject grouping they shipped with."""
         last_of: dict[tuple, date] = {}
         for e in entries:
-            if e.when is None or e.is_free_slot:
+            if e.when is None or e.is_free_slot or (by_discipline and e.is_postponed):
                 continue
             k = cls._last_class_key(e, by_discipline=by_discipline)
             if k not in last_of or e.when > last_of[k]:
