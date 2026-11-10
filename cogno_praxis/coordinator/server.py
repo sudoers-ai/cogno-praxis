@@ -719,6 +719,7 @@ def build_server(service: Optional[CoordinatorService] = None, *,
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_professor_schedule(professor: str = "", month: str = "", discipline: str = "",
                                turma: str = "", include_past: bool = False,
+                               mark_last_class: bool = False,
                                identity_label: str = "", role: str = "") -> str:
         """List a professor's class schedule (aggregated across all course spreadsheets, sorted
         by date, under a bold month header). EVERY line names its class group as its MIDDLE
@@ -739,12 +740,17 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         history") — naming a month that is already over counts as asking, and needs no flag;
         asking about OTHER CLASS GROUPS is not asking about the past. A professor sees only
         their own classes; a supervisor may name any professor or omit it for the whole master
-        schedule."""
+        schedule. Set ``mark_last_class=True`` ONLY when the user asks which classes are a
+        discipline's LAST ("qual a última aula da disciplina?", "which are the final classes?") —
+        each line that is its discipline's last then says so. Leave it FALSE for an ordinary
+        schedule read and whenever copying the schedule into an e-mail or a record a person
+        receives: the mark is a reading aid, not part of the class."""
         report = ReadReport()
         return _guard(lambda: _listing(
             svc,
             svc.get_professor_schedule(professor=professor, month=month, discipline=discipline,
-                                       turma=turma, include_past=include_past, report=report,
+                                       turma=turma, include_past=include_past,
+                                       mark_last_class=mark_last_class, report=report,
                                        identity_label=identity_label, role=role),
             empty="No classes found.", report=report, role=role))
 

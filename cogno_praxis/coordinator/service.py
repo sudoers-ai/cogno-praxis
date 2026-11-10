@@ -1180,6 +1180,7 @@ class CoordinatorService:
                                identity_label: str = "", month: str = "",
                                discipline: str = "", turma: str = "",
                                include_past: bool = False, apply_horizon: bool = True,
+                               mark_last_class: bool = False,
                                report: Optional[ReadReport] = None) -> list[ClassEntry]:
         """A professor's (or, for oversight, anyone's) classes, optionally narrowed by ``month``
         (``'2026-03'``, ``'03'``, or a month name in Portuguese or English — ``'março'``,
@@ -1234,11 +1235,18 @@ class CoordinatorService:
         # (turma+disciplina)» (``by_discipline``), so an «- Aula adiada»/«- reposição» annotation
         # does not split a discipline into two each marked last; a free slot and an undated row are
         # never a discipline's last class.
-        last_of = self._last_class_dates(entries, by_discipline=True)
-        for e in entries:
-            e._last_class = (  # type: ignore[attr-defined]
-                e.when is not None and not e.is_free_slot and not e.is_postponed
-                and last_of.get(self._last_class_key(e, by_discipline=True)) == e.when)
+        #
+        # OPT-IN by the caller (``mark_last_class``): the mark is a READING annotation, approved
+        # for the schedule read the model consumes to answer "which class is a discipline's last",
+        # NOT for what a professor RECEIVES. A persona copying the schedule into an e-mail record
+        # reads the DEFAULT listing (no mark), so the annotation never travels into the e-mail/NF
+        # body by side effect. A caller that wants the annotation asks for it.
+        if mark_last_class:
+            last_of = self._last_class_dates(entries, by_discipline=True)
+            for e in entries:
+                e._last_class = (  # type: ignore[attr-defined]
+                    e.when is not None and not e.is_free_slot and not e.is_postponed
+                    and last_of.get(self._last_class_key(e, by_discipline=True)) == e.when)
         return self._filter_schedule(entries, month=month, discipline=discipline, turma=turma,
                                      include_past=include_past, apply_horizon=apply_horizon,
                                      report=report)

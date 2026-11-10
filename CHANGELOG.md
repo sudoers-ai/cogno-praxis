@@ -41,7 +41,7 @@ Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the
   unfiltered read answered with a wall of them and buried the real classes. `server._fmt_list` now
   skips an undated entry with no content (`server._has_listable_content`). A row with NO date but
   WITH content (an undated note) still appears — the test is content, never the date alone.
-- **Each line marks the discipline's LAST class** (`· última aula da disciplina`), decided over
+- **A line can mark the discipline's LAST class** (`· última aula da disciplina`), decided over
   the WHOLE visible sheet BEFORE the window narrows anything, so a discipline continuing into a
   later month is not marked last on its earlier lines. It reuses the one mechanism the survey
   (IBOPE) reminder and the grade/attendance deadlines already use
@@ -51,6 +51,13 @@ Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the
   behaviour change there). A free slot is never a discipline's last class, and a class the schedule
   annotates as put off (`- Aula adiada`) is never the discipline's last — the latest class that is
   held carries the mark.
+- **The mark is OPT-IN by the caller** (`get_professor_schedule(..., mark_last_class=True)`,
+  default `False`): it is a READING annotation, for the schedule read the model consumes to answer
+  "which class is a discipline's last?", NOT part of the class. The DEFAULT listing carries no
+  mark, so a persona copying the schedule into an e-mail record or a message a person RECEIVES
+  reads the clean line and the annotation never travels there by side effect. The stamp
+  (`ClassEntry.is_last_class`) is only computed when the caller asks, so every other reader — the
+  calendar export, the pay listing, a plain schedule read — is byte-for-byte what it was before.
 - `tests/unit/test_schedule_drops_blank_rows.py`, `tests/unit/test_schedule_marks_last_class.py` and `tests/unit/test_consultor_204_a_aula_adiada_nao_e_a_ultima.py`; `docs/COORDINATOR.md`.
 
 ### Changed — NEO's prompt v2: proactive, it requests changes from the bridge (2026-11-02)

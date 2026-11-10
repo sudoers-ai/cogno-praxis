@@ -47,7 +47,8 @@ def _listing(svc, **args) -> str:
     async def run():
         res = await mcp.call_tool(
             "get_professor_schedule",
-            {"role": "SUPERVISOR", "identity_label": "Quéfren Zalábria", **args})
+            {"role": "SUPERVISOR", "identity_label": "Quéfren Zalábria",
+             "mark_last_class": True, **args})
         return "\n".join(b.text for b in res[0] if getattr(b, "type", None) == "text")
 
     return asyncio.run(run())

@@ -37,6 +37,6 @@ def test_GEMEO_a_postponed_class_is_not_the_disciplines_last():
                                    "101"]])
     svc = CoordinatorService(store, CoordinatorConfig(_RULES), today=lambda: date(2026, 11, 10))
     rows = {e.date_str: e for e in svc.get_professor_schedule(
-        professor=_PROF, identity_label="Coordenação", role="SUPERVISOR")}
+        professor=_PROF, identity_label="Coordenação", role="SUPERVISOR", mark_last_class=True)}
     assert rows["28/11/2026"].is_postponed and not rows["28/11/2026"].is_last_class
     assert rows["14/11/2026"].is_last_class

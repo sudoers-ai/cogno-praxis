@@ -118,24 +118,21 @@ def test_no_prompt_da_voz_a_negativa_vem_antes_das_aulas():
 
 # ── the controls: a read WITH its data renders byte for byte as on praxis main ───────────
 
-#: sha256 of the tool's text per read (the miss is the one that moves). Re-taken when the listing
-#: gained the discipline's last-class mark: only the reads that actually CONTAIN a last class moved
-#: (``other_month`` and ``turma_miss`` list nothing, so their digest is byte for byte main's — the
-#: proof the mark is surgical, not a blanket reformat).
+#: sha256 of the tool's text on praxis main 6d46f598, per read (the miss is the one that moves).
 _MAIN = {
-    "no_discipline": ({}, "73854fd934acddf6bacc90efcd5e561240e3b391610eb3d6545effd52c6ca786"),
+    "no_discipline": ({}, "c4b5970ba175a79b1525fdd61bdcaab4a4a2fa631b16682784b1d4b1a955edbb"),
     "matching_discipline": ({"discipline": "Bancos NoSQL"},
-                            "bf5941652d437364120c4df8b0b5763b37be61076340301d80c8cafa37444790"),
+                            "448b00d36f91c0ed2715eec1046606de57830dcc6e2734d352362148cff0a8ac"),
     "matching_fuzzy": ({"discipline": "spark distribuido"},
-                       "7204da8352bd576fbe88b92ad1942ec58f1f6891724b5882e113c167ef6d1be0"),
+                       "6ece832719b2bdc70931531f33928518e41412ffc2624b042f5571571b0db012"),
     "other_month": ({"discipline": "Spark", "month": "2026-10"},
                     "a26f297bf70db95de30b967ad080a073ed883aaf8df651b6d44cbb3a80096ddc"),
     "include_past": ({"include_past": True},
-                     "139ad68d3e88c3c427efb48acc96f59b5c60d58729fb440f3d1db541c2f28f26"),
+                     "d06827046bc61b506f722ed94db370ea084ec38cdaed288b0dfbf27194b72539"),
     "turma_miss": ({"turma": "ZZ_99"},
                    "f914e6f16ac290e4442c526ee0277b13985a8ec964e29eb3ad1e7f16e9bd97c3"),
     "month": ({"month": "2026-11"},
-              "a1e07b3b72a0e35f45b5465786367792a2cf20a69b459989f828cc722f5aa5a4"),
+              "eeb82dd07b4500771c87d1eb94484b45e9bc65263e4357ed1059442f4f0a0358"),
 }
 
 #: The miss on praxis main — the broken world, so the control below is shown to discriminate.

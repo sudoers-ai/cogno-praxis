@@ -159,9 +159,7 @@ def test_the_group_reaches_the_other_read_tools_too():
 def test_the_date_is_said_once_and_normalized():
     out = _tool(_service(), turma="SMP_33")
     line = next(ln for ln in out.splitlines() if ln.startswith("- "))
-    # 10/09 is the LAST Redes of this group (the only other is 01/08, in the past), so the line
-    # carries the discipline's last-class mark.
-    assert line == "- 10/09 · Turma SMP_33 · Redes · última aula da disciplina", line
+    assert line == "- 10/09 · Turma SMP_33 · Redes", line
     assert "00:00:00" not in out                      # the raw spreadsheet stamp is gone
     # Said once, and now the YEAR is said once too — by the month header, for the whole group.
     assert out.count("10/09") == 1 and out.count("2026") == 1

@@ -287,9 +287,9 @@ Two fixes to what `get_professor_schedule` prints
   now skips an undated entry that `server._has_listable_content` finds empty (no `date_str`, no
   non-empty cell). A row with NO date but WITH content (an undated note) still appears — the test
   is CONTENT, never the date alone.
-- **Each line says when it is the discipline's LAST class.** `server._fmt_line` appends
-  `· última aula da disciplina` (`server._LAST_CLASS_MARK`) when the entry is the last class of its
-  discipline. It is decided over the WHOLE visible sheet, BEFORE the window narrows anything
+- **A line can say when it is the discipline's LAST class — the caller OPTS IN.** `server._fmt_line`
+  appends `· última aula da disciplina` (`server._LAST_CLASS_MARK`) when the entry is the last class
+  of its discipline. It is decided over the WHOLE visible sheet, BEFORE the window narrows anything
   (`CoordinatorService.get_professor_schedule` stamps `ClassEntry.is_last_class`), so a discipline
   continuing into a later month is NOT marked last on its earlier-month lines. The decision is the
   one mechanism the survey (IBOPE) reminder and the grade/attendance deadlines already use,
@@ -299,9 +299,15 @@ Two fixes to what `get_professor_schedule` prints
   discipline into several each marked last; `ibope_status`/`check_deadlines` keep the raw-subject
   grouping they shipped with. A class the schedule annotates as put off (`- Aula adiada`,
   `ClassEntry.is_postponed`) is never the discipline's last — the latest class that is HELD carries
-  the mark, never a dated row for a class that will not be given. The mark is a READ annotation, not part of the discipline — a persona
-  copying the schedule into e-mail records drops it (the records' `disciplina` stays the discipline
-  name).
+  the mark, never a dated row for a class that will not be given.
+  - **The mark is OPT-IN** (`get_professor_schedule(..., mark_last_class=True)`, default `False`): it
+    is a READ annotation, for the schedule read the model consumes to answer "which class is a
+    discipline's last?", and NOT part of the discipline. The stamp is computed only when the caller
+    asks, so the DEFAULT listing carries no mark — a persona copying the schedule into an e-mail
+    record or a message a person RECEIVES reads the clean line, and the annotation never travels
+    there by side effect (the records' `disciplina` stays the discipline name). Every other reader —
+    the calendar export, the pay listing, a plain schedule read — is byte-for-byte what it was
+    before the mark existed.
 
 ## A rehearsal tenant's classes, from a FILE (2026-10-21)
 

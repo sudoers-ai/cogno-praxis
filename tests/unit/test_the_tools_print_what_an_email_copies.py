@@ -186,10 +186,8 @@ def _digest(parts: "list[str]") -> str:
     return hashlib.sha256("\x00".join(parts).encode("utf-8")).hexdigest()[:16]
 
 
-#: ``_blocks`` (pay) is taken on ``ad935b4`` and is untouched by the listing change.
-#: ``_listings`` was re-taken when the listing gained the discipline's last-class mark (the pay
-#: blocks it is paired with did not move — that is ``BASE_BLOCKS`` staying put).
-BASE_UNTIMED_LISTINGS = "0f5b5492c87b53b2"
+#: Taken on ``ad935b4`` (the base of this change) by running ``_listings``/``_blocks`` there.
+BASE_UNTIMED_LISTINGS = "5fed384fef83acf4"
 BASE_BLOCKS = "19cd89ab8d48179c"
 
 
@@ -219,15 +217,12 @@ def test_the_listing_line_carries_the_hour_and_the_day_is_in_hour_order():
     out = _call(_svc(), "get_professor_schedule",
                 {"month": "2026-09", "identity_label": PROF, "role": "EMPLOYEE",
                  "include_past": True})
-    # The last class of each (turma, discipline) over the WHOLE sheet carries the mark: 12/09 is
-    # XA_01's last Redes (05/09 is not), Zoologia and banco each occur once; 19/09 is YB_02's only
-    # Redes; 26/09 Cálculo is NOT last (the discipline runs past September, out of this window).
     assert ("*Setembro de 2026*\n"
             "- 05/09 08:00 · Turma XA_01 · Redes de Computadores\n"
-            "- 12/09 08:00 · Turma XA_01 · Redes de Computadores · última aula da disciplina\n"
-            "- 12/09 10:00 · Turma XA_01 · Zoologia Aplicada · última aula da disciplina\n"
-            "- 12/09 · Turma XA_01 · banco de dados · última aula da disciplina\n"
-            "- 19/09 13:30 · Turma YB_02 · Redes de Computadores · última aula da disciplina\n"
+            "- 12/09 08:00 · Turma XA_01 · Redes de Computadores\n"
+            "- 12/09 10:00 · Turma XA_01 · Zoologia Aplicada\n"
+            "- 12/09 · Turma XA_01 · banco de dados\n"
+            "- 19/09 13:30 · Turma YB_02 · Redes de Computadores\n"
             "- 26/09 · Turma XA_01 · Cálculo Numérico") in out
 
 

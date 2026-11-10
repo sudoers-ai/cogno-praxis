@@ -495,14 +495,8 @@ def test_the_supervisors_master_listing_names_the_professor_on_every_line_and_ON
     holiday = "- 07/09 · Turma DSA_33 · Feriado - Independência do Brasil"
     assert holiday in TURN_115_LISTING.splitlines() and holiday not in lines
     assert "- 03/09 · Turma DE_09 · NoSQL and Distributed Databases · Professor: Professor A" in lines
-    # 30/09 is this group's last Microservices class, so the line now carries the discipline's
-    # last-class mark BEFORE the professor part the supervision list adds.
-    assert ("- 30/09 · Turma DSA_33 · Microservices Architecture · última aula da disciplina"
-            " · Professor: Professor C") in lines
-    # The last-class mark is the other thing this listing now adds; TURN_115_LISTING predates both
-    # it and the professor part, so strip both to recover the turn-115 shape byte for byte.
-    stripped = "\n".join(ln.split(" · Professor: ")[0].replace(
-        " · última aula da disciplina", "") for ln in lines)
+    assert "- 30/09 · Turma DSA_33 · Microservices Architecture · Professor: Professor C" in lines
+    stripped = "\n".join(ln.split(" · Professor: ")[0] for ln in lines)
     assert stripped == TURN_115_LISTING.replace(holiday + "\n", "")
     assert len(TURN_115_LISTING) == 1256
 
