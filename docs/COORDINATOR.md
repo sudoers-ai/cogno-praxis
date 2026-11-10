@@ -254,7 +254,7 @@ reaches every bonus state).
 ## A blank row is nothing to list, and the discipline's LAST class is marked
 
 Two fixes to what `get_professor_schedule` prints
-(`tests/unit/test_schedule_drops_empty_and_marks_last_class.py`).
+(`tests/unit/test_schedule_drops_blank_rows.py` and `tests/unit/test_schedule_marks_last_class.py`).
 
 - **A row with NO date AND NO content is dropped.** An aggregated sheet keeps such rows, and the
   listing's undated branch rendered each as its bare class-group label (`- Turma: <sheet_key>`), so
