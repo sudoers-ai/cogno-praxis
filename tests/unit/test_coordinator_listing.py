@@ -81,12 +81,14 @@ def test_three_classes_over_two_months_render_as_two_headers_and_three_lines():
     body = [ln for ln in out.splitlines() if ln.strip()]
     # exactly the shape asked for, and the ORDER is the assertion — a set would pass on a
     # listing that put October before September, which is the one thing a calendar may not do.
+    # Each of the three is the ONLY class of its discipline, so each IS that discipline's last
+    # class and carries the mark (computed over the whole sheet — see get_professor_schedule).
     assert body[:5] == [
         "*Setembro de 2026*",
-        "- 08/09 · Turma DE_09 · NoSQL and Distributed Databases",
-        "- 30/09 · Turma DE_09 · Workshop de Abertura",
+        "- 08/09 · Turma DE_09 · NoSQL and Distributed Databases · última aula da disciplina",
+        "- 30/09 · Turma DE_09 · Workshop de Abertura · última aula da disciplina",
         "*Outubro de 2026*",
-        "- 02/10 · Turma DE_09 · Fundamentals of Data Engineering · Remarcada",
+        "- 02/10 · Turma DE_09 · Fundamentals of Data Engineering · Remarcada · última aula da disciplina",
     ]
 
 
@@ -201,11 +203,14 @@ def test_a_status_the_tenant_did_not_declare_still_prints():
 
 
 def test_the_status_column_is_read_by_name_not_by_position():
+    # The entry is the only NoSQL class, so it is that discipline's last and carries the mark —
+    # which is why these look for the status by membership, not at the tail of the line.
     e = _svc(_THREE).get_professor_schedule(role="SUPERVISOR", identity_label="Sofia")[0]
-    assert _fmt_line(e, defaults=("Confirmado",), status_column="Status").endswith("Databases")
+    line = _fmt_line(e, defaults=("Confirmado",), status_column="Status")
+    assert "NoSQL and Distributed Databases" in line and "Confirmado" not in line
     # a tenant whose sheet has no such column simply gets no status, never a crash or a guess
-    assert _fmt_line(e, defaults=("Confirmado",), status_column="Situação").endswith("Databases")
-    assert _fmt_line(e, defaults=(), status_column="Status").endswith("· Confirmado")
+    assert "Confirmado" not in _fmt_line(e, defaults=("Confirmado",), status_column="Situação")
+    assert "· Confirmado ·" in _fmt_line(e, defaults=(), status_column="Status")
 
 
 # ── the marker itself: one asterisk, everywhere, measured on what is PRODUCED ─────────

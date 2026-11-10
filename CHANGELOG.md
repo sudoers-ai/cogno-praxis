@@ -8,6 +8,23 @@ Publishes every «Unreleased» entry below, merged since 0.1.1. No change of its
 
 Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the "DO NOT LAND" in its commit title is a stale status marker left in the PR title — status lives in labels and the body, never in the title.
 
+### Fixed — the schedule drops blank rows and marks a discipline's last class (`get_professor_schedule`)
+
+- **A blank row is nothing to list.** A sheet row with NO date AND NO content reached the
+  listing's undated branch and rendered as its bare class-group label (`- Turma: <sheet_key>`); an
+  unfiltered read answered with a wall of them and buried the real classes. `server._fmt_list` now
+  skips an undated entry with no content (`server._has_listable_content`). A row with NO date but
+  WITH content (an undated note) still appears — the test is content, never the date alone.
+- **Each line marks the discipline's LAST class** (`· última aula da disciplina`), decided over
+  the WHOLE visible sheet BEFORE the window narrows anything, so a discipline continuing into a
+  later month is not marked last on its earlier lines. It reuses the one mechanism the survey
+  (IBOPE) reminder and the grade/attendance deadlines already use
+  (`CoordinatorService._last_class_dates`); the listing groups «per (turma+disciplina)» so an
+  `- Aula adiada`/`- reposição` annotation does not split one discipline into several each marked
+  last, while `ibope_status`/`check_deadlines` keep the raw-subject grouping they shipped with (no
+  behaviour change there). A free slot is never a discipline's last class.
+- `tests/unit/test_schedule_drops_empty_and_marks_last_class.py`; `docs/COORDINATOR.md`.
+
 ### Changed — NEO's prompt v2: proactive, it requests changes from the bridge (2026-11-02)
 
 - **Why.** The four slots predated the change requests: «only proposes, nothing changes», two
