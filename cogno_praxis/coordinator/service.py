@@ -1227,6 +1227,18 @@ class CoordinatorService:
                                      role=role, identity_label=identity_label, report=report)
         if err:
             raise CoordinatorAccessError(err)
+        # The LAST class of each discipline is decided over the WHOLE visible sheet, BEFORE the
+        # window narrows anything — a discipline continuing into December must not be marked last
+        # on its November lines just because December is out of the asked month. The same mechanism
+        # the survey reminder and the deadlines read (``_last_class_dates``), grouped «per
+        # (turma+disciplina)» (``by_discipline``), so an «- Aula adiada»/«- reposição» annotation
+        # does not split a discipline into two each marked last; a free slot and an undated row are
+        # never a discipline's last class.
+        last_of = self._last_class_dates(entries, by_discipline=True)
+        for e in entries:
+            e._last_class = (  # type: ignore[attr-defined]
+                e.when is not None and not e.is_free_slot
+                and last_of.get(self._last_class_key(e, by_discipline=True)) == e.when)
         return self._filter_schedule(entries, month=month, discipline=discipline, turma=turma,
                                      include_past=include_past, apply_horizon=apply_horizon,
                                      report=report)
@@ -1286,6 +1298,39 @@ class CoordinatorService:
                 entries = near
         return entries
 
+    @staticmethod
+    def _last_class_key(e: ClassEntry, *, by_discipline: bool = False) -> tuple:
+        """The key «which discipline, in which group, of which professor» a last-class map is
+        grouped by. ``by_discipline`` folds an annotation off the subject cell (:func:`_discipline`),
+        so «Spark», «Spark - Aula adiada» and «Spark - reposição do dia 14/09» share one key; the
+        default is the raw subject cell, the historical grouping of the callers below."""
+        subject = _discipline(e.subject) if by_discipline else e.subject
+        return (e.sheet_id, _norm(e.professor), _norm(subject))
+
+    @classmethod
+    def _last_class_dates(cls, entries: list[ClassEntry], *,
+                          by_discipline: bool = False) -> dict[tuple, date]:
+        """``{key: the LATEST dated class}`` — the ONE place "which class is a discipline's last"
+        is decided, read by the survey (IBOPE) reminder (:meth:`ibope_status`), the grade/attendance
+        deadlines (:meth:`check_deadlines`) and the listing's last-class mark
+        (:meth:`get_professor_schedule`).
+
+        A free slot and an undated row are not a class of the discipline and are never its last —
+        «Espaço Reservado para Reposição» and the other free-slot labels fall out here because they
+        carry :attr:`~ClassEntry.is_free_slot`. Computed over WHATEVER entries the caller hands
+        over — the listing passes the WHOLE visible sheet, so a window that hides a later class does
+        not move the last one. ``by_discipline`` is the listing's «per (turma+disciplina)» grouping
+        (annotated variants of one discipline fold together); the survey and deadlines keep the raw
+        subject grouping they shipped with."""
+        last_of: dict[tuple, date] = {}
+        for e in entries:
+            if e.when is None or e.is_free_slot:
+                continue
+            k = cls._last_class_key(e, by_discipline=by_discipline)
+            if k not in last_of or e.when > last_of[k]:
+                last_of[k] = e.when
+        return last_of
+
     def check_deadlines(self, *, professor: str = "", role: str = "",
                         identity_label: str = "",
                         report: Optional[ReadReport] = None) -> list[ClassEntry]:
@@ -1296,18 +1341,12 @@ class CoordinatorService:
         if err:
             raise CoordinatorAccessError(err)
         today = self._today()
-        last_of: dict[tuple, date] = {}
-        for e in entries:
-            if e.when is None or e.is_free_slot:
-                continue
-            k = (e.sheet_id, _norm(e.professor), _norm(e.subject))
-            if k not in last_of or e.when > last_of[k]:
-                last_of[k] = e.when
+        last_of = self._last_class_dates(entries)
         due: list[ClassEntry] = []
         for e in entries:
             if e.when is None or e.is_free_slot:
                 continue
-            k = (e.sheet_id, _norm(e.professor), _norm(e.subject))
+            k = self._last_class_key(e)
             if last_of.get(k) == e.when and e.when < today <= e.when + timedelta(days=GRADE_GRACE_DAYS):
                 due.append(e)
         return due
@@ -1361,15 +1400,9 @@ class CoordinatorService:
         if err:
             raise CoordinatorAccessError(err)
         today = self._today()
-        last_of: dict[tuple, date] = {}
-        for e in entries:
-            if e.when is None or e.is_free_slot:
-                continue
-            k = (e.sheet_id, _norm(e.professor), _norm(e.subject))
-            if k not in last_of or e.when > last_of[k]:
-                last_of[k] = e.when
+        last_of = self._last_class_dates(entries)
         return [e for e in entries if e.when == today and not e.is_free_slot
-                and last_of.get((e.sheet_id, _norm(e.professor), _norm(e.subject))) == today]
+                and last_of.get(self._last_class_key(e)) == today]
 
 
     # ── the day, in one call (COMPOSED — nothing here is a new read) ─────────────────

@@ -63,6 +63,15 @@ def _says_the_same_date(cell: str, e: ClassEntry) -> bool:
     return bool(e.when and parsed and parsed == e.when)
 
 
+#: The mark a line carries when it is the discipline's LAST class (computed over the whole sheet,
+#: not the asked window — see
+#: :meth:`~cogno_praxis.coordinator.service.CoordinatorService.get_professor_schedule`). Contact-
+#: facing like the month header above it, so Portuguese for the same reason ``_MONTH_LABELS_PT``
+#: is: it is the word a professor reads on the line. Named, not inlined, so a renderer that later
+#: owns the channel dressing owns this too.
+_LAST_CLASS_MARK = "última aula da disciplina"
+
+
 def _has_listable_content(e: ClassEntry) -> bool:
     """Does this entry carry anything a reader could use — a date, or a non-empty cell?
 
@@ -316,6 +325,8 @@ def _fmt_line(e: ClassEntry, *, defaults: tuple[str, ...] = (), status_column: s
     status = _entry_status(e, defaults, status_column)
     if status:
         parts.append(status)
+    if e.is_last_class:
+        parts.append(_LAST_CLASS_MARK)
     if professor and e.professor.strip():
         shown = (names or {}).get(_norm(e.professor), "").strip() or e.professor.strip()
         parts.append(f"Professor: {shown}")
