@@ -63,6 +63,17 @@ def _says_the_same_date(cell: str, e: ClassEntry) -> bool:
     return bool(e.when and parsed and parsed == e.when)
 
 
+def _has_listable_content(e: ClassEntry) -> bool:
+    """Does this entry carry anything a reader could use — a date, or a non-empty cell?
+
+    An aggregated sheet keeps blank rows (no date AND no content), and ``_fmt_entry`` renders one
+    as nothing but its class-group label (``Turma: DSA_33``), so an unfiltered read answered with
+    dozens of those lines and buried the real classes. A row with NO date but WITH content (a
+    note, an undated meeting) is still worth showing and is kept — the test is CONTENT, never the
+    date alone."""
+    return bool(e.date_str.strip() or any(c.strip() for c in e.cells))
+
+
 def _fmt_entry(e: ClassEntry) -> str:
     """One class as a compact line: its CLASS GROUP, ONE date, then every other non-empty
     header:cell verbatim, so the model never has to guess column meaning.
@@ -427,6 +438,8 @@ def _fmt_list(entries: list[ClassEntry], *, empty: str,
             entries = _hour_order(entries, times)
         for e in entries:
             if e.when is None:
+                if not _has_listable_content(e):   # a blank row is nothing to list
+                    continue
                 chunks.append(f"- {_fmt_entry(e)}")
                 continue
             key = (e.when.year, e.when.month)
