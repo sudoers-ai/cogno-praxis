@@ -204,6 +204,29 @@ async def test_schedule_settings_tools():
     assert "08:00" in avail
 
 
+async def test_set_schedule_settings_result_never_reads_as_saved():
+    """The result tells the truth: it changed THIS process, it was NOT persisted.
+
+    The config is injected at startup and held in memory; a host that runs this vertical as a
+    short-lived per-turn subprocess loses the change on the next turn. So the tool must never
+    hand back a line that reads as a saved write ("Updated schedule settings: …" did). It says
+    "NOT persisted" and carries neither "saved" nor "guardado" — while the in-memory change it
+    DID make still holds for the life of this process (the control, a long-lived standalone)."""
+    mcp = _server()
+    out = _text(await mcp.call_tool("set_schedule_settings", {"work_start": "08:00"}))
+    # the honest mark is present, and nothing reads as a durable write
+    assert "NOT persisted" in out
+    low = out.lower()
+    assert "saved" not in low and "guardado" not in low
+    # control: the change is real for this running process — a later read reflects it, and so
+    # does availability (set_settings rebuilt the slots), so this is "not saved", not "no-op".
+    after = _text(await mcp.call_tool("get_schedule_settings", {}))
+    assert "work_start=08:00" in after
+    avail = _text(await mcp.call_tool(
+        "check_availability", {"host_id": "dr_silva", "date": "2026-07-01"}))
+    assert "08:00" in avail
+
+
 async def test_set_auto_confirm_tool():
     mcp = _server()
     out = _text(await mcp.call_tool(

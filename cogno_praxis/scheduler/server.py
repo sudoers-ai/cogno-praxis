@@ -384,6 +384,11 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
 
         Times are 'HH:MM'. Use for "abre às 08:00", "passa a atender sábados",
         "máximo 1 agendamento por cliente". Re-computes the available slots immediately.
+
+        The change applies to the CURRENTLY RUNNING service only; it is not written to durable
+        storage, so it is lost when the server restarts (persisting is done wherever the config
+        is stored — e.g. the host's tenant config). The result says so, in every host, and
+        never reads as a saved write.
         """
         overrides = {
             "work_start": work_start or None, "work_end": work_end or None,
@@ -394,7 +399,16 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
             "max_active_per_client": max_active_per_client,
         }
         s = svc.set_settings(**overrides)
-        return "Updated schedule settings: " + ", ".join(f"{k}={v}" for k, v in s.items())
+        # set_settings mutated the config of THIS running service (and rebuilt its slots), so the
+        # change is real and holds for a long-lived standalone server. But the config is injected
+        # at startup and lives in memory: a host that runs this vertical as a short-lived per-turn
+        # subprocess resets it next turn, so the change is NOT persisted. The result states that in
+        # every host rather than reading as a saved write ("Updated …" did) — a false "saved" is
+        # the one outcome worse than a true "not saved". Persisting is the storage owner's job.
+        echoed = ", ".join(f"{k}={v}" for k, v in s.items())
+        return ("Schedule rules changed for THIS running server only — NOT persisted, and lost "
+                "when the server restarts. To make it permanent, change it where the "
+                "configuration is stored. In effect now: " + echoed)
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     def set_auto_confirm(host_id: str, auto_confirm: bool) -> str:

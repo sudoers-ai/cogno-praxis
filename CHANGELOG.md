@@ -1,6 +1,19 @@
 # Changelog
 
-## 0.1.3 — 2026-11-11
+## 0.1.4 — 2026-11-11
+
+### Changed — `set_schedule_settings` tells the truth about persistence
+
+- **`set_schedule_settings` no longer reports a change as if it were saved.** The tool mutates
+  the config of the *currently running* service and rebuilds its slots — a real change that
+  holds for a long-lived standalone server. But the config is injected at startup and lives in
+  memory, so a host that runs this vertical as a short-lived per-turn subprocess loses the change
+  on the next turn. The old result, `"Updated schedule settings: …"`, read as a durable write.
+  It now states plainly that the change applies to this running server only, is **not persisted**,
+  and is lost on restart, and points the caller at wherever the configuration is actually stored
+  for a permanent change. No refusal (the in-memory change is legitimate where the server is
+  long-lived), no new table, no store hook — only honest wording. The field echo (`k=v`) is
+  preserved, so availability grounding and existing callers are unaffected.
 
 ### Fixed — scheduler persistence and visibility
 

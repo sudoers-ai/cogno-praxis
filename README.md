@@ -446,6 +446,15 @@ so the EGO holds it for confirmation.
   lifecycle + the "from tomorrow on" rule) over the store.
 - `server.py` — the thin FastMCP wrapper exposing the service as annotated tools.
   `build_server(service)` is the only injection seam (see `examples/run_with_db.py`).
+
+> **Config is in memory, not in the store.** The tenant's rules (hours / lunch / weekends /
+> slot) are injected once at service construction and held in memory; appointments are the only
+> thing the store persists. `set_schedule_settings` therefore changes the **currently running**
+> server's rules and nothing more — a real change on a long-lived standalone server, but lost on
+> restart, and reset every turn for a host that runs this vertical as a short-lived per-turn
+> subprocess. The tool's result says so and never reads as a saved write; persisting a rule
+> change is the storage owner's job (e.g. the host writes its own tenant config and re-injects
+> it on the next turn).
 - `prompts/` — the bundled **SECRETARY** persona slots (system / scope / limits / voice),
   loaded by the host via `cogno-persona`. The capability is persona-agnostic; SECRETARY
   is simply its default face.
