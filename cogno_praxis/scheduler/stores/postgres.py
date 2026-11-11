@@ -155,7 +155,14 @@ class PgAppointmentStore:
     def close(self) -> None:
         self._conn.close()
 
-    # ── hosts (seed/admin — outside the read/write Protocol) ────────────
+    # ── hosts (catalog write port + seed/admin) ─────────────────────────
+    def put_host(self, host: Host) -> None:
+        """Persist a host's current state (the Protocol write port used by, e.g.,
+        ``set_auto_confirm``). ``get_host`` rebuilds a ``Host`` from a row, so a mutation of
+        the returned object is a mutation of a throwaway — it must be written back here, or it
+        is lost at the end of the turn. Same idempotent upsert as ``add_host``."""
+        self.add_host(host)
+
     def add_host(self, host: Host) -> None:
         self._conn.execute(
             """INSERT INTO schedule_hosts (scope, host_id, name, role, auto_confirm)

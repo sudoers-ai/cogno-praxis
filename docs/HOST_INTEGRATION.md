@@ -161,6 +161,10 @@ MCP boundary — the host that connects (stdio subprocess or a long-running HTTP
 need not share the pool. **Multi-tenancy** is just *which* store/DSN you build here (one
 process/DSN per tenant), not a column the scheduler filters — it stays tenant-agnostic.
 
+A real adapter must implement the full `AppointmentStore` port, including the **write port**
+`put_host` (persist a host's state). `set_auto_confirm` writes the flag back through it,
+because `get_host` may return a row-rebuilt copy whose mutation would otherwise be lost.
+
 ## 5. Tool policy → EGO gates
 
 Each tool's `annotations` drive the EGO via cogno-mcp:

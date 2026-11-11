@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.3 — 2026-11-11
+
+### Fixed — scheduler persistence and visibility
+
+- **`set_auto_confirm` now persists the flag through the store.** The service mutated the
+  `Host` returned by `get_host` and returned it, which only "sticks" for the in-memory store
+  (it returns the live object). A store adapter that rebuilds the `Host` from a row (the
+  Postgres adapter) got the mutation thrown away at the end of the turn — the tool reported
+  success and nothing changed. The `AppointmentStore` port gains a `put_host` write method
+  (in-memory + Postgres upsert) and the service writes the flag back through it.
+
 ## 0.1.2 — 2026-11-06 — release to PyPI of the changes below
 
 Publishes every «Unreleased» entry below, merged since 0.1.1. No change of its own.

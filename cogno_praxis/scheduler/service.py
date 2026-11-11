@@ -359,6 +359,11 @@ class SchedulerService:
         if host is None:
             raise SchedulerError(f"unknown host: {host_id}")
         host.auto_confirm = bool(value)
+        # Persist the change: a store adapter's ``get_host`` may return a fresh object rebuilt
+        # from a row (the Postgres adapter does), so mutating the returned ``Host`` writes
+        # nothing by itself — the flag has to go back through the store or it is lost when the
+        # turn ends. The in-memory store returns the live object, so this is a no-op there.
+        self.store.put_host(host)
         return host
 
     # ── whose agenda does this call act on? ────────────────────────────

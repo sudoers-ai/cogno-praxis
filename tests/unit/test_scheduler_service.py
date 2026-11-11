@@ -1076,3 +1076,27 @@ def test_a_coluna_e_acrescentada_com_ALTER_e_nao_so_no_CREATE():
              / "postgres.py").read_text(encoding="utf-8")
     assert ("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS persona_id" in fonte), (
         "sem o ALTER, a coluna existe nos testes e não na caixa")
+
+
+# ── set_auto_confirm must PERSIST through the store, not just mutate a returned object ──
+class _RebuildingStore(InMemoryAppointmentStore):
+    """A store whose ``get_host`` returns a FRESH copy, like a DB adapter that rebuilds the
+    ``Host`` from a row. Mutating the returned object changes nothing persisted — only
+    ``put_host`` does. (The plain in-memory store returns the live object, so it would hide
+    this bug.)"""
+
+    def get_host(self, host_id):
+        h = self.hosts.get(host_id)
+        return Host(h.host_id, h.name, h.role, h.auto_confirm) if h else None
+
+
+def test_set_auto_confirm_persists_through_the_store():
+    store = _RebuildingStore()
+    store.hosts["dr_x"] = Host("dr_x", "Dr. X", "GP", auto_confirm=True)
+    svc = SchedulerService(store, today=lambda: _TODAY)
+
+    svc.set_auto_confirm("dr_x", False)
+
+    # The flag is written back, not lost on the throwaway copy get_host returned.
+    assert store.hosts["dr_x"].auto_confirm is False
+    assert store.get_host("dr_x").auto_confirm is False
