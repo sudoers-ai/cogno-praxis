@@ -394,7 +394,10 @@ def test_working_hours_grounded_in_settings_read_is_kept():
 
 def test_working_hours_after_set_settings_is_kept():
     upd = ToolCall(tool="set_schedule_settings", ok=True, side_effect=True,
-                   result="Updated schedule settings: work_saturdays=True, work_end=18:00")
+                   result="Schedule rules changed for THIS running server only — NOT persisted, "
+                          "and lost when the server restarts. To make it permanent, change it "
+                          "where the configuration is stored. In effect now: "
+                          "work_saturdays=True, work_end=18:00")
     reply = "Pronto! Agora atendemos aos sábados também, das 08h às 18h."
     assert ground_reply(reply, tools=[upd]) is None
 
