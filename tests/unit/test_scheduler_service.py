@@ -1100,3 +1100,27 @@ def test_set_auto_confirm_persists_through_the_store():
     # The flag is written back, not lost on the throwaway copy get_host returned.
     assert store.hosts["dr_x"].auto_confirm is False
     assert store.get_host("dr_x").auto_confirm is False
+
+
+def test_blank_role_with_identity_scopes_to_own_bookings():
+    """An authenticated caller whose role arrives blank (None at the service) and who passes no
+    explicit filter must see ONLY their own bookings, never every agenda in the scope. The
+    standalone/demo path (no identity, no role) keeps full visibility."""
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_a"] = Host("dr_a", "Dr. A", "GP")
+    store.hosts["dr_b"] = Host("dr_b", "Dr. B", "GP")
+    svc = SchedulerService(store, today=lambda: _TODAY)
+    svc.book("dr_a", "2026-07-01", "09:00", "Ana", guest_id="g-ana")
+    svc.book("dr_b", "2026-07-02", "09:00", "Bia", guest_id="g-bia")
+
+    # prove: identity present + blank role + no filter → own bookings only (not the whole agenda)
+    mine = svc.list_appointments(identity_id="g-ana", role=None)
+    assert {a.with_name for a in mine} == {"Ana"}
+
+    # control: the demo path (no identity, no role) still sees the whole scope
+    everyone = svc.list_appointments()
+    assert {a.with_name for a in everyone} == {"Ana", "Bia"}
+
+    # and an explicit filter without a role is still honoured (internal/test use)
+    only_b = svc.list_appointments(host_id="dr_b")
+    assert {a.with_name for a in only_b} == {"Bia"}
