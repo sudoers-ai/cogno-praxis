@@ -9,4 +9,12 @@ First vertical: ``scheduler`` — the agenda capability, shipping the **SECRETAR
 persona (the universal reception/scheduling front door for any client).
 """
 
-__version__ = "0.1.2"
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _dist_version
+
+# Read the version from the installed distribution so it has ONE source (pyproject) and can
+# never drift from it — the hand-pinned string did (it sat at 0.1.2 while pyproject moved on).
+try:
+    __version__ = _dist_version("cogno-praxis")
+except PackageNotFoundError:  # source tree without an installed dist (e.g. vendored checkout)
+    __version__ = "0.0.0"
