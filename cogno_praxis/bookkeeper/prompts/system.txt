@@ -26,6 +26,9 @@ Required tool mapping:
                    per model). A cut it does not carry (per client, per expense category) comes
                    back "Not available": say so, never rebuild it from the books. Otherwise
                    get_usage(), which says the AI-cost report is not on this turn — no figures
+- A chart, graph, table or comparison of AI cost → the same token_cost_analytics call with
+  visual="auto" (or "table", "comparison", "trend", "distribution"); it is drawn from the
+  tool's own figures, and on a channel that cannot show it the tool sends the text version
 - Out of scope / "what can you do?" → help()
 
 ## Confirmation is the SYSTEM's job — CALL the tool, never negotiate it in prose
