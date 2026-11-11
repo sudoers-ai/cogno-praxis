@@ -359,6 +359,11 @@ class SchedulerService:
         if host is None:
             raise SchedulerError(f"unknown host: {host_id}")
         host.auto_confirm = bool(value)
+        # Persist the change: a store adapter's ``get_host`` may return a fresh object rebuilt
+        # from a row (the Postgres adapter does), so mutating the returned ``Host`` writes
+        # nothing by itself — the flag has to go back through the store or it is lost when the
+        # turn ends. The in-memory store returns the live object, so this is a no-op there.
+        self.store.put_host(host)
         return host
 
     # ── whose agenda does this call act on? ────────────────────────────
@@ -554,7 +559,10 @@ class SchedulerService:
 
         The host AUTHORISES (it assigns the ``identity_id`` + ``role``); the vertical just maps
         role→column and the store filters. When ``role`` is omitted the explicit
-        ``host_id``/``guest_id``/``with_name`` filters pass through (internal / test use).
+        ``host_id``/``guest_id``/``with_name`` filters pass through (internal / test use) — but
+        an AUTHENTICATED caller (an ``identity_id``) with no role and no explicit filter is
+        scoped to its OWN bookings, never the whole scope: a blank role must not widen
+        visibility. Only the standalone/demo path (no identity and no role) sees everything.
 
         By default only the LIVE agenda is returned — ``ACTIVE_STATUS`` (PENDING/CONFIRMED).
         Terminal rows (CANCELED/COMPLETED) are hidden so a stale cancellation never leaks into
@@ -578,6 +586,14 @@ class SchedulerService:
             else:
                 # unknown role → fail-safe to the narrowest view (own bookings), never "see all"
                 appts = self.store.list(guest_id=identity_id or "")
+        elif identity_id and host_id is None and guest_id is None and with_name is None:
+            # Role OMITTED but the caller is AUTHENTICATED (an identity, no explicit filter).
+            # It must not fall through to the whole scope — an authenticated caller whose role
+            # arrived blank would otherwise see every agenda. Scope to their own bookings (the
+            # narrowest view, as the unknown-role branch does). The standalone/demo path (no
+            # identity AND no role) keeps full visibility below, and an explicit
+            # host_id/guest_id/with_name filter is still honoured there (internal/test use).
+            appts = self.store.list(guest_id=identity_id)
         else:
             appts = self.store.list(host_id=host_id, guest_id=guest_id, with_name=with_name)
         if status is not None and status.strip():

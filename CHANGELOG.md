@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.3 — 2026-11-11
+
+### Fixed — scheduler persistence and visibility
+
+- **`set_auto_confirm` now persists the flag through the store.** The service mutated the
+  `Host` returned by `get_host` and returned it, which only "sticks" for the in-memory store
+  (it returns the live object). A store adapter that rebuilds the `Host` from a row (the
+  Postgres adapter) got the mutation thrown away at the end of the turn — the tool reported
+  success and nothing changed. The `AppointmentStore` port gains a `put_host` write method
+  (in-memory + Postgres upsert) and the service writes the flag back through it.
+
+- **A blank role no longer widens appointment visibility.** `list_appointments` routed a
+  caller with an authenticated `identity_id` but no role and no explicit filter into the
+  internal "no role" branch, which returned every agenda in the scope — so a caller whose
+  role arrived blank could see everyone's appointments. Such a caller is now scoped to their
+  own bookings (the narrowest view). The standalone/demo path (no identity and no role) keeps
+  full visibility, and an explicit `host_id`/`guest_id`/`with_name` filter is still honoured.
+
 ## 0.1.2 — 2026-11-06 — release to PyPI of the changes below
 
 Publishes every «Unreleased» entry below, merged since 0.1.1. No change of its own.
