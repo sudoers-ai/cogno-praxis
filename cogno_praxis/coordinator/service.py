@@ -393,6 +393,40 @@ def _fuller(short: tuple[str, ...], long: tuple[str, ...]) -> bool:
     return _is_abbreviation_of(short, long) and short[-1] == long[-1]
 
 
+def _professor_designates(target: str, cell: str) -> bool:
+    """Does an oversight ``professor=<target>`` name the person a schedule ``cell`` spells —
+    folded for accent and case (:func:`_norm`)?
+
+    Two readings, and the first is the rule the oversight read always had, kept byte for byte:
+
+    1. ``target`` is a folded SUBSTRING of ``cell`` — a family name inside a full name
+       («silva» inside «ana silva»), the contiguous shape the listing already answered.
+    2. the two are one name written in a different number of words — :func:`_is_abbreviation_of`
+       in EITHER direction (same first name, every word of the shorter already in the fuller).
+       A one-word cell (the first name alone) designates nobody by reading 2.
+
+    The second reading is what the substring misses in ONE direction: the registry's FULL
+    spelling finding a class the grade keeps under a SHORTER one. «Belmira Quostral Vendrim»
+    (the cadastro) is not inside «Belmira Quostral» (the grade), but the grade's spelling is
+    an abbreviation of it, so it now resolves; the same reading lets a query that drops a
+    middle name reach the full cell. There is no ``difflib``, no edit distance, no threshold
+    of resemblance — the token rule the rest of this module reads names by.
+
+    A blank on either side designates nobody (a free slot has no professor), as the substring
+    did: ``""`` is inside every string, and the oversight branch already checks ``target``
+    non-empty before it gets here.
+    """
+    n, c = _norm(target), _norm(cell)
+    if not n or not c:
+        return bool(n) and n in c
+    if n in c:
+        return True
+    tn, tc = _name_tokens(target), _name_tokens(cell)
+    # A cell with the first name ALONE is an "abbreviation" of every name that starts with it,
+    # and `confirm_swap` moves `src_matches[0]`: by this reading it designates nobody.
+    return _is_abbreviation_of(tn, tc) or (len(tc) >= 2 and _is_abbreviation_of(tc, tn))
+
+
 def _own_spellings(label: str, spellings: Iterable[str]) -> set[tuple[str, ...]]:
     """Which of ``spellings`` are the CALLER's own name — the rows a non-oversight role may see.
 
@@ -1127,8 +1161,9 @@ class CoordinatorService:
             return [e for e in entries if _name_tokens(e.professor) in mine], None
         if not target:                      # oversight + no professor → the whole master schedule
             return entries, None
-        n = _norm(target)
-        return [e for e in entries if n in _norm(e.professor)], None
+        # Folded substring OR one name written in a different number of words, so the cadastro's
+        # FULL spelling finds a class the grade keeps under a SHORTER one (:func:`_professor_designates`).
+        return [e for e in entries if _professor_designates(target, e.professor)], None
 
     # ── read tools ───────────────────────────────────────────────────────────────────
     def resolve_turmas(self, turma: str) -> list[str]:
@@ -1145,6 +1180,7 @@ class CoordinatorService:
                                identity_label: str = "", month: str = "",
                                discipline: str = "", turma: str = "",
                                include_past: bool = False, apply_horizon: bool = True,
+                               mark_last_class: bool = False,
                                report: Optional[ReadReport] = None) -> list[ClassEntry]:
         """A professor's (or, for oversight, anyone's) classes, optionally narrowed by ``month``
         (``'2026-03'``, ``'03'``, or a month name in Portuguese or English — ``'março'``,
@@ -1192,6 +1228,25 @@ class CoordinatorService:
                                      role=role, identity_label=identity_label, report=report)
         if err:
             raise CoordinatorAccessError(err)
+        # The LAST class of each discipline is decided over the WHOLE visible sheet, BEFORE the
+        # window narrows anything — a discipline continuing into December must not be marked last
+        # on its November lines just because December is out of the asked month. The same mechanism
+        # the survey reminder and the deadlines read (``_last_class_dates``), grouped «per
+        # (turma+disciplina)» (``by_discipline``), so an «- Aula adiada»/«- reposição» annotation
+        # does not split a discipline into two each marked last; a free slot and an undated row are
+        # never a discipline's last class.
+        #
+        # OPT-IN by the caller (``mark_last_class``): the mark is a READING annotation, approved
+        # for the schedule read the model consumes to answer "which class is a discipline's last",
+        # NOT for what a professor RECEIVES. A persona copying the schedule into an e-mail record
+        # reads the DEFAULT listing (no mark), so the annotation never travels into the e-mail/NF
+        # body by side effect. A caller that wants the annotation asks for it.
+        if mark_last_class:
+            last_of = self._last_class_dates(entries, by_discipline=True)
+            for e in entries:
+                e._last_class = (  # type: ignore[attr-defined]
+                    e.when is not None and not e.is_free_slot and not e.is_postponed
+                    and last_of.get(self._last_class_key(e, by_discipline=True)) == e.when)
         return self._filter_schedule(entries, month=month, discipline=discipline, turma=turma,
                                      include_past=include_past, apply_horizon=apply_horizon,
                                      report=report)
@@ -1251,6 +1306,41 @@ class CoordinatorService:
                 entries = near
         return entries
 
+    @staticmethod
+    def _last_class_key(e: ClassEntry, *, by_discipline: bool = False) -> tuple:
+        """The key «which discipline, in which group, of which professor» a last-class map is
+        grouped by. ``by_discipline`` folds an annotation off the subject cell (:func:`_discipline`),
+        so «Spark», «Spark - Aula adiada» and «Spark - reposição do dia 14/09» share one key; the
+        default is the raw subject cell, the historical grouping of the callers below."""
+        subject = _discipline(e.subject) if by_discipline else e.subject
+        return (e.sheet_id, _norm(e.professor), _norm(subject))
+
+    @classmethod
+    def _last_class_dates(cls, entries: list[ClassEntry], *,
+                          by_discipline: bool = False) -> dict[tuple, date]:
+        """``{key: the LATEST dated class}`` — the ONE place "which class is a discipline's last"
+        is decided, read by the survey (IBOPE) reminder (:meth:`ibope_status`), the grade/attendance
+        deadlines (:meth:`check_deadlines`) and the listing's last-class mark
+        (:meth:`get_professor_schedule`).
+
+        A free slot and an undated row are not a class of the discipline and are never its last —
+        «Espaço Reservado para Reposição» and the other free-slot labels fall out here because they
+        carry :attr:`~ClassEntry.is_free_slot`. Computed over WHATEVER entries the caller hands
+        over — the listing passes the WHOLE visible sheet, so a window that hides a later class does
+        not move the last one. ``by_discipline`` is the listing's «per (turma+disciplina)» grouping
+        (annotated variants of one discipline fold together); under it a class the schedule
+        annotates as put off («- Aula adiada», :attr:`~ClassEntry.is_postponed`) is dropped too, so
+        the latest class that is HELD carries the mark, never one that will not be given. The survey
+        and deadlines keep the raw subject grouping they shipped with."""
+        last_of: dict[tuple, date] = {}
+        for e in entries:
+            if e.when is None or e.is_free_slot or (by_discipline and e.is_postponed):
+                continue
+            k = cls._last_class_key(e, by_discipline=by_discipline)
+            if k not in last_of or e.when > last_of[k]:
+                last_of[k] = e.when
+        return last_of
+
     def check_deadlines(self, *, professor: str = "", role: str = "",
                         identity_label: str = "",
                         report: Optional[ReadReport] = None) -> list[ClassEntry]:
@@ -1261,18 +1351,12 @@ class CoordinatorService:
         if err:
             raise CoordinatorAccessError(err)
         today = self._today()
-        last_of: dict[tuple, date] = {}
-        for e in entries:
-            if e.when is None or e.is_free_slot:
-                continue
-            k = (e.sheet_id, _norm(e.professor), _norm(e.subject))
-            if k not in last_of or e.when > last_of[k]:
-                last_of[k] = e.when
+        last_of = self._last_class_dates(entries)
         due: list[ClassEntry] = []
         for e in entries:
             if e.when is None or e.is_free_slot:
                 continue
-            k = (e.sheet_id, _norm(e.professor), _norm(e.subject))
+            k = self._last_class_key(e)
             if last_of.get(k) == e.when and e.when < today <= e.when + timedelta(days=GRADE_GRACE_DAYS):
                 due.append(e)
         return due
@@ -1326,15 +1410,9 @@ class CoordinatorService:
         if err:
             raise CoordinatorAccessError(err)
         today = self._today()
-        last_of: dict[tuple, date] = {}
-        for e in entries:
-            if e.when is None or e.is_free_slot:
-                continue
-            k = (e.sheet_id, _norm(e.professor), _norm(e.subject))
-            if k not in last_of or e.when > last_of[k]:
-                last_of[k] = e.when
+        last_of = self._last_class_dates(entries)
         return [e for e in entries if e.when == today and not e.is_free_slot
-                and last_of.get((e.sheet_id, _norm(e.professor), _norm(e.subject))) == today]
+                and last_of.get(self._last_class_key(e)) == today]
 
 
     # ── the day, in one call (COMPOSED — nothing here is a new read) ─────────────────

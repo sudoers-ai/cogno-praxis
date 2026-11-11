@@ -63,6 +63,26 @@ def _says_the_same_date(cell: str, e: ClassEntry) -> bool:
     return bool(e.when and parsed and parsed == e.when)
 
 
+#: The mark a line carries when it is the discipline's LAST class (computed over the whole sheet,
+#: not the asked window — see
+#: :meth:`~cogno_praxis.coordinator.service.CoordinatorService.get_professor_schedule`). Contact-
+#: facing like the month header above it, so Portuguese for the same reason ``_MONTH_LABELS_PT``
+#: is: it is the word a professor reads on the line. Named, not inlined, so a renderer that later
+#: owns the channel dressing owns this too.
+_LAST_CLASS_MARK = "última aula da disciplina"
+
+
+def _has_listable_content(e: ClassEntry) -> bool:
+    """Does this entry carry anything a reader could use — a date, or a non-empty cell?
+
+    An aggregated sheet keeps blank rows (no date AND no content), and ``_fmt_entry`` renders one
+    as nothing but its class-group label (``Turma: DSA_33``), so an unfiltered read answered with
+    dozens of those lines and buried the real classes. A row with NO date but WITH content (a
+    note, an undated meeting) is still worth showing and is kept — the test is CONTENT, never the
+    date alone."""
+    return bool(e.date_str.strip() or any(c.strip() for c in e.cells))
+
+
 def _fmt_entry(e: ClassEntry) -> str:
     """One class as a compact line: its CLASS GROUP, ONE date, then every other non-empty
     header:cell verbatim, so the model never has to guess column meaning.
@@ -305,6 +325,8 @@ def _fmt_line(e: ClassEntry, *, defaults: tuple[str, ...] = (), status_column: s
     status = _entry_status(e, defaults, status_column)
     if status:
         parts.append(status)
+    if e.is_last_class:
+        parts.append(_LAST_CLASS_MARK)
     if professor and e.professor.strip():
         shown = (names or {}).get(_norm(e.professor), "").strip() or e.professor.strip()
         parts.append(f"Professor: {shown}")
@@ -427,6 +449,8 @@ def _fmt_list(entries: list[ClassEntry], *, empty: str,
             entries = _hour_order(entries, times)
         for e in entries:
             if e.when is None:
+                if not _has_listable_content(e):   # a blank row is nothing to list
+                    continue
                 chunks.append(f"- {_fmt_entry(e)}")
                 continue
             key = (e.when.year, e.when.month)
@@ -695,6 +719,7 @@ def build_server(service: Optional[CoordinatorService] = None, *,
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def get_professor_schedule(professor: str = "", month: str = "", discipline: str = "",
                                turma: str = "", include_past: bool = False,
+                               mark_last_class: bool = False,
                                identity_label: str = "", role: str = "") -> str:
         """List a professor's class schedule (aggregated across all course spreadsheets, sorted
         by date, under a bold month header). EVERY line names its class group as its MIDDLE
@@ -715,12 +740,17 @@ def build_server(service: Optional[CoordinatorService] = None, *,
         history") — naming a month that is already over counts as asking, and needs no flag;
         asking about OTHER CLASS GROUPS is not asking about the past. A professor sees only
         their own classes; a supervisor may name any professor or omit it for the whole master
-        schedule."""
+        schedule. Set ``mark_last_class=True`` ONLY when the user asks which classes are a
+        discipline's LAST ("qual a última aula da disciplina?", "which are the final classes?") —
+        each line that is its discipline's last then says so. Leave it FALSE for an ordinary
+        schedule read and whenever copying the schedule into an e-mail or a record a person
+        receives: the mark is a reading aid, not part of the class."""
         report = ReadReport()
         return _guard(lambda: _listing(
             svc,
             svc.get_professor_schedule(professor=professor, month=month, discipline=discipline,
-                                       turma=turma, include_past=include_past, report=report,
+                                       turma=turma, include_past=include_past,
+                                       mark_last_class=mark_last_class, report=report,
                                        identity_label=identity_label, role=role),
             empty="No classes found.", report=report, role=role))
 

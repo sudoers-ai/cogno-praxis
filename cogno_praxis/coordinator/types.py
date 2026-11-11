@@ -61,6 +61,23 @@ class ClassEntry:
         return getattr(self, "_free_by_word", False)
 
     @property
+    def is_last_class(self) -> bool:
+        """Is this the LAST class of its discipline (per ``(sheet, professor, subject)``, over the
+        WHOLE sheet — never only the requested window)?
+
+        Carried like :attr:`is_free_slot`, and stamped by
+        :meth:`~cogno_praxis.coordinator.service.CoordinatorService.get_professor_schedule` BEFORE
+        it narrows by month or horizon, so a discipline continuing into a later month is not marked
+        last on its earlier lines. The decision is
+        :meth:`~cogno_praxis.coordinator.service.CoordinatorService._last_class_dates` — the one the
+        survey (IBOPE) reminder and the grade/attendance deadlines already use — so a free slot or a
+        row with no date is never the last class of anything. A class the schedule annotates as put
+        off («- Aula adiada», :attr:`is_postponed`) is never the discipline's last — the latest
+        class that is HELD carries the mark. A reader that never stamps it (every other listing)
+        reads ``False`` and renders exactly as before."""
+        return getattr(self, "_last_class", False)
+
+    @property
     def is_postponed(self) -> bool:
         """Did the schedule ANNOTATE this class as put off — ``"<discipline> - Aula adiada"``?
 

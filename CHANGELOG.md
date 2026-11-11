@@ -8,6 +8,58 @@ Publishes every «Unreleased» entry below, merged since 0.1.1. No change of its
 
 Note: #189 (NEO, read-only admin vertical) landed with the owner's approval; the "DO NOT LAND" in its commit title is a stale status marker left in the PR title — status lives in labels and the body, never in the title.
 
+### Fixed — the coordination finds a class by the registry's full name when the grade keeps it short (2026-11-10)
+
+- **Why.** The oversight branch of `CoordinatorService._visible` matched a `professor=<name>`
+  against a schedule cell as a folded (accent/case-insensitive) SUBSTRING. A substring is
+  contiguous and one-directional: a shorter query sits inside a fuller cell, but the registry's
+  FULL spelling does not sit inside the grade's SHORTER one — «Belmira Quostral Vendrim» is not
+  inside «Belmira Quostral». So the coordination answered «no class found» about a professor
+  whose class was there, and a swap named by the cadastro spelling could not locate it.
+- **What.** `service._professor_designates` reads the two names as one person written in a
+  different number of words (same first name, every word of the shorter already in the fuller —
+  `_is_abbreviation_of`, in EITHER direction), after the folded substring it keeps byte for byte.
+  The cadastro's full name now finds the short grade cell, a query that drops a middle word finds
+  the full one, and accents decide neither. It only ADDS matches to the substring; a word of the
+  shorter name that the fuller one does not carry stops it («Belmira Astrade» is not «Belmira
+  Quostral Vendrim»), and a cell with the first name alone designates nobody by the new reading —
+  it could be anyone with that first name — so a swap never moves another professor's class.
+  Reaches every oversight read and the two writes `_visible` scopes
+  (`confirm_swap`, `record_class_response`); the privacy-filtered own-name branch
+  (`_own_spellings`) and the pay/e-mail resolver anchored to the declared cast (`_professor_hits`)
+  are untouched.
+- **Tests.** `tests/unit/test_the_full_name_finds_the_short_grade_class.py` — the full registry
+  name finds the short class and swaps it, a partial/middle-dropped and an accent-variant name
+  resolve, and the controls (a different same-first-name professor is not matched; the substring
+  shapes still resolve). `tests/unit/test_consultor_203_o_nome_proprio_sozinho_nao_e_a_pessoa.py`
+  — the first name alone never moves another professor's class. No model, no network.
+
+### Fixed — the schedule drops blank rows and marks a discipline's last class (`get_professor_schedule`)
+
+- **A blank row is nothing to list.** A sheet row with NO date AND NO content reached the
+  listing's undated branch and rendered as its bare class-group label (`- Turma: <sheet_key>`); an
+  unfiltered read answered with a wall of them and buried the real classes. `server._fmt_list` now
+  skips an undated entry with no content (`server._has_listable_content`). A row with NO date but
+  WITH content (an undated note) still appears — the test is content, never the date alone.
+- **A line can mark the discipline's LAST class** (`· última aula da disciplina`), decided over
+  the WHOLE visible sheet BEFORE the window narrows anything, so a discipline continuing into a
+  later month is not marked last on its earlier lines. It reuses the one mechanism the survey
+  (IBOPE) reminder and the grade/attendance deadlines already use
+  (`CoordinatorService._last_class_dates`); the listing groups «per (turma+disciplina)» so an
+  `- Aula adiada`/`- reposição` annotation does not split one discipline into several each marked
+  last, while `ibope_status`/`check_deadlines` keep the raw-subject grouping they shipped with (no
+  behaviour change there). A free slot is never a discipline's last class, and a class the schedule
+  annotates as put off (`- Aula adiada`) is never the discipline's last — the latest class that is
+  held carries the mark.
+- **The mark is OPT-IN by the caller** (`get_professor_schedule(..., mark_last_class=True)`,
+  default `False`): it is a READING annotation, for the schedule read the model consumes to answer
+  "which class is a discipline's last?", NOT part of the class. The DEFAULT listing carries no
+  mark, so a persona copying the schedule into an e-mail record or a message a person RECEIVES
+  reads the clean line and the annotation never travels there by side effect. The stamp
+  (`ClassEntry.is_last_class`) is only computed when the caller asks, so every other reader — the
+  calendar export, the pay listing, a plain schedule read — is byte-for-byte what it was before.
+- `tests/unit/test_schedule_drops_blank_rows.py`, `tests/unit/test_schedule_marks_last_class.py` and `tests/unit/test_consultor_204_a_aula_adiada_nao_e_a_ultima.py`; `docs/COORDINATOR.md`.
+
 ### Changed — NEO's prompt v2: proactive, it requests changes from the bridge (2026-11-02)
 
 - **Why.** The four slots predated the change requests: «only proposes, nothing changes», two

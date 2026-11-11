@@ -54,7 +54,7 @@ from datetime import date
 
 import cogno_praxis.email_fields as ef
 from cogno_praxis.coordinator import CoordinatorConfig, CoordinatorService, InMemorySpreadsheetStore
-from cogno_praxis.coordinator.server import build_server
+from cogno_praxis.coordinator.server import _LAST_CLASS_MARK, build_server
 from cogno_praxis.email_fields import (EmailContext, fill_email_fields, render_email_forms,
                                        template_fields)
 
@@ -160,7 +160,10 @@ def _reads(svc: CoordinatorService, month: str) -> "tuple[str, str]":
 
 # ── the scripted executor: it COPIES, and derives only the weekday and the month's name ──────
 
-_LINE = re.compile(r"^- (\d\d/\d\d)(?: (\d\d:\d\d))? · (.+?) · (.+)$")
+#: The last-class mark the listing appends is a READ annotation, not part of the discipline, so a
+#: persona copying the schedule into e-mail records drops it — the regex strips the optional tail.
+_LINE = re.compile(r"^- (\d\d/\d\d)(?: (\d\d:\d\d))? · (.+?) · (.+?)"
+                   rf"(?: · {re.escape(_LAST_CLASS_MARK)})?$")
 #: What a model knows without a tool: the names of the months and of the weekdays.
 _MONTHS = ("", "janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto",
            "setembro", "outubro", "novembro", "dezembro")

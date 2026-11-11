@@ -181,6 +181,31 @@ Nothing was swapped…»): an oversight caller (`_OVERSIGHT_ROLES`, the predicat
 sees the whole master schedule, and the swap used to take the FIRST class found on
 `original_date`, whoever taught it. Naming the professor swaps that class, as before.
 
+## The full registry name finds a class the grade keeps short (2026-11-10)
+
+The oversight branch of `CoordinatorService._visible` matched a `professor=<name>` as a folded
+(accent/case-insensitive) SUBSTRING of the schedule cell — `"silva"` inside `"ana silva"`. A
+substring is contiguous and one-directional: a SHORTER query sits inside a fuller cell, but the
+registry's FULL spelling does not sit inside the grade's SHORTER one. «Belmira Quostral Vendrim»
+(the cadastro) is not a substring of «Belmira Quostral» (the grade), so the coordination answered
+«no class found» about a professor whose class was right there, and the swap named by the
+registry spelling could not locate it.
+
+`service._professor_designates(target, cell)` now reads the two names as one person written in a
+different number of words — same first name, every word of the shorter already in the fuller
+(`_is_abbreviation_of`), in EITHER direction, after the folded substring it keeps byte for byte.
+So the cadastro's full name finds the short grade cell, a query that drops a middle word finds
+the full one, and accents decide neither. It is the token rule the rest of this module already
+names people by: no `difflib`, no edit distance, no threshold of resemblance. It only ADDS
+matches to the substring that was there. A word of the shorter name that the fuller one does not
+carry stops it («Belmira Astrade» is not «Belmira Quostral Vendrim»), and a cell with the first
+name ALONE designates nobody by the new reading — it could be anyone with that first name, and
+`confirm_swap` moves the first class it finds. It reaches every oversight read and the two writes
+`_visible` scopes (`confirm_swap`, `record_class_response`); the non-oversight, privacy-filtered
+branch (`_own_spellings`) and the pay/e-mail resolver that anchors to the declared cast
+(`_professor_hits` → groups) are untouched.
+`tests/unit/test_the_full_name_finds_the_short_grade_class.py`.
+
 ## The coordination's e-mail: the tenant's tags, filled from these tools (R-T13, 2026-10-22)
 
 From E1 (2026-10-06) until R-T13 a templated e-mail about one professor's month was filled by a
@@ -250,6 +275,39 @@ Removing those two additions from a block gives the block of before, byte for by
 with no hour column lists the same bytes as before: both are pinned by digests taken on the parent
 tree (`tests/unit/test_the_tools_print_what_an_email_copies.py`, with a control that the corpus
 reaches every bonus state).
+
+## A blank row is nothing to list, and the discipline's LAST class is marked
+
+Two fixes to what `get_professor_schedule` prints
+(`tests/unit/test_schedule_drops_blank_rows.py` and `tests/unit/test_schedule_marks_last_class.py`).
+
+- **A row with NO date AND NO content is dropped.** An aggregated sheet keeps such rows, and the
+  listing's undated branch rendered each as its bare class-group label (`- Turma: <sheet_key>`), so
+  an unfiltered read answered with a wall of them and buried the real classes. `server._fmt_list`
+  now skips an undated entry that `server._has_listable_content` finds empty (no `date_str`, no
+  non-empty cell). A row with NO date but WITH content (an undated note) still appears — the test
+  is CONTENT, never the date alone.
+- **A line can say when it is the discipline's LAST class — the caller OPTS IN.** `server._fmt_line`
+  appends `· última aula da disciplina` (`server._LAST_CLASS_MARK`) when the entry is the last class
+  of its discipline. It is decided over the WHOLE visible sheet, BEFORE the window narrows anything
+  (`CoordinatorService.get_professor_schedule` stamps `ClassEntry.is_last_class`), so a discipline
+  continuing into a later month is NOT marked last on its earlier-month lines. The decision is the
+  one mechanism the survey (IBOPE) reminder and the grade/attendance deadlines already use,
+  `CoordinatorService._last_class_dates` (the latest dated class per key; a free slot and an undated
+  row are never a discipline's last class). The listing groups «per (turma+disciplina)»
+  (`by_discipline=True`), so an `- Aula adiada`/`- reposição` annotation does not split one
+  discipline into several each marked last; `ibope_status`/`check_deadlines` keep the raw-subject
+  grouping they shipped with. A class the schedule annotates as put off (`- Aula adiada`,
+  `ClassEntry.is_postponed`) is never the discipline's last — the latest class that is HELD carries
+  the mark, never a dated row for a class that will not be given.
+  - **The mark is OPT-IN** (`get_professor_schedule(..., mark_last_class=True)`, default `False`): it
+    is a READ annotation, for the schedule read the model consumes to answer "which class is a
+    discipline's last?", and NOT part of the discipline. The stamp is computed only when the caller
+    asks, so the DEFAULT listing carries no mark — a persona copying the schedule into an e-mail
+    record or a message a person RECEIVES reads the clean line, and the annotation never travels
+    there by side effect (the records' `disciplina` stays the discipline name). Every other reader —
+    the calendar export, the pay listing, a plain schedule read — is byte-for-byte what it was
+    before the mark existed.
 
 ## A rehearsal tenant's classes, from a FILE (2026-10-21)
 
