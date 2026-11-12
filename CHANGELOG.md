@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
+
+- **`bookkeeper/prompts/system.txt`**: AI cost and token spend go to the host's `token_cost_analytics(granularity?, period?, dimension?, by?)`, now by message, day, week, month, conversation, persona, user or model. `by="model"` splits a day, week or month cut by model, which gives a series per model. A cut the AI-cost ledger does not carry (per client, per expense category) comes back «Not available»: the executor says so and never rebuilds it from the books.
+- **`bookkeeper/prompts/limits.txt`**: the judge grounds the new cuts. A «Not available» answer, reported as such, is CORRECT.
+- **`get_usage`** (when the cost tool is not on the turn) now says that the AI-cost report is a staff tool of the host and is not available on this turn, and that AI cost is never in the books. It still returns no figures.
+- Tests: `tests/unit/test_bookkeeper_ai_cost_by_week_and_model.py` (the twins, the reconstruction of `main` 78d3db8, and the judge prompt in both worlds). The B4b pin (`test_bookkeeper_ai_cost_comes_from_the_cost_tool.py`) now undoes this layer first. The neighbour digests of `test_coordinator_deadline_rules_read_the_documents.py` are regenerated for the two files.
+
 ## 0.1.4 — 2026-11-11
 
 ### Changed — `set_schedule_settings` tells the truth about persistence

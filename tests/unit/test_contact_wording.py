@@ -46,7 +46,7 @@ REF = "{contact_reference}"
 AT_MAIN = {
     # regenerated 2026-10-14, deliberately: the CALL convention rewrote its confirmation section
     # (test_the_bookkeeper_calls_the_write.py); the contact's sentence did not move.
-    ("bookkeeper", "system"): "a6db743904c3ebbe812d4a39d781f06724e1248f48240c73b4f1fa59376c4ab8",
+    ("bookkeeper", "system"): "39dc42bfe6049b242c61fd8f32e5cc3b58d3a775ca512c5bfdbb3614ac3bdc9a",  # 66a0acf2: week, model, the split, "Not available" (deliberate)
     # bookkeeper voice regenerated 2026-11-04: pt-BR marks in a Portuguese reply, never rounded
     ("bookkeeper", "voice"): "4360356043abd08b2edc375cf5d288aa0485009fe33c01c71e625e8b7be77f40",
     ("closer", "system"): "c5b30b8faf18562ec7936965e16fe59a8570d4bc9d67654c3156f9c170cf623d",

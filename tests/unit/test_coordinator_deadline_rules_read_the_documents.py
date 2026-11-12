@@ -123,11 +123,15 @@ SYSTEM_NOW = "5085d29f398179ea208eb2b81f28b2a51489004b12e6c7f2f3527f02dcee1e89"
 #: coming from ``token_cost_analytics`` (``test_bookkeeper_ai_cost_comes_from_the_cost_tool``),
 #: which pins their old bytes against ``origin/main`` 45d2ed6.
 NEIGHBOURS_AT_MAIN = {
-    "bookkeeper/limits.txt": "e64431a18082ddbb734a328fbd1a6a2ee51207a2b060036667e7d00ceee5916a",
+    # bookkeeper/limits.txt and system.txt: regenerated 2026-11-04, deliberately — AI cost by week
+    # and by model, the split by model, the "Not available" answer (request 66a0acf2,
+    # test_bookkeeper_ai_cost_by_week_and_model.py).
+    "bookkeeper/limits.txt": "1df9ae05f917bb18a1b2309e512f6cb33b629510a76c497d1d83845c376dc40a",
     "bookkeeper/scope.txt": "ed4a8c112f11d2c2bf480c4e8be806f9d1f707e12c1bf638e541e5f17f3ee342",
     # regenerated 2026-10-14, deliberately: the CALL convention rewrote its confirmation section
     # (test_the_bookkeeper_calls_the_write.py).
-    "bookkeeper/system.txt": "a6db743904c3ebbe812d4a39d781f06724e1248f48240c73b4f1fa59376c4ab8",
+    # system.txt regenerated 2026-11-04, deliberately — AI cost by week and by model (request 66a0acf2).
+    "bookkeeper/system.txt": "39dc42bfe6049b242c61fd8f32e5cc3b58d3a775ca512c5bfdbb3614ac3bdc9a",
     # bookkeeper voice regenerated 2026-11-04: pt-BR marks in a Portuguese reply, never rounded
     "bookkeeper/voice.txt": "4360356043abd08b2edc375cf5d288aa0485009fe33c01c71e625e8b7be77f40",
     "closer/limits.txt": "2c8bf84a2625317e363f8fc175029b7d85d9a28fb90190b5c254391981f10e4c",
