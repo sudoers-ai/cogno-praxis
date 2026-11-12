@@ -206,6 +206,30 @@ branch (`_own_spellings`) and the pay/e-mail resolver that anchors to the declar
 (`_professor_hits` → groups) are untouched.
 `tests/unit/test_the_full_name_finds_the_short_grade_class.py`.
 
+## The oversight query drops a title the rewrite adds (2026-11-12)
+
+The `professor` argument of the oversight read is filled by the host's EGO from the NOUMENO's
+canonical-**English** rewrite of the turn. That rewrite prefixes the recipient's name with an
+English, **masculine** title: «a professora Brízida Lameiras» reaches the tool as
+`professor="Professor Brízida Lameiras"`. `_professor_designates` matched that against a roster
+cell carrying the name BARE, and the title was the first token — which neither the folded
+substring nor `_is_abbreviation_of` (it pins the first token) can see past. So a named teacher's
+own classes read back EMPTY, and the schedule e-mail could not be prepared. Measured on the
+`email_model_bench` «Escola Bench» world (2 of 12 cronograma runs); the two failures wore two
+different sentences — one «…para Professor X» (no classes), one «…em novembro de 2026 para a
+Professora X» (as if only the month came up empty) — but both are the SAME empty read: the
+professor filter runs BEFORE the month one, so a title that misses the name empties the read
+whatever the month says.
+
+`service._professor_designates(target, cell)` now strips a leading run of titles
+(`_drop_leading_title` over `_HONORIFICS` — a mirror of `cogno_host.google_workspace`'s
+`_HONORIFICS`, the same folded word list on both sides of the bridge) from the **query only**,
+before the substring and the abbreviation readings. The schedule **cell** is left untouched: a
+title written INTO the professor column is the separate, parked false positive
+(`token-que-e-titulo-ou-particula`), not this. A query that is a title ALONE keeps its tokens, so
+it designates nobody by the name rules rather than reading the whole faculty back.
+`tests/unit/test_the_schedule_query_drops_the_rewrites_title.py`.
+
 ## The coordination's e-mail: the tenant's tags, filled from these tools (R-T13, 2026-10-22)
 
 From E1 (2026-10-06) until R-T13 a templated e-mail about one professor's month was filled by a

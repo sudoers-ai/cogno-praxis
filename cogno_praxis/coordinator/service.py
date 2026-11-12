@@ -393,14 +393,42 @@ def _fuller(short: tuple[str, ...], long: tuple[str, ...]) -> bool:
     return _is_abbreviation_of(short, long) and short[-1] == long[-1]
 
 
+#: Words a QUERY carries that are a title, not a name — stripped off the ``professor`` argument
+#: before it is matched against a schedule cell. A mirror of ``cogno_host.google_workspace``'s
+#: ``_HONORIFICS`` (the host's ``_name_words``), folded by :func:`_norm` here as it is folded by
+#: ``cogno_host.textfold.fold`` there, kept the same list on both sides of the bridge. Measured
+#: (2026-11-12): the oversight ``professor`` argument is filled by the EGO from the NOUMENO's
+#: canonical-English rewrite, which prefixes the recipient's name with an English, masculine
+#: title — «Professor Brízida Lameiras» for «a professora Brízida Lameiras». The title became the
+#: FIRST token, which neither the folded substring nor :func:`_is_abbreviation_of` (it pins the
+#: first token) could see past, so a named teacher's own November classes read back EMPTY.
+_HONORIFICS = frozenset({"prof", "profa", "professor", "professora", "dr", "dra", "doutor",
+                         "doutora", "mestre", "sr", "sra"})
+
+
+def _drop_leading_title(tokens: "tuple[str, ...]") -> "tuple[str, ...]":
+    """``tokens`` with any run of :data:`_HONORIFICS` at the FRONT removed — never emptied, so a
+    query that is title ONLY («professor», nobody named) still designates nobody by the name rules
+    rather than everybody. A trailing dot is folded off for the test («Prof.» is «prof»), but only
+    the leading title run is dropped; the name tokens themselves are returned untouched."""
+    i = 0
+    while i < len(tokens) and tokens[i].strip(".") in _HONORIFICS:
+        i += 1
+    return tokens[i:] if i < len(tokens) else tokens
+
+
 def _professor_designates(target: str, cell: str) -> bool:
     """Does an oversight ``professor=<target>`` name the person a schedule ``cell`` spells —
     folded for accent and case (:func:`_norm`)?
 
-    Two readings, and the first is the rule the oversight read always had, kept byte for byte:
+    The ``target`` is first stripped of a leading TITLE (:func:`_drop_leading_title`), because it
+    is filled from the canonical-English rewrite and arrives «Professor <name>» (:data:`_HONORIFICS`);
+    the ``cell`` is NOT — a title written into the professor column is the separate, parked
+    false positive (``token-que-e-titulo-ou-particula``), not touched here. Then two readings,
+    and the first is the rule the oversight read always had, kept byte for byte:
 
-    1. ``target`` is a folded SUBSTRING of ``cell`` — a family name inside a full name
-       («silva» inside «ana silva»), the contiguous shape the listing already answered.
+    1. the stripped ``target`` is a folded SUBSTRING of ``cell`` — a family name inside a full
+       name («silva» inside «ana silva»), the contiguous shape the listing already answered.
     2. the two are one name written in a different number of words — :func:`_is_abbreviation_of`
        in EITHER direction (same first name, every word of the shorter already in the fuller).
        A one-word cell (the first name alone) designates nobody by reading 2.
@@ -416,12 +444,12 @@ def _professor_designates(target: str, cell: str) -> bool:
     did: ``""`` is inside every string, and the oversight branch already checks ``target``
     non-empty before it gets here.
     """
-    n, c = _norm(target), _norm(cell)
+    tn, tc = _drop_leading_title(_name_tokens(target)), _name_tokens(cell)
+    n, c = " ".join(tn), _norm(cell)
     if not n or not c:
         return bool(n) and n in c
     if n in c:
         return True
-    tn, tc = _name_tokens(target), _name_tokens(cell)
     # A cell with the first name ALONE is an "abbreviation" of every name that starts with it,
     # and `confirm_swap` moves `src_matches[0]`: by this reading it designates nobody.
     return _is_abbreviation_of(tn, tc) or (len(tc) >= 2 and _is_abbreviation_of(tc, tn))

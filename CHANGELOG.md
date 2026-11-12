@@ -7,6 +7,10 @@
 - **`get_usage`** (when the cost tool is not on the turn) now says that the AI-cost report is a staff tool of the host and is not available on this turn, and that AI cost is never in the books. It still returns no figures.
 - Tests: `tests/unit/test_bookkeeper_ai_cost_by_week_and_model.py` (the twins, the reconstruction of `main` 78d3db8, and the judge prompt in both worlds). The B4b pin (`test_bookkeeper_ai_cost_comes_from_the_cost_tool.py`) now undoes this layer first. The neighbour digests of `test_coordinator_deadline_rules_read_the_documents.py` are regenerated for the two files.
 
+### Fixed — the oversight schedule query drops a title the rewrite adds
+
+- **`coordinator/service.py::_professor_designates`** now strips a leading run of titles (`_drop_leading_title` over a new `_HONORIFICS`, mirrored from `cogno_host.google_workspace`) from the `professor` **query** before matching it against a schedule cell. The oversight `professor` argument is filled from the NOUMENO's canonical-**English** rewrite, which prefixes the recipient's name with an English, masculine title — `professor="Professor Brízida Lameiras"` for «a professora Brízida Lameiras». The title was the first token, which neither the folded substring nor `_is_abbreviation_of` could see past, so a named teacher's own classes read back EMPTY and the cronograma e-mail could not be prepared. Measured on the `email_model_bench` «Escola Bench» world (2 of 12 runs), whose two failure sentences («…para Professor X», «…em novembro de 2026 para a Professora X») are the SAME empty read — the professor filter runs before the month one. Only the QUERY is stripped; a title written into the professor column stays the parked `token-que-e-titulo-ou-particula` false positive, and a title-only query still designates nobody. Tests: `tests/unit/test_the_schedule_query_drops_the_rewrites_title.py`. Doc: `docs/COORDINATOR.md`.
+
 ## 0.1.4 — 2026-11-11
 
 ### Changed — `set_schedule_settings` tells the truth about persistence
