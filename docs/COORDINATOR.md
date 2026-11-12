@@ -222,8 +222,8 @@ professor filter runs BEFORE the month one, so a title that misses the name empt
 whatever the month says.
 
 `service._professor_designates(target, cell)` now strips a leading run of titles
-(`_drop_leading_title` over `cogno_praxis.honorifics.HONORIFICS` — the one list of titles that
-the scheduler's host matcher and the host read as well) from the **query only**,
+(`_drop_leading_title` over `cogno_praxis.honorifics.QUERY_NAME_TITLES` — this reader's subset
+of the one table the scheduler's host matcher and the host read as well) from the **query only**,
 before the substring and the abbreviation readings. The schedule **cell** is left untouched: a
 title written INTO the professor column is the separate, parked false positive
 (`token-que-e-titulo-ou-particula`), not this. A query that is a title ALONE keeps its tokens, so
