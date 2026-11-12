@@ -271,6 +271,16 @@ def _parse_calendar_date(e: str, today: date) -> Optional[date]:
     return None
 
 
+def host_label(h: Host) -> str:
+    """How ``list_schedulable_hosts`` names a professional: the name, then the role in brackets.
+
+    The ONE spelling of that line. The resolver accepts it back as that professional: a model
+    copies the line it was shown into ``host_name``, and a door that refused its own list's label
+    turned a «sim» into "nobody bookable here goes by that" for the very person just listed.
+    """
+    return h.name + (f" ({h.role})" if h.role else "")
+
+
 def _norm_host(s: str) -> str:
     """Fold to a comparable key for fuzzy host matching: accent-free, no honorific, alnum only —
     so 'dr_otavio_renan_bertholdi', 'Dr. Otávio Renan Bertholdi' and 'otaviorenanbertholdi'
@@ -389,7 +399,8 @@ class SchedulerService:
         """Every catalogue host a free string could mean — 0, 1 or many. Never picks.
 
         Three tiers, first non-empty wins, each STRICTER than the phrase it answers:
-        the catalogue key itself (id or full name, accent/honorific/separator-insensitive),
+        the catalogue key itself (id, full name, or the line ``list_schedulable_hosts`` printed —
+        :func:`host_label` — accent/honorific/separator-insensitive),
         then *every word the caller said is a word of this name* ("Marina" → "Dra. Marina
         Aloe"), then a specialty ("o cardiologista"). A tier that matches two hosts returns
         both, so the caller asks instead of guessing — the old resolver collapsed that case
@@ -399,7 +410,7 @@ class SchedulerService:
         key = _norm_host(text)
         if key:
             exact = [h for h in hosts
-                     if _norm_host(h.host_id) == key or _norm_host(h.name) == key]
+                     if key in (_norm_host(h.host_id), _norm_host(h.name), _norm_host(host_label(h)))]
             if exact:
                 return exact
         want = _host_tokens(text)

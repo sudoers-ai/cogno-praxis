@@ -30,6 +30,7 @@ from cogno_praxis.scheduler.service import (
     RESOLVE_DATE_SCHEDULER_SUFFIX,
     SchedulerService,
     format_date,
+    host_label,
     resolve_date_answer,
 )
 from cogno_praxis.scheduler.store import (
@@ -124,8 +125,7 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         hosts = svc.list_hosts()
         if not hosts:
             return "No schedulable hosts are configured."
-        return "\n".join(f"{h.host_id}: {h.name}" + (f" ({h.role})" if h.role else "")
-                         for h in hosts)
+        return "\n".join(f"{h.host_id}: {host_label(h)}" for h in hosts)
 
     # `description=` and not a docstring, because the docstring WAS the second copy. This is
     # one tool as far as a model is concerned — the host publishes the same name to every

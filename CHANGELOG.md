@@ -2,6 +2,10 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Fixed — the scheduler accepts the label its own list printed
+
+- **`scheduler/service.py::_host_candidates`** now accepts, in its exact tier, the line `list_schedulable_hosts` prints for a professional — `<name> (<role>)`, spelled once by the new `host_label` (which the list tool now uses). A model asked for `host_name` copies that line, and the resolver refused it: the key was not the name, the role word is not a word of the name, and the whole string is not the role. Measured on a secretary bench run (local model): a booking held for confirmation with `host_name="Dr. … (Cardiologista)"` came back «unknown host … nobody bookable here goes by that» on the client's «sim», and the rest of the reschedule flow ran on a booking that did not exist. Nothing else widens: a name with another role is still unknown, another professional's label next to this id is still two agendas, and the label tells two namesakes apart. Tests: `tests/unit/test_the_listed_label_books_that_professional.py`.
+
 ### Changed — one public list of honorifics
 
 - **`cogno_praxis/honorifics.py`** (new): ONE public table of honorifics, with each reader's own subset — `QUERY_NAME_TITLES` (the coordinator's schedule query, `_drop_leading_title`), `HOST_NAME_TITLES` (the scheduler's host matcher, `_host_tokens`) and `ROUTING_ADDRESS` (the host's persona routing) — plus `is_query_name_title` / `is_host_name_title`. Each reader strips EXACTLY the titles it stripped before, so behaviour is unchanged: consolidating is not widening. A word joins a reader's subset only in a change of its own, with the real form that asks for it and a collision twin («seu» is also the Portuguese possessive). The host's two copies are to import this module. Whole words only: the substring strip in `_norm_host` is unchanged. Tests: `tests/unit/test_one_list_of_honorifics.py`. Doc: `docs/COORDINATOR.md`.
