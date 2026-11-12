@@ -48,6 +48,7 @@ from cogno_praxis.coordinator.rsvp import (
 )
 from cogno_praxis.coordinator.store import SpreadsheetStore
 from cogno_praxis.email_address import INVALID_RECIPIENT, is_one_address
+from cogno_praxis.honorifics import is_honorific
 from cogno_praxis.logsafe import id_sha
 from cogno_praxis.coordinator.types import (
     ClassEntry,
@@ -393,26 +394,23 @@ def _fuller(short: tuple[str, ...], long: tuple[str, ...]) -> bool:
     return _is_abbreviation_of(short, long) and short[-1] == long[-1]
 
 
-#: Words a QUERY carries that are a title, not a name — stripped off the ``professor`` argument
-#: before it is matched against a schedule cell. A mirror of ``cogno_host.google_workspace``'s
-#: ``_HONORIFICS`` (the host's ``_name_words``), folded by :func:`_norm` here as it is folded by
-#: ``cogno_host.textfold.fold`` there, kept the same list on both sides of the bridge. Measured
-#: (2026-11-12): the oversight ``professor`` argument is filled by the EGO from the NOUMENO's
-#: canonical-English rewrite, which prefixes the recipient's name with an English, masculine
-#: title — «Professor Brízida Lameiras» for «a professora Brízida Lameiras». The title became the
-#: FIRST token, which neither the folded substring nor :func:`_is_abbreviation_of` (it pins the
-#: first token) could see past, so a named teacher's own November classes read back EMPTY.
-_HONORIFICS = frozenset({"prof", "profa", "professor", "professora", "dr", "dra", "doutor",
-                         "doutora", "mestre", "sr", "sra"})
+#: A QUERY's leading title (:data:`cogno_praxis.honorifics.HONORIFICS`, the one list the
+#: scheduler and the host read too) is stripped off the ``professor`` argument before it is
+#: matched against a schedule cell. Measured (2026-11-12): the oversight ``professor`` argument
+#: is filled by the EGO from the NOUMENO's canonical-English rewrite, which prefixes the
+#: recipient's name with an English, masculine title — «Professor Brízida Lameiras» for «a
+#: professora Brízida Lameiras». The title became the FIRST token, which neither the folded
+#: substring nor :func:`_is_abbreviation_of` (it pins the first token) could see past, so a
+#: named teacher's own November classes read back EMPTY.
 
 
 def _drop_leading_title(tokens: "tuple[str, ...]") -> "tuple[str, ...]":
-    """``tokens`` with any run of :data:`_HONORIFICS` at the FRONT removed — never emptied, so a
+    """``tokens`` with any run of :data:`~cogno_praxis.honorifics.HONORIFICS` at the FRONT removed — never emptied, so a
     query that is title ONLY («professor», nobody named) still designates nobody by the name rules
     rather than everybody. A trailing dot is folded off for the test («Prof.» is «prof»), but only
     the leading title run is dropped; the name tokens themselves are returned untouched."""
     i = 0
-    while i < len(tokens) and tokens[i].strip(".") in _HONORIFICS:
+    while i < len(tokens) and is_honorific(tokens[i]):
         i += 1
     return tokens[i:] if i < len(tokens) else tokens
 
@@ -422,7 +420,7 @@ def _professor_designates(target: str, cell: str) -> bool:
     folded for accent and case (:func:`_norm`)?
 
     The ``target`` is first stripped of a leading TITLE (:func:`_drop_leading_title`), because it
-    is filled from the canonical-English rewrite and arrives «Professor <name>» (:data:`_HONORIFICS`);
+    is filled from the canonical-English rewrite and arrives «Professor <name>» (:data:`~cogno_praxis.honorifics.HONORIFICS`);
     the ``cell`` is NOT — a title written into the professor column is the separate, parked
     false positive (``token-que-e-titulo-ou-particula``), not touched here. Then two readings,
     and the first is the rule the oversight read always had, kept byte for byte:

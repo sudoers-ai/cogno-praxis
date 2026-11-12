@@ -19,6 +19,7 @@ import uuid
 from datetime import date, timedelta
 from typing import Callable, Iterable, Optional
 
+from cogno_praxis.honorifics import is_honorific
 from cogno_praxis.scheduler.engine import AvailabilityEngine, SchedulerConfig
 from cogno_praxis.scheduler.store import (
     ACTIVE_STATUS,
@@ -280,10 +281,9 @@ def _norm_host(s: str) -> str:
     return "".join(ch for ch in folded if ch.isalnum())
 
 
-# Honorifics as WHOLE tokens. ``_norm_host`` strips them as substrings anywhere in the
+# Honorifics as WHOLE tokens (the one list, :mod:`cogno_praxis.honorifics`). ``_norm_host`` strips them as substrings anywhere in the
 # string, which is fine for collapsing one name to one key and wrong for splitting a name into
 # words ("Pedro" would lose its "dr"). The two normalisers therefore stay separate.
-_HONORIFICS: frozenset[str] = frozenset({"dr", "dra", "sr", "sra", "prof", "profa"})
 
 
 def _host_tokens(s: str) -> frozenset[str]:
@@ -298,7 +298,7 @@ def _host_tokens(s: str) -> frozenset[str]:
     almost anything, and a match that loose is exactly what must not resolve to one agenda.
     """
     return frozenset(t for t in re.split(r"[\W_]+", _fold(s)) if len(t) > 1
-                     and t not in _HONORIFICS)
+                     and not is_honorific(t))
 
 
 class SchedulerError(RuntimeError):
