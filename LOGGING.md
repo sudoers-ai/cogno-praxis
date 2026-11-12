@@ -117,6 +117,7 @@ The admin vertical, the bookkeeper, the companies vertical, the closer and the i
 - `cogno_praxis.email_address`
 - `cogno_praxis.email_fields`
 - `cogno_praxis.grounding`
+- `cogno_praxis.honorifics`
 - `cogno_praxis.interviewer`
 - `cogno_praxis.logsafe`
 - `cogno_praxis.render`

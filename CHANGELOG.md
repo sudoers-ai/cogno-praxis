@@ -2,6 +2,10 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Changed — one public list of honorifics
+
+- **`cogno_praxis/honorifics.py`** (new): ONE public table of honorifics, with each reader's own subset — `QUERY_NAME_TITLES` (the coordinator's schedule query, `_drop_leading_title`), `HOST_NAME_TITLES` (the scheduler's host matcher, `_host_tokens`) and `ROUTING_ADDRESS` (the host's persona routing) — plus `is_query_name_title` / `is_host_name_title`. Each reader strips EXACTLY the titles it stripped before, so behaviour is unchanged: consolidating is not widening. A word joins a reader's subset only in a change of its own, with the real form that asks for it and a collision twin («seu» is also the Portuguese possessive). The host's two copies are to import this module. Whole words only: the substring strip in `_norm_host` is unchanged. Tests: `tests/unit/test_one_list_of_honorifics.py`. Doc: `docs/COORDINATOR.md`.
+
 - **`bookkeeper/prompts/system.txt`**: AI cost and token spend go to the host's `token_cost_analytics(granularity?, period?, dimension?, by?)`, now by message, day, week, month, conversation, persona, user or model. `by="model"` splits a day, week or month cut by model, which gives a series per model. A cut the AI-cost ledger does not carry (per client, per expense category) comes back «Not available»: the executor says so and never rebuilds it from the books.
 - **`bookkeeper/prompts/limits.txt`**: the judge grounds the new cuts. A «Not available» answer, reported as such, is CORRECT.
 - **`get_usage`** (when the cost tool is not on the turn) now says that the AI-cost report is a staff tool of the host and is not available on this turn, and that AI cost is never in the books. It still returns no figures.
