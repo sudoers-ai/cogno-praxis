@@ -18,7 +18,7 @@ import uuid
 from datetime import date, timedelta
 from typing import Callable, Iterable, Optional
 
-from cogno_praxis.scheduler.catalog import CatalogItem
+from cogno_praxis.scheduler.catalog import CatalogItem, resolve_item_token, services_for_choice
 from cogno_praxis.scheduler.engine import (
     AvailabilityEngine,
     SchedulerConfig,
@@ -370,16 +370,28 @@ class SchedulerService:
         """
         return host_candidates(text, self.store.list_hosts())
 
+    def _canonical_service_id(self, service_id: str) -> str:
+        """Resolve a ``service_id`` the model gave as a NAME or slug («Coloração», «coloracao») to
+        the EXACT catalog id, through the SAME ``resolve_item_token`` the total uses — but only when
+        it names exactly ONE item; a token matching nobody or TWO is returned unchanged, so the
+        guard's own refusal (unknown / ambiguous) still fires. A PRODUCT name resolves to its id and
+        is then refused as a product. An exact id, no id, or no catalog → unchanged."""
+        sid = (service_id or "").strip()
+        if not sid or not self.catalog or any(it.item_id == sid for it in self.catalog):
+            return sid
+        it = resolve_item_token(sid, self.catalog)
+        return it.item_id if it is not None else sid
+
     def _guard_service_id(self, service_id: str) -> None:
         """The PRODUCT guard: a booking call that names a catalog PRODUCT is refused —
         recoverably — because a product is never scheduled, it is explained. An id the catalog
         does not know is refused WITH the bookable services (never booked blind, never a pick).
 
         No catalog, or no ``service_id`` → nothing happens (the carrier-absent path is exactly
-        today's behaviour). With a catalog present, a service id passes through; this slice does
-        not yet book by its duration — a later change does — so a service id is otherwise inert here.
+        today's behaviour). A name or slug is first resolved to its exact id; with a catalog
+        present, a service id passes through. The duration-aware booking drives it elsewhere.
         """
-        sid = (service_id or "").strip()
+        sid = self._canonical_service_id(service_id)
         if not sid or not self.catalog:
             return
         by_id = {it.item_id: it for it in self.catalog}
@@ -397,9 +409,10 @@ class SchedulerService:
 
     # ── the SERVICE a call books, and WHO performs it ─────────────────────────────────
     def _service_item(self, service_id: str) -> "Optional[CatalogItem]":
-        """The catalog SERVICE a ``service_id`` names, or None (no catalog, no id, or — already
-        refused by :meth:`_guard_service_id` — an unknown id or a product)."""
-        sid = (service_id or "").strip()
+        """The catalog SERVICE a ``service_id`` names (by id, name or slug), or None (no
+        catalog, no id, or — already refused by :meth:`_guard_service_id` — an unknown id or a
+        product)."""
+        sid = self._canonical_service_id(service_id)
         if not sid or not self.catalog:
             return None
         it = next((i for i in self.catalog if i.item_id == sid), None)
@@ -440,12 +453,11 @@ class SchedulerService:
         item = self._service_item(service_id)
         if item is not None or (service_id or "").strip():
             return item
-        services = [it for it in self.catalog if it.is_service]
-        if not services:
-            return None
-        if len(services) == 1:
-            return services[0]
-        svc_list = "; ".join(f"{s.name} [{s.item_id}]" for s in services)
+        choice = services_for_choice(self.catalog)        # ONE definition (the host reads it too)
+        if not choice:
+            services = [it for it in self.catalog if it.is_service]
+            return services[0] if services else None       # exactly one → used; none → slot
+        svc_list = "; ".join(f"{s.name} [{s.item_id}]" for s in choice)
         raise SchedulerError(
             "which service? NOTHING was written — this agenda books by a service's duration. "
             f"Name one of: {svc_list}. Do NOT pick one yourself — show them and ask the client.")
