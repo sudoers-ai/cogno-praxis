@@ -148,7 +148,9 @@ NEIGHBOURS_AT_MAIN = {
     "closer/system.txt": "c5b30b8faf18562ec7936965e16fe59a8570d4bc9d67654c3156f9c170cf623d",
     "closer/voice.txt": "ecf7b265950d2b9797fb2329c430fad558988c07e0e4652228ec81e0a7bb73c1",
     "companies/scope.txt": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
-    "coordinator/limits.txt": "693599819f703f755d863a5298caaba2573685fed63091f80690ada60dc7c8d0",
+    # coordinator/limits.txt: regenerated 2026-11-12, deliberately — the judge's out-of-scope
+    # bullet carves platform AI/token cost (`token_cost_analytics`) out of "finance".
+    "coordinator/limits.txt": "b49f459661203db959f8d47fd4d8feed0ff6b26a31aead3b2773f30ccf720141",
     "coordinator/scope.txt": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
     "coordinator/system.txt": "5085d29f398179ea208eb2b81f28b2a51489004b12e6c7f2f3527f02dcee1e89",
     "coordinator/voice.txt": "21ca2bcf50fc42613687c6cb61f40ec6c0510b6384061a7c22bf8d45308b9ead",
@@ -159,7 +161,9 @@ NEIGHBOURS_AT_MAIN = {
     "scheduler/limits.txt": "92becaf1d23c56570833082fe1507e01c0afe3a52922ee8404ed671a53a6a2a4",
     "scheduler/scope.txt": "b2f942c84374955d9aad03f951ce4082d4cc4d0c45638cad4d1c6b9f89b3448f",
     "scheduler/system.txt": "49d2c8ce3706642f1baeef66ea2717be061f2262ccd6fa83f132e08cd93d58b2",
-    "scheduler/voice.txt": "68c17d7ea87916af677d8d03f532975de41c729b90e9e4b3587a5ddc5e68ae9b",
+    # scheduler/voice.txt: regenerated 2026-11-12, deliberately — the voice examples no longer
+    # lend the reply a name, a title or a gender («a Dra. Silva» → «a profissional»).
+    "scheduler/voice.txt": "b420762b7ac5f045503299c204ab63420033be450246f35e7a505541170b2d5e",
 }
 
 
