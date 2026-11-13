@@ -22,6 +22,31 @@ from cogno_praxis.logsafe import id_sha
 
 log = logging.getLogger(__name__)
 
+#: The default step between candidate START times when the agenda books by a SERVICE's duration:
+#: the grid of starts is 30-minute-spaced, SEPARATE from the
+#: service's duration (which is the size of the interval each start occupies). A tenant may override
+#: it via ``slot_start_granularity_minutes``. Without a catalog/service nothing uses this — the
+#: tenant's fixed slot grid (``slot_starts``) is unchanged.
+SLOT_START_GRANULARITY_MIN_DEFAULT = 30
+
+
+def minutes_of(hhmm: str) -> int:
+    """'HH:MM' → minutes since midnight. The one spelling, so the engine and the service measure an
+    interval the same way."""
+    h, m = hhmm.split(":")
+    return int(h) * 60 + int(m)
+
+
+def _hhmm(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def intervals_overlap(a0: int, a1: int, b0: int, b1: int) -> bool:
+    """[a0,a1) overlaps [b0,b1) ⇔ a0 < b1 and b0 < a1 — the minute-based twin of :func:`_overlaps`,
+    the predicate every interval conflict in the vertical reduces to (service duration, lunch,
+    an existing booking)."""
+    return a0 < b1 and b0 < a1
+
 
 class HolidaysUnavailableError(RuntimeError):
     """Raised when a tenant configured a ``country`` (opting into holiday-aware scheduling) but
@@ -49,6 +74,13 @@ class SchedulerConfig:
         self.work_saturdays: bool = raw.get("work_saturdays", False)
         self.work_sundays: bool = raw.get("work_sundays", False)
         self.slot_duration_minutes: int = int(raw.get("slot_duration_minutes", 60))
+        # The grid STEP for candidate starts when booking by a service's DURATION,
+        # separate from ``slot_duration_minutes`` (the fixed-slot grid used without a catalog). A
+        # non-positive value falls back to the default so a bad row never produces a zero step.
+        _gran = int(raw.get("slot_start_granularity_minutes",
+                            SLOT_START_GRANULARITY_MIN_DEFAULT) or 0)
+        self.slot_start_granularity_minutes: int = (
+            _gran if _gran > 0 else SLOT_START_GRANULARITY_MIN_DEFAULT)
         # Business-policy knobs (enforced by the service; 0/None = disabled → no behaviour
         # change unless a tenant opts in). booking_delay_days kept for parent-config fidelity.
         self.booking_delay_days: int = int(raw.get("booking_delay_days", 0))
@@ -132,6 +164,7 @@ class SchedulerConfig:
             "work_saturdays": self.work_saturdays,
             "work_sundays": self.work_sundays,
             "slot_duration_minutes": self.slot_duration_minutes,
+            "slot_start_granularity_minutes": self.slot_start_granularity_minutes,
             "booking_delay_days": self.booking_delay_days,
             "booking_window_days": self.booking_window_days,
             "cooldown_days": self.cooldown_days,
@@ -292,6 +325,44 @@ class AvailabilityEngine:
             return []
         taken = taken_starts or set()
         return [s for s in self.slot_starts() if s not in taken]
+
+    def fitting_starts(
+        self, target_date: date, duration_minutes: int,
+        taken_intervals: Optional[Iterable[tuple[int, int]]] = None,
+    ) -> list[str]:
+        """The start times (``HH:MM``) at which a service of ``duration_minutes`` FITS.
+
+        Pure, like the rest of the engine: the candidate grid is ``slot_start_granularity_minutes``
+        apart from ``work_start``, and a start is kept only when the WHOLE interval
+        ``[start, start+duration)`` (a) ends by ``work_end``, (b) does not cross lunch (owner
+        decision (d): never straddle the break), and (c) overlaps none of ``taken_intervals``
+        (minute pairs ``(start, end)`` for the bookings already on that professional/day). ``[]``
+        on a non-working day or a non-positive duration.
+
+        This is what makes a 2-hour service occupy two hours: a 120-min start at 10:00 removes both
+        10:00 and 11:00 from the next answer (their intervals overlap it), where the fixed-slot grid
+        only ever removed the exact start."""
+        working, _ = self.is_working_day(target_date)
+        if not working or duration_minutes <= 0:
+            return []
+        c = self._config
+        work_start = c.work_start.hour * 60 + c.work_start.minute
+        work_end = c.work_end.hour * 60 + c.work_end.minute
+        lunch_start = c.lunch_start.hour * 60 + c.lunch_start.minute
+        lunch_end = c.lunch_end.hour * 60 + c.lunch_end.minute
+        has_lunch = lunch_end > lunch_start
+        step = c.slot_start_granularity_minutes
+        taken = list(taken_intervals or ())
+        out: list[str] = []
+        start = work_start
+        while start + duration_minutes <= work_end:
+            end = start + duration_minutes
+            crosses_lunch = has_lunch and intervals_overlap(start, end, lunch_start, lunch_end)
+            clashes = any(intervals_overlap(start, end, t0, t1) for t0, t1 in taken)
+            if not crosses_lunch and not clashes:
+                out.append(_hhmm(start))
+            start += step
+        return out
 
 
 def _overlaps(a0: datetime, a1: datetime, b0: datetime, b1: datetime) -> bool:

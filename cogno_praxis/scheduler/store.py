@@ -35,6 +35,13 @@ EMPLOYEE_ROLE = "EMPLOYEE"
 OVERSIGHT_ROLES: frozenset[str] = frozenset({"SUPERVISOR", "ADMIN", "SECRETARY"})
 
 
+def _minutes_of(hhmm: str) -> int:
+    """'HH:MM' → minutes since midnight (the store's own tiny copy — it must not import the engine
+    to measure an interval)."""
+    h, _, m = hhmm.partition(":")
+    return int(h) * 60 + int(m or 0)
+
+
 class SlotTakenError(RuntimeError):
     """An ``add()`` lost the race for a slot — the backing store refused it because an ACTIVE
     appointment already occupies (host_id, date, time).
@@ -89,6 +96,17 @@ class Appointment:
     # and stamping them with the base persona would answer the owner's question with a value
     # nobody measured.
     persona_id: str = ""
+    # ── the service this slot occupies ──────────────────────────────────────────────
+    # A booking made against a catalog SERVICE carries its id, the DURATION the interval occupies,
+    # and the value spoken at confirmation. All three are optional and default to "unset": a row
+    # written before the catalog, or a tenant without one, has ``service_id=""`` and
+    # ``duration_minutes=0`` — and 0 means "use the tenant's fixed slot", so such a row behaves
+    # EXACTLY as today (the absence hardens nothing and changes nothing). ``value_text`` is the
+    # catalogue's own money literal, grounded by ``declared_values`` — carried so a reschedule
+    # keeps the price that was agreed, not whatever the catalog says later.
+    service_id: str = ""
+    duration_minutes: int = 0
+    value_text: str = ""
 
     @property
     def is_block(self) -> bool:
@@ -135,6 +153,46 @@ class InMemoryAppointmentStore:
                 if a.host_id == host_id and a.date == date and a.status in ACTIVE_STATUS}
 
     def add(self, appointment: Appointment) -> None:
+        self.appointments[appointment.appointment_id] = appointment
+
+    def _refuse_overlap(self, a: Appointment, slot_minutes: int) -> None:
+        """Raise :class:`SlotTakenError` when ``a``'s interval overlaps an ACTIVE booking of the same
+        professional/day (``a`` itself excluded). A row with ``duration_minutes`` 0 occupies
+        ``[time, time+slot_minutes)``. The one interval scan ``add_if_free`` and ``update_if_free``
+        share."""
+        start = _minutes_of(a.time)
+        end = start + (a.duration_minutes or slot_minutes)
+        for other in self.appointments.values():
+            if (other.host_id != a.host_id or other.date != a.date
+                    or other.status not in ACTIVE_STATUS
+                    or other.appointment_id == a.appointment_id):
+                continue
+            o_start = _minutes_of(other.time)
+            o_end = o_start + (other.duration_minutes or slot_minutes)
+            if start < o_end and o_start < end:
+                raise SlotTakenError(
+                    f"{a.time} on {a.date} is already booked for {a.host_id}")
+
+    def add_if_free(self, appointment: Appointment, *, slot_minutes: int) -> None:
+        """Add a row only if its interval overlaps no ACTIVE booking on the same professional/day —
+        the in-memory twin of the Postgres adapter's advisory-locked insert.
+
+        A single process has no race to close, so this is just the interval check the fixed-slot
+        store did by equal-start, widened to overlap: a row with ``duration_minutes`` 0 occupies
+        ``[time, time+slot_minutes)``; a service row occupies its own duration. On an overlap it
+        raises :class:`SlotTakenError`, exactly as the Postgres unique index/lock would, so the
+        service answers a lost slot the same way on both stores. A multi-worker host must still
+        inject the Postgres adapter — this guard is process-local, like the rest of this default."""
+        self._refuse_overlap(appointment, slot_minutes)
+        self.appointments[appointment.appointment_id] = appointment
+
+    def update_if_free(self, appointment: Appointment, *, slot_minutes: int) -> None:
+        """Rewrite a row only if, once written, its interval overlaps no OTHER ACTIVE booking — the
+        guard for a write that MOVES or REVIVES a booking (reschedule, a status back to the live
+        agenda). Same scan as :meth:`add_if_free`; a row that is not active occupies nothing and
+        is written as is."""
+        if appointment.status in ACTIVE_STATUS:
+            self._refuse_overlap(appointment, slot_minutes)
         self.appointments[appointment.appointment_id] = appointment
 
     def get(self, appointment_id: str) -> Optional[Appointment]:
