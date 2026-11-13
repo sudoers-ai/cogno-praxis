@@ -1056,15 +1056,20 @@ def test_a_linha_do_postgres_le_a_persona_na_posicao_certa():
     from cogno_praxis.scheduler.stores.postgres import _APPT_COLS, _appt
 
     colunas = [c.strip() for c in _APPT_COLS.split(",")]
-    assert colunas[-1] == "persona_id", "a coluna nova tem de ser a última, como o mapeador lê"
+    assert colunas[-1] == "value_text", "a coluna nova tem de ser a última, como o mapeador lê"
 
+    # The Fatia C service columns ride at the END (service_id, duration_minutes, value_text), so
+    # the existing positions stay put and each new one is mapped at its own index.
     linha = ("a1", "dr_silva", "2026-07-01", "09:00", "Ana", CONFIRMED, "", "nota",
-             "g1", "Dr. Silva", "CLOSER")
+             "g1", "Dr. Silva", "CLOSER", "service:coloracao", 120, "R$ 260,00")
     a = _appt(linha)
     assert a.persona_id == "CLOSER" and a.host_name == "Dr. Silva" and a.guest_id == "g1"
+    assert a.service_id == "service:coloracao" and a.duration_minutes == 120
+    assert a.value_text == "R$ 260,00"
 
     # uma base ainda por migrar devolve a linha curta: degrada, não rebenta
-    assert _appt(linha[:10]).persona_id == ""
+    short = _appt(linha[:10])
+    assert short.persona_id == "" and short.service_id == "" and short.duration_minutes == 0
 
 
 def test_a_coluna_e_acrescentada_com_ALTER_e_nao_so_no_CREATE():

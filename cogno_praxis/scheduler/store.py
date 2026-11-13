@@ -35,6 +35,13 @@ EMPLOYEE_ROLE = "EMPLOYEE"
 OVERSIGHT_ROLES: frozenset[str] = frozenset({"SUPERVISOR", "ADMIN", "SECRETARY"})
 
 
+def _minutes_of(hhmm: str) -> int:
+    """'HH:MM' → minutes since midnight (the store's own tiny copy — it must not import the engine
+    to measure an interval)."""
+    h, _, m = hhmm.partition(":")
+    return int(h) * 60 + int(m or 0)
+
+
 class SlotTakenError(RuntimeError):
     """An ``add()`` lost the race for a slot — the backing store refused it because an ACTIVE
     appointment already occupies (host_id, date, time).
@@ -89,6 +96,17 @@ class Appointment:
     # and stamping them with the base persona would answer the owner's question with a value
     # nobody measured.
     persona_id: str = ""
+    # ── the service this slot occupies ──────────────────────────────────────────────
+    # A booking made against a catalog SERVICE carries its id, the DURATION the interval occupies,
+    # and the value spoken at confirmation. All three are optional and default to "unset": a row
+    # written before the catalog, or a tenant without one, has ``service_id=""`` and
+    # ``duration_minutes=0`` — and 0 means "use the tenant's fixed slot", so such a row behaves
+    # EXACTLY as today (the absence hardens nothing and changes nothing). ``value_text`` is the
+    # catalogue's own money literal, grounded by ``declared_values`` — carried so a reschedule
+    # keeps the price that was agreed, not whatever the catalog says later.
+    service_id: str = ""
+    duration_minutes: int = 0
+    value_text: str = ""
 
     @property
     def is_block(self) -> bool:
@@ -136,6 +154,31 @@ class InMemoryAppointmentStore:
 
     def add(self, appointment: Appointment) -> None:
         self.appointments[appointment.appointment_id] = appointment
+
+    def add_if_free(self, appointment: Appointment, *, slot_minutes: int) -> None:
+        """Add a row only if its interval overlaps no ACTIVE booking on the same professional/day —
+        the in-memory twin of the Postgres adapter's advisory-locked insert.
+
+        A single process has no race to close, so this is just the interval check the fixed-slot
+        store did by equal-start, widened to overlap: a row with ``duration_minutes`` 0 occupies
+        ``[time, time+slot_minutes)``; a service row occupies its own duration. On an overlap it
+        raises :class:`SlotTakenError`, exactly as the Postgres unique index/lock would, so the
+        service answers a lost slot the same way on both stores. A multi-worker host must still
+        inject the Postgres adapter — this guard is process-local, like the rest of this default."""
+        a = appointment
+        start = _minutes_of(a.time)
+        end = start + (a.duration_minutes or slot_minutes)
+        for other in self.appointments.values():
+            if (other.host_id != a.host_id or other.date != a.date
+                    or other.status not in ACTIVE_STATUS
+                    or other.appointment_id == a.appointment_id):
+                continue
+            o_start = _minutes_of(other.time)
+            o_end = o_start + (other.duration_minutes or slot_minutes)
+            if start < o_end and o_start < end:
+                raise SlotTakenError(
+                    f"{a.time} on {a.date} is already booked for {a.host_id}")
+        self.appointments[a.appointment_id] = a
 
     def get(self, appointment_id: str) -> Optional[Appointment]:
         return self.appointments.get(appointment_id)

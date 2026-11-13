@@ -45,6 +45,9 @@ def _ensure_schema(conn: "psycopg.Connection", partitions: int) -> None:
                notes text NOT NULL DEFAULT '',
                guest_id text NOT NULL DEFAULT '', host_name text NOT NULL DEFAULT '',
                persona_id text NOT NULL DEFAULT '',
+               service_id text NOT NULL DEFAULT '',
+               duration_minutes integer NOT NULL DEFAULT 0,
+               value_text text NOT NULL DEFAULT '',
                PRIMARY KEY (appointment_id, scope)
            ) PARTITION BY HASH (scope)""")
     # Migration-safe: add the two-sided-identity columns to a pre-existing table.
@@ -54,6 +57,11 @@ def _ensure_schema(conn: "psycopg.Connection", partitions: int) -> None:
     # deployed box, so the `CREATE TABLE IF NOT EXISTS` above is a no-op there and a column
     # added only inside it would never appear in production.
     conn.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS persona_id text NOT NULL DEFAULT ''")
+    # The service a slot occupies — additive, nullable-with-default, no backfill: an old
+    # row reads ``duration_minutes=0`` and is treated as a fixed slot, exactly as before.
+    conn.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS service_id text NOT NULL DEFAULT ''")
+    conn.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS duration_minutes integer NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS value_text text NOT NULL DEFAULT ''")
     for k in range(partitions):
         conn.execute(
             f"CREATE TABLE IF NOT EXISTS appointments_p{k} PARTITION OF appointments "
@@ -74,7 +82,7 @@ def _host(row: tuple) -> Host:
 
 # The canonical column order for an appointment SELECT (kept in sync with ``_appt``).
 _APPT_COLS = ("appointment_id, host_id, date, time, with_name, status, cancel_reason, "
-              "notes, guest_id, host_name, persona_id")
+              "notes, guest_id, host_name, persona_id, service_id, duration_minutes, value_text")
 
 
 def _ensure_slot_uniqueness(conn: "psycopg.Connection") -> None:
@@ -139,7 +147,10 @@ def _appt(row: tuple) -> Appointment:
                        # lugar, ou e lida para o campo seguinte. O `len(row) >` deixa uma linha
                        # curta degradar (uma leitura contra uma base ainda por migrar); nao
                        # torna a ORDEM segura.
-                       persona_id=(row[10] or "") if len(row) > 10 else "")
+                       persona_id=(row[10] or "") if len(row) > 10 else "",
+                       service_id=(row[11] or "") if len(row) > 11 else "",
+                       duration_minutes=int(row[12] or 0) if len(row) > 12 else 0,
+                       value_text=(row[13] or "") if len(row) > 13 else "")
 
 
 class PgAppointmentStore:
@@ -260,13 +271,62 @@ class PgAppointmentStore:
     def add(self, appointment: Appointment) -> None:
         a = appointment
         try:
-            self._conn.execute(
-                """INSERT INTO appointments (appointment_id, scope, host_id, date, time,
-                       with_name, status, cancel_reason, notes, guest_id, host_name,
-                       persona_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                (a.appointment_id, self._scope, a.host_id, a.date, a.time, a.with_name,
-                 a.status, a.cancel_reason, a.notes, a.guest_id, a.host_name, a.persona_id))
+            self._insert(self._conn, a)
+        except psycopg.errors.UniqueViolation as exc:
+            raise _slot_taken(exc, a) from exc
+
+    def _insert(self, conn: "psycopg.Connection", a: Appointment) -> None:
+        """One INSERT of an appointment row, columns in ``_APPT_COLS`` order + scope. Shared by
+        ``add`` (its own autocommit statement) and ``add_if_free`` (inside the locked transaction),
+        so the row shape is written in ONE place."""
+        conn.execute(
+            """INSERT INTO appointments (appointment_id, scope, host_id, date, time,
+                   with_name, status, cancel_reason, notes, guest_id, host_name,
+                   persona_id, service_id, duration_minutes, value_text)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (a.appointment_id, self._scope, a.host_id, a.date, a.time, a.with_name,
+             a.status, a.cancel_reason, a.notes, a.guest_id, a.host_name, a.persona_id,
+             a.service_id, a.duration_minutes, a.value_text))
+
+    def add_if_free(self, appointment: Appointment, *, slot_minutes: int) -> None:
+        """Insert a row only if its interval overlaps no ACTIVE booking on the same
+        professional/day — the atomic guard for booking by DURATION.
+
+        The fixed-slot adapter leaned on a UNIQUE INDEX over ``(scope, host_id, date, time)``, which
+        only catches two bookings that START at the same minute. With variable durations two
+        intervals can overlap from DIFFERENT starts (10:00+120 vs 10:30+30), and that index does
+        not see them. The decision rule is **first-committer-wins**: a per-(scope, host_id, date)
+        ``pg_advisory_xact_lock`` serialises the read-then-insert for ONE professional/day, so two
+        concurrent books for the same professional/interval cannot both pass — the first to commit
+        wins, the second reads its row and is refused (``SlotTakenError`` → the service's recoverable
+        answer with free alternatives). The lock key carries ``host_id``, so a booking for a
+        DIFFERENT professional at the same time never waits on this one: both commit.
+
+        An existing row with ``duration_minutes=0`` (a legacy/fixed-slot booking) is measured at
+        ``slot_minutes`` via ``COALESCE(NULLIF(...))``. The new row already carries its concrete
+        duration (the service resolves it before calling). ``block_schedule`` passes through here
+        too. The old unique index stays (harmless, redundant for equal starts)."""
+        a = appointment
+        start = int(a.time.split(":")[0]) * 60 + int(a.time.split(":")[1])
+        end = start + (a.duration_minutes or slot_minutes)
+        try:
+            with self._conn.transaction():
+                self._conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                    (f"{self._scope}/{a.host_id}/{a.date}",))
+                rows = self._conn.execute(
+                    "SELECT time, COALESCE(NULLIF(duration_minutes, 0), %s) "
+                    "FROM appointments WHERE scope = %s AND host_id = %s AND date = %s "
+                    "AND status = ANY(%s) AND appointment_id <> %s",
+                    (slot_minutes, self._scope, a.host_id, a.date, list(_ACTIVE),
+                     a.appointment_id)).fetchall()
+                for t, dur in rows:
+                    o_start = int(t.split(":")[0]) * 60 + int(t.split(":")[1])
+                    o_end = o_start + int(dur)
+                    if start < o_end and o_start < end:
+                        raise SlotTakenError(
+                            f"{a.time} on {a.date} is already booked for {a.host_id}")
+                self._insert(self._conn, a)
         except psycopg.errors.UniqueViolation as exc:
             raise _slot_taken(exc, a) from exc
 
@@ -300,9 +360,11 @@ class PgAppointmentStore:
         try:
             self._conn.execute(
                 """UPDATE appointments SET host_id = %s, date = %s, time = %s, with_name = %s,
-                       status = %s, cancel_reason = %s, notes = %s, guest_id = %s, host_name = %s
+                       status = %s, cancel_reason = %s, notes = %s, guest_id = %s, host_name = %s,
+                       service_id = %s, duration_minutes = %s, value_text = %s
                    WHERE scope = %s AND appointment_id = %s""",
                 (a.host_id, a.date, a.time, a.with_name, a.status, a.cancel_reason, a.notes,
-                 a.guest_id, a.host_name, self._scope, a.appointment_id))
+                 a.guest_id, a.host_name, a.service_id, a.duration_minutes, a.value_text,
+                 self._scope, a.appointment_id))
         except psycopg.errors.UniqueViolation as exc:
             raise _slot_taken(exc, a) from exc

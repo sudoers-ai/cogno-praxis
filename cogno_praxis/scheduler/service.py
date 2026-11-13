@@ -19,7 +19,12 @@ from datetime import date, timedelta
 from typing import Callable, Iterable, Optional
 
 from cogno_praxis.scheduler.catalog import CatalogItem
-from cogno_praxis.scheduler.engine import AvailabilityEngine, SchedulerConfig
+from cogno_praxis.scheduler.engine import (
+    AvailabilityEngine,
+    SchedulerConfig,
+    intervals_overlap,
+    minutes_of,
+)
 # The ONE name checker (fold, normalisation, matching, labelling) lives in ``names`` so the
 # booking resolver below and the catalog import door share a single definition — a second copy
 # would let one offer a professional the other could not resolve. Re-exported here because the
@@ -260,6 +265,12 @@ def _parse_calendar_date(e: str, today: date) -> Optional[date]:
     return None
 
 
+def _iso_to_date(iso: str) -> date:
+    """'YYYY-MM-DD' → ``date``. A module-level helper because inside the service the parameter is
+    itself named ``date`` and shadows the class."""
+    return date.fromisoformat(iso)
+
+
 class SchedulerError(RuntimeError):
     """A recoverable domain error (unknown host, slot taken, past date, unknown id)."""
 
@@ -383,6 +394,101 @@ class SchedulerService:
                 f"{it.name} is a PRODUCT, not a service — it cannot be scheduled. Describe it and "
                 f"its price if asked; the purchase is made in person. NOTHING was written.")
 
+    # ── the SERVICE a call books, and WHO performs it ─────────────────────────────────
+    def _service_item(self, service_id: str) -> "Optional[CatalogItem]":
+        """The catalog SERVICE a ``service_id`` names, or None (no catalog, no id, or — already
+        refused by :meth:`_guard_service_id` — an unknown id or a product)."""
+        sid = (service_id or "").strip()
+        if not sid or not self.catalog:
+            return None
+        it = next((i for i in self.catalog if i.item_id == sid), None)
+        return it if (it is not None and it.is_service) else None
+
+    def _service_performers(self, item: "CatalogItem") -> list[Host]:
+        """The professionals who perform a service, from the roster NOW (``all_hosts`` → everyone
+        with an agenda; else the ``host_ids``, those still schedulable)."""
+        hosts = self.store.list_hosts()
+        if item.all_hosts:
+            return hosts
+        by_id = {h.host_id: h for h in hosts}
+        return [by_id[hid] for hid in item.host_ids if hid in by_id]
+
+    def _guard_service_professional(self, item: "Optional[CatalogItem]", host: Host) -> None:
+        """Per-professional guard: a service a professional does NOT perform
+        is refused BEFORE anything is written, and the refusal carries WHO does perform it — the
+        shape of :meth:`_host_for`, so the model relays it in one message instead of guessing.
+
+        ``all_hosts`` passes for everyone; a named professional passes only if they are in the
+        service's ``host_ids``. No service (``None``) → nothing to check (the carrier-absent path)."""
+        if item is None or item.all_hosts or host.host_id in item.host_ids:
+            return
+        performers = self._service_performers(item)
+        who = "; ".join(f"{h.name} [{h.host_id}]" for h in performers) or "nobody with an agenda"
+        raise SchedulerError(
+            f"{host.name} does not perform {item.name!r}, and NOTHING was written. Who does: "
+            f"{who}. Do NOT pick one yourself — show this to the client and ask.")
+
+    def _require_service_when_catalog(self, service_id: str) -> "Optional[CatalogItem]":
+        """Decide the service a WRITE books, enforcing "carrier present → stricter".
+
+        With a service id → that service. Without one, but a catalog that offers services → REFUSE
+        (ask which), UNLESS exactly one service exists (then it is unambiguous and used). Without a
+        catalog → None (today's slot behaviour). The qwen model omits optional args, so a silent
+        fallback to the fixed slot would quietly book the wrong interval; the refusal is recoverable
+        and carries the services."""
+        item = self._service_item(service_id)
+        if item is not None or (service_id or "").strip():
+            return item
+        services = [it for it in self.catalog if it.is_service]
+        if not services:
+            return None
+        if len(services) == 1:
+            return services[0]
+        svc_list = "; ".join(f"{s.name} [{s.item_id}]" for s in services)
+        raise SchedulerError(
+            "which service? NOTHING was written — this agenda books by a service's duration. "
+            f"Name one of: {svc_list}. Do NOT pick one yourself — show them and ask the client.")
+
+    def _taken_intervals(self, host_id: str, iso_date: str, *, exclude_id: str = "",
+                         ) -> list[tuple[int, int]]:
+        """The ACTIVE bookings on a professional/day as minute intervals ``[start, start+dur)`` —
+        a row with ``duration_minutes=0`` (legacy/fixed slot) measured at the tenant slot. The
+        interval twin of ``booked_times``; every overlap check in the service reads it."""
+        slot = self._config.slot_duration_minutes
+        out: list[tuple[int, int]] = []
+        for a in self.store.list(host_id=host_id):
+            if (a.date != iso_date or a.status not in ACTIVE_STATUS
+                    or a.appointment_id == exclude_id):
+                continue
+            start = minutes_of(a.time)
+            out.append((start, start + (a.duration_minutes or slot)))
+        return out
+
+    def _free_starts(self, host_id: str, iso_date: str, item: "Optional[CatalogItem]",
+                     *, exclude_id: str = "") -> list[str]:
+        """The bookable start times on a professional/day: a SERVICE's fitting starts (its duration,
+        the granularity grid) or — without a service — the tenant's fixed slots, BOTH filtered by
+        interval OVERLAP (not equal start), so a long booking removes every start it covers."""
+        taken = self._taken_intervals(host_id, iso_date, exclude_id=exclude_id)
+        if item is not None:
+            return self._engine.fitting_starts(_iso_to_date(iso_date),
+                                               item.duration_minutes, taken)
+        slot = self._config.slot_duration_minutes
+        return [s for s in self._slots
+                if not any(intervals_overlap(minutes_of(s), minutes_of(s) + slot, t0, t1)
+                           for t0, t1 in taken)]
+
+    def _add_appt(self, appt: Appointment) -> None:
+        """Persist a new row through the store's atomic ``add_if_free`` (interval guard + advisory
+        lock on Postgres) when it offers one, else the plain ``add`` after the service's own
+        pre-check. The getattr keeps a custom/legacy store that predates ``add_if_free`` working —
+        its pre-check already ran, exactly as today."""
+        add_if_free = getattr(self.store, "add_if_free", None)
+        if add_if_free is not None:
+            add_if_free(appt, slot_minutes=self._config.slot_duration_minutes)
+        else:
+            self.store.add(appt)
+
     def _host_for(self, text: str) -> Host:
         """Exactly one catalogue host for a free string, or a refusal that says which case it is.
 
@@ -451,13 +557,17 @@ class SchedulerService:
                            service_id: str = "") -> list[str]:
         """Free slots on a date. ``host_name`` is the professional the CLIENT named — passing it
         makes this read verify the agenda instead of trusting the id it was handed. ``service_id``
-        (when a catalog is configured) is PRODUCT-guarded: a product cannot be scheduled."""
+        (when a catalog is configured) is PRODUCT-guarded, performer-checked, and — when it names a
+        SERVICE — reported as the starts where that service's whole DURATION fits. Without
+        a service the tenant's fixed slots are returned, filtered by interval overlap so a long
+        booking already on the day removes every start it covers."""
         self._guard_service_id(service_id)
-        host_id = self.resolve_agenda(host_id, host_name).host_id
+        host = self.resolve_agenda(host_id, host_name)
+        item = self._service_item(service_id)
+        self._guard_service_professional(item, host)
         self._require_future(date)
         self._require_working_day(date)
-        taken = self.store.booked_times(host_id, date)
-        return [s for s in self._slots if s not in taken]
+        return self._free_starts(host.host_id, date, item)
 
     def next_available_day(self, host_id: str, after_date: str, *,
                            horizon_days: int = 14) -> Optional[tuple[str, list[str]]]:
@@ -476,8 +586,9 @@ class SchedulerService:
             working, _reason = self._engine.is_working_day(cursor)
             if working:
                 scanned += 1
-                taken = self.store.booked_times(host_id, cursor.isoformat())
-                free = [s for s in self._slots if s not in taken]
+                # Interval-filtered, like every other availability read: a long booking on the day
+                # removes every fixed slot it covers, not just its own start.
+                free = self._free_starts(host_id, cursor.isoformat(), None)
                 if free:
                     return cursor.isoformat(), free
             cursor += timedelta(days=1)
@@ -592,14 +703,28 @@ class SchedulerService:
         # the professional the client NAMED, not as a display label to copy down. A call whose id
         # and name are two different people is refused before anything is written.
         host = self.resolve_agenda(host_id, host_name)
+        # The SERVICE this booking occupies. With a catalog, a write MUST name a service
+        # (unless there is exactly one) — "carrier present → stricter"; the professional must
+        # actually perform it. Without a catalog, ``item`` is None and the fixed slot is used, byte
+        # for byte as before.
+        item = self._require_service_when_catalog(service_id)
+        self._guard_service_professional(item, host)
         host_id = host.host_id
         self._require_future(date)
         self._require_working_day(date)
         self._enforce_policies(host_id, date, time, with_name, guest_id=guest_id)
-        if time not in self._slots:
+        duration = item.duration_minutes if item is not None else self._config.slot_duration_minutes
+        # The candidate grid WITHOUT the day's bookings: a service fits on the granularity grid where
+        # its whole interval lands inside hours and clear of lunch; without a service, the fixed
+        # slots. ``time`` must be one of them, else it is not a bookable start at all.
+        grid = (self._engine.fitting_starts(_iso_to_date(date), duration, [])
+                if item is not None else list(self._slots))
+        if time not in grid:
             raise SchedulerError(f"{time} is not a bookable slot")
-        if time in self.store.booked_times(host_id, date):
-            return self._resolve_slot_conflict(host_id, date, time, with_name, guest_id)
+        start, end = minutes_of(time), minutes_of(time) + duration
+        if any(intervals_overlap(start, end, t0, t1)
+               for t0, t1 in self._taken_intervals(host_id, date)):
+            return self._resolve_slot_conflict(host_id, date, time, with_name, guest_id, item)
         # The professional's auto_confirm decides: instant CONFIRMED, or PENDING until they
         # accept (confirm_appointment). The booker's *role* never enters here — RBAC is
         # the host's job; the vertical only reads the professional's own setting.
@@ -615,18 +740,26 @@ class SchedulerService:
             # Quem marcou. Chega do HOST, nunca do modelo — e vazio significa «nao se sabe»,
             # nao «a persona base»: um valor que ninguem mediu responderia a pergunta do dono
             # com um palpite.
-            persona_id=persona_id)
+            persona_id=persona_id,
+            # The service occupies its CONCRETE duration (a fixed-slot booking stores the tenant
+            # slot, so the row carries the interval it owns without the store knowing the config).
+            # The value is the catalogue's, kept on the row so a reschedule keeps the agreed price.
+            service_id=item.item_id if item is not None else "",
+            duration_minutes=duration,
+            value_text=item.value_text if item is not None else "")
         try:
-            self.store.add(appt)
+            self._add_appt(appt)
         except SlotTakenError:
-            # A concurrent turn took the slot between the check above and this insert; the
-            # store's unique index caught what check-then-insert cannot. Answer exactly as the
-            # pre-check would have — idempotent re-book, or free alternatives.
-            return self._resolve_slot_conflict(host_id, date, time, with_name, guest_id)
+            # A concurrent turn took an overlapping interval between the pre-check above and this
+            # insert; the store's advisory-locked ``add_if_free`` caught what check-then-insert
+            # cannot. Answer exactly as the pre-check would have — idempotent re-book, or free
+            # alternatives.
+            return self._resolve_slot_conflict(host_id, date, time, with_name, guest_id, item)
         return appt
 
     def _resolve_slot_conflict(self, host_id: str, date: str, time: str,
-                               with_name: str, guest_id: str) -> Appointment:
+                               with_name: str, guest_id: str,
+                               item: "Optional[CatalogItem]" = None) -> Appointment:
         """A slot is already taken: return the caller's OWN appointment, or raise with the
         free alternatives. Reached from the availability pre-check and from a lost race."""
         # Idempotent: re-booking the IDENTICAL appointment (same host/date/time/client)
@@ -642,9 +775,10 @@ class SchedulerService:
                 or (not guest_id.strip() and with_name.strip()
                     and existing.with_name.strip().lower() == with_name.strip().lower())):
             return existing
-        # Carry the free alternatives IN the error (the parent's SLOT_UNAVAILABLE
-        # pattern) so the model offers them in one shot instead of re-looping.
-        free = [s for s in self._slots if s not in self.store.booked_times(host_id, date)]
+        # Carry the free alternatives IN the error (the parent's SLOT_UNAVAILABLE pattern) so the
+        # model offers them in one shot instead of re-looping — the starts where THIS service (or
+        # the fixed slot) still fits, by interval.
+        free = self._free_starts(host_id, date, item)
         free_txt = ", ".join(free) if free else "none that day"
         raise SchedulerError(
             f"{time} on {date} is already booked. Free slots on {date}: {free_txt}")
@@ -875,7 +1009,9 @@ class SchedulerService:
         (the host may treat a reschedule as needing re-confirmation via its own flow).
 
         ``service_id`` is PRODUCT-guarded: a product id is refused before anything
-        moves. This change does not re-slot by a service's duration — a later one does.
+        moves. The move keeps the appointment's OWN duration (the one it was booked with) —
+        not the catalog's, which may have changed — and re-verifies the WHOLE interval fits and
+        clears every other booking at the new time.
         """
         self._guard_service_id(service_id)
         appt = self.store.get(appointment_id)
@@ -888,18 +1024,32 @@ class SchedulerService:
                 f"appointment can be rescheduled")
         self._require_future(new_date)
         self._require_working_day(new_date)
-        if new_time not in self._slots:
+        # The appointment's OWN duration drives the grid and the overlap: a service row re-slots on
+        # the granularity grid where its whole interval fits; a fixed-slot row keeps the slot grid.
+        slot = self._config.slot_duration_minutes
+        duration = appt.duration_minutes or slot
+        is_service_row = bool(appt.service_id)
+        grid = (self._engine.fitting_starts(_iso_to_date(new_date), duration, [])
+                if is_service_row else list(self._slots))
+        if new_time not in grid:
             raise SchedulerError(f"{new_time} is not a bookable slot")
         if (new_date, new_time) == (appt.date, appt.time):
             return appt                                       # already there → no-op
-        taken = {a.time for a in self.store.list(host_id=appt.host_id)
-                 if a.date == new_date and a.status in ACTIVE_STATUS
-                 and a.appointment_id != appointment_id}
-        if new_time in taken:
-            free = [s for s in self._slots if s not in taken]
-            free_txt = ", ".join(free) if free else "none that day"
+        taken = self._taken_intervals(appt.host_id, new_date, exclude_id=appointment_id)
+        start, end = minutes_of(new_time), minutes_of(new_time) + duration
+
+        def _free() -> str:
+            if is_service_row:
+                fits = self._engine.fitting_starts(_iso_to_date(new_date), duration, taken)
+            else:
+                fits = [s for s in self._slots
+                        if not any(intervals_overlap(minutes_of(s), minutes_of(s) + slot, t0, t1)
+                                   for t0, t1 in taken)]
+            return ", ".join(fits) if fits else "none that day"
+
+        if any(intervals_overlap(start, end, t0, t1) for t0, t1 in taken):
             raise SchedulerError(
-                f"{new_time} on {new_date} is already booked. Free slots on {new_date}: {free_txt}")
+                f"{new_time} on {new_date} is already booked. Free slots on {new_date}: {_free()}")
         appt.date = new_date
         appt.time = new_time
         try:
@@ -907,11 +1057,9 @@ class SchedulerService:
         except SlotTakenError:
             # Lost the race with a concurrent booking of the target slot — same answer the
             # pre-check above gives, so the model can offer alternatives instead of retrying.
-            free = [s for s in self._slots if s not in taken and s != new_time]
-            free_txt = ", ".join(free) if free else "none that day"
             raise SchedulerError(
                 f"{new_time} on {new_date} is already booked. "
-                f"Free slots on {new_date}: {free_txt}") from None
+                f"Free slots on {new_date}: {_free()}") from None
         return appt
 
     def block_schedule(self, host_id: str, date: str, *, start_time: str = "",
@@ -933,23 +1081,33 @@ class SchedulerService:
         if self.store.get_host(host_id) is None:
             raise SchedulerError(f"unknown host: {host_id}")
         self._require_not_past(date)
+        slot = self._config.slot_duration_minutes
         targets = self._slots_in_range(start_time, end_time)
-        active = {a.time: a for a in self.store.list(host_id=host_id)
-                  if a.date == date and a.status in ACTIVE_STATUS}
-        conflicts = sorted(t for t in targets if t in active and not active[t].is_block)
+        active = [a for a in self.store.list(host_id=host_id)
+                  if a.date == date and a.status in ACTIVE_STATUS]
+        # A CLIENT booking blocks a slot it OVERLAPS, not only one that starts on it: a
+        # 2-hour booking at 10:00 refuses a block at 11:00. Blocks already placed are skipped by
+        # exact start (idempotent). Client intervals use the slot fallback for a legacy 0-duration.
+        client_intervals = [(minutes_of(a.time), minutes_of(a.time) + (a.duration_minutes or slot))
+                            for a in active if not a.is_block]
+        blocked_starts = {a.time for a in active if a.is_block}
+        conflicts = sorted(
+            t for t in targets
+            if any(intervals_overlap(minutes_of(t), minutes_of(t) + slot, c0, c1)
+                   for c0, c1 in client_intervals))
         if conflicts:
             raise SchedulerError(
                 f"cannot block {date}: client appointments exist at {', '.join(conflicts)}")
         note = description.strip() or "Bloqueado"
         created: list[Appointment] = []
         for t in targets:
-            if t in active:        # already blocked → idempotent skip
+            if t in blocked_starts:    # already blocked → idempotent skip
                 continue
             appt = Appointment(
                 appointment_id=uuid.uuid4().hex[:8], host_id=host_id, date=date,
                 time=t, with_name="", status=CONFIRMED, notes=note)
             try:
-                self.store.add(appt)
+                self._add_appt(appt)
             except SlotTakenError:
                 # A client booked this slot between the conflict scan above and now. Blocking
                 # is best-effort per slot: keep the ones already made, report the contested

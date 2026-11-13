@@ -346,7 +346,7 @@ only when `build_server` was given neither `sender=` nor `sender_for=`.
 | `COGNO_SCHEDULER_DSN` | scheduler | unset = in-memory store | Postgres for appointments and the professionals catalogue |
 | `COGNO_SCHEDULER_SCOPE` | scheduler | `default` | the scope of that store — the tenant |
 | `COGNO_SCHEDULER_HOSTS` | scheduler | unset = the three demo professionals | the bookable professionals, as JSON `[{host_id, name, role, auto_confirm?}]`. Set — even to `[]` — it is AUTHORITATIVE: with a DSN the persisted catalogue is reconciled to it, except that an empty list never deletes the professionals already there (`event=sync_hosts_empty_refused`) |
-| `COGNO_SCHEDULER_CONFIG` | scheduler | unset = the default rules | the schedule configuration as JSON (hours, lunch, weekends, slot) |
+| `COGNO_SCHEDULER_CONFIG` | scheduler | unset = the default rules | the schedule configuration as JSON (hours, lunch, weekends, the fixed `slot_duration_minutes`, and `slot_start_granularity_minutes`, default 30, the step between candidate starts when a service is booked by its own duration). Its `catalog` key is the structured services/products the agenda books by duration from; absent → the fixed-slot behaviour |
 | `COGNO_SCHEDULER_COUNTRY` / `COGNO_SCHEDULER_STATE` | scheduler | unset = no holiday calendar | the location the holiday calendar is loaded for (needs the `holidays` extra) |
 | `COGNO_SCHEDULER_TODAY` | scheduler | unset = the real date | a fixed ISO date, so the child agrees with the day the host anchored in the prompt |
 | `COGNO_SCHEDULER_LANG` | scheduler, *at call time* | `pt` | the language a date is spoken in (`resolve_date`, the listings) |
