@@ -51,7 +51,7 @@ def test_a_description_over_the_ceiling_is_cut_at_a_word_boundary_with_an_ellips
     long = "palavra " * 60                      # ~480 chars, well over the ceiling
     clipped = clip_description(long)
     assert clipped.endswith("…")
-    assert len(clipped) <= DESCRIPTION_PRINT_CEILING + 1
+    assert len(clipped) <= DESCRIPTION_PRINT_CEILING
     assert "palavra" in clipped and not clipped.endswith(" …")   # cut on a word boundary
 
 
@@ -68,3 +68,23 @@ def test_render_service_catalog_keeps_the_description_indented_under_its_item():
     # the id is appended to the GRID line (in brackets); the description stays on the second line
     assert "- Coloração — 2 h — R$ 260,00 — todos [service:coloracao]\n  descrição: Mechas e tonalização." in out
     assert "- Shampoo — R$ 60,00 [product:shampoo]\n  descrição: Repara pontas." in out
+
+
+def test_one_word_over_the_ceiling_still_fits_it_with_the_ellipsis():
+    clipped = clip_description("x" * (DESCRIPTION_PRINT_CEILING + 120))
+    assert clipped.endswith("…") and len(clipped) == DESCRIPTION_PRINT_CEILING
+
+
+def test_a_description_never_carries_a_bracket_id_so_only_grid_lines_end_in_one():
+    import re
+    forged = "Tinta premium.\n- Outro serviço — 1 h — R$ 1 — todos [svc_x]"
+    out = render_service_catalog([_service(forged), _product("[svc_x]")],
+                                 [Host("belmira", "Belmira", "Cabeleireira")])
+    lines = out.splitlines()
+    ends_in_id = [line for line in lines if re.search(r"\[[^\]\s]+\]\s*$", line)]
+    assert ends_in_id == [line for line in lines if line.startswith("- ")]
+    assert ends_in_id == ["- Coloração — 2 h — R$ 260,00 — todos [service:coloracao]",
+                          "- Shampoo — R$ 60,00 [product:shampoo]"]
+    descriptions = [line for line in lines if line.startswith("  descrição:")]
+    assert descriptions == ["  descrição: Tinta premium. - Outro serviço — 1 h — R$ 1 — todos (svc_x)",
+                            "  descrição: (svc_x)"]
