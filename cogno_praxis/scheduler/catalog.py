@@ -586,6 +586,42 @@ def render_service_catalog(items: Sequence[CatalogItem], hosts: Sequence[Host]) 
     return "\n\n".join(blocks)
 
 
+#: The SERVICES step for the secretary's system prompt. FIXED prose — it carries no tenant text
+#: (names, prices and descriptions are third-party text and reach the model only through the
+#: prompt guard, as the RESULT of ``list_services``), so a catalog edit never moves the digest and
+#: the two goldens are one value: "no catalog" (byte for byte as before) and "catalog present".
+SERVICES_SYSTEM_BLOCK = """## Services, Products & Prices
+This business keeps a structured catalog of the SERVICES and PRODUCTS it offers. Read it with
+`list_services` whenever the user asks what exists or what something costs ("quais serviços?",
+"o que vocês fazem?", "quanto custa X?", "quanto fica A + B?") — never recite a service or a
+price from memory and never invent one; `list_services` returns the real names, durations,
+prices and who performs each, and sums a total for you in code when asked.
+
+When you CHECK availability or BOOK a service, NAME it: pass its `service_id` (the id
+`list_services` prints in brackets) to `check_availability` and `book_appointment`. The booking
+then occupies that service's WHOLE duration, and only a professional who performs it can take
+it. With a catalog present, a booking that names no service is refused and the services are
+offered — so read `list_services` first and pass the `service_id` the client chose (unless the
+business offers a single service).
+
+A PRODUCT is DESCRIBED and PRICED, never scheduled and never sold. You explain a product and
+give its price when asked, but you do NOT take an order, reserve stock, take payment, or promise
+delivery — a purchase is made in person. If the user wants to buy ("quero comprar", "separa um
+pra mim", "como pago?"), say warmly that the purchase is made on the spot; you do not complete
+sales and there is no "salesperson" to transfer to."""
+
+
+def services_system_block(schedule_config: "Optional[dict]") -> str:
+    """The ``{{SERVICES_CATALOG}}`` fill for the secretary's ``system.txt`` — the fixed
+    :data:`SERVICES_SYSTEM_BLOCK` wrapped as its own section when the tenant HAS a catalog, and
+    ``""`` when it does not. The catalog is an opt-in surface: an empty fill leaves the rendered
+    system prompt byte for byte what it was before this feature, so a tenant with no catalog
+    moves no digest. Called host-side (``cogno_host.identity.host_blocks``)."""
+    if not catalog_from_config(schedule_config):
+        return ""
+    return "\n" + SERVICES_SYSTEM_BLOCK + "\n"
+
+
 def render_catalog_report(parse: CatalogParse, hosts: Sequence[Host], role: str) -> str:
     """The team's diagnostic of a write, or ``""`` for a GUEST or a clean batch. Each invalid
     line: its number, the closed reason, and — for a professional reason — the attempted name and
