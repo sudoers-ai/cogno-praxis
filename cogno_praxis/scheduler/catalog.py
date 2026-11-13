@@ -555,14 +555,19 @@ DESCRIPTION_PRINT_CEILING = 280
 def clip_description(description: str) -> str:
     """The item's description as ``list_services`` PRINTS it: whitespace AND line breaks collapsed
     to single spaces (so a description never fabricates a line of its own), cut at the last word
-    boundary before :data:`DESCRIPTION_PRINT_CEILING` and ended with "…". ``""`` when there is none.
+    boundary before :data:`DESCRIPTION_PRINT_CEILING` and ended with "…" (the whole result, "…"
+    included, fits the ceiling). Square brackets print as parentheses. ``""`` when there is none.
     """
     desc = " ".join((description or "").split()).strip()
+    # Square brackets are the id spelling of the grid line (``_grid_with_id``): a description prints
+    # them as parentheses, so its line never carries — nor ends in — something read as an item id.
+    desc = desc.replace("[", "(").replace("]", ")")
     if len(desc) <= DESCRIPTION_PRINT_CEILING:
         return desc
     cut = desc[:DESCRIPTION_PRINT_CEILING]
     boundary = cut.rfind(" ")
-    return (cut[:boundary] if boundary > 0 else cut).rstrip() + "…"
+    # One word longer than the ceiling: drop one more character so the "…" stays inside it.
+    return (cut[:boundary] if boundary > 0 else cut[:-1]).rstrip() + "…"
 
 
 def _with_description(line: str, description: str) -> str:
