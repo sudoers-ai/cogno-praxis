@@ -18,8 +18,9 @@ from __future__ import annotations
 import json
 import os
 from datetime import date
-from typing import Optional
+from typing import Annotated, Optional
 
+from pydantic import Field as _ArgField   # the PARAMETER-description Field (distinct from render.Field)
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
@@ -245,19 +246,18 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         return f"{body}\n\nTotal ({named}): {currency} {amount}"
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    def check_availability(host_id: str, date: str, host_name: str = "",
-                           service_id: str = "") -> str:
+    def check_availability(
+            host_id: str, date: str, host_name: str = "",
+            service_id: Annotated[str, _ArgField(description=(
+                "The catalog service the client wants (the id list_services prints). With it, the "
+                "free starts are the ones where the service's WHOLE duration fits; a PRODUCT id is "
+                "refused. Without it, the tenant's fixed slot is used."))] = "") -> str:
         """List free time slots for a professional on a date (YYYY-MM-DD, from tomorrow on).
 
         Pass ``host_name`` = the professional AS THE CLIENT NAMED THEM whenever the client named
         someone. It is checked against ``host_id``: if the two are different people, or if
         either is not in ``list_schedulable_hosts``, this refuses and hands you the roster to
         offer — it never quietly reads a different agenda than the one you asked for.
-
-        ``service_id`` is the catalog service the client wants (the id ``list_services`` prints):
-        with it, the free starts are the ones where the WHOLE duration of that service fits — a
-        2 h service only shows starts with 2 h clear. A PRODUCT id is refused (it is not
-        scheduled). Without it, the tenant's fixed slot is used, as before.
 
         When the requested day is FULL, this also names the next day that has openings so you
         can OFFER it — do not dead-end the user; propose the overflow day (and its slots)."""
@@ -283,9 +283,14 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
                 + " — offer this to the client.")
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
-    def book_appointment(host_id: str, date: str, time: str, with_name: str,
-                         notes: str = "", guest_id: str = "", host_name: str = "",
-                         persona_id: str = "", service_id: str = "") -> str:
+    def book_appointment(
+            host_id: str, date: str, time: str, with_name: str,
+            notes: str = "", guest_id: str = "", host_name: str = "", persona_id: str = "",
+            service_id: Annotated[str, _ArgField(description=(
+                "The catalog service being booked (the id list_services prints). The booking "
+                "occupies the service's whole duration and the professional must be one who "
+                "performs it; a PRODUCT id is refused. Without it, the tenant's fixed slot is "
+                "used."))] = "") -> str:
         """Book an appointment with a professional at a date/time for a client (status PENDING).
 
         ``host_name`` is the professional AS THE CLIENT NAMED THEM — pass it whenever the client
@@ -293,12 +298,6 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         and name are two different people writes nothing and comes back asking. So does an id or
         a name that ``list_schedulable_hosts`` does not list. Booking the wrong person's agenda
         costs two people a day; asking costs one question.
-
-        ``service_id`` is the catalog service being booked (the id ``list_services`` prints): the
-        booking then OCCUPIES that service's whole duration, and the professional must be one who
-        performs it. When this business has a catalog, name the service — a booking with none is
-        refused and the services are offered (unless there is exactly one). A PRODUCT id is
-        refused: a product is explained, never scheduled.
 
         ``guest_id`` is the client's STABLE id (host-injected) so the professional sees the
         booking in their own agenda; ``with_name`` is the client's display name.
