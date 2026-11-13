@@ -14,7 +14,7 @@ from cogno_praxis.scheduler.engine import (
     Slot,
 )
 from cogno_praxis.scheduler.durability import is_perishable_edge
-from cogno_praxis.scheduler.server import build_server
+from cogno_praxis.scheduler.server import build_server, free_slots_of
 # The `resolve_date` model-facing text is exported at package level ON PURPOSE: it is a
 # CROSS-REPO contract, not an internal detail. The host's cortex builtin publishes the same
 # tool name to every non-scheduler persona and imports these, so a rename here breaks a
@@ -40,6 +40,7 @@ from cogno_praxis.scheduler.store import (
 
 __all__ = [
     "build_server",
+    "free_slots_of",
     "is_perishable_edge",
     "SchedulerService",
     "SchedulerError",
