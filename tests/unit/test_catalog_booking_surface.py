@@ -97,6 +97,34 @@ async def test_no_service_id_is_unchanged_the_compatibility_control():
     assert "Booked" in out and len(svc.store.list()) == 1
 
 
+# The function DESCRIPTION of each booking tool, frozen to its origin/main text. The native tools
+# payload is NOT pinned by a digest golden, so a description that GREW catalog prose would reach
+# EVERY tenant unseen. The catalog text lives on the ``service_id`` PARAMETER instead — the host
+# strips that property for a no-catalog tenant, and the text goes with it. Regenerate ON PURPOSE
+# only when main's description changes for a real reason.
+_MAIN_DESC_SHA = {
+    "book_appointment": "948e6258a04150e17d5b3efcfb396b3feeff05c618c238683994b7a518628325",
+    "check_availability": "a59f107d0c2439a907a27e1647f858cc51f05418ee892f7ed4a599d503240e2b",
+}
+
+
+async def test_booking_tool_descriptions_stay_frozen_the_catalog_text_lives_on_the_parameter():
+    import hashlib
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_silva"] = Host("dr_silva", "Dr. Silva", "GP")
+    tools = {t.name: t for t in await build_server(
+        SchedulerService(store, today=lambda: _TODAY)).list_tools()}
+    for name, sha in _MAIN_DESC_SHA.items():
+        desc = tools[name].description
+        assert "service_id" not in desc and "list_services" not in desc, (
+            f"{name}'s description grew catalog text — it belongs on the service_id parameter")
+        assert hashlib.sha256(desc.encode()).hexdigest() == sha, (
+            f"{name}'s description changed; regenerate _MAIN_DESC_SHA on purpose if intended")
+        # the text IS on the parameter, which the host strips for a no-catalog tenant
+        pdesc = tools[name].inputSchema["properties"]["service_id"].get("description") or ""
+        assert "catalog service" in pdesc
+
+
 def test_services_system_block_is_empty_without_a_catalog_and_present_with_one():
     """The ``{{SERVICES_CATALOG}}`` fill: "" with no catalog (so the system prompt is byte for
     byte what it was), the fixed block with one. It carries NO tenant text (names/prices reach
