@@ -542,17 +542,58 @@ def unoffered_count(items: Sequence[CatalogItem], hosts: Sequence[Host]) -> int:
     return n
 
 
+#: The per-item ceiling on a catalog DESCRIPTION as ``list_services`` PRINTS it (the
+#: ``PERSONA_TEXT_CEILINGS`` mould — a NAMED number). The description is the business's own text
+#: (third-party) that the Secretary describes the item by; this clips it ON OUTPUT so one item
+#: cannot flood the result. It is NOT a new IMPORT refusal — the thirteen reasons and the screen
+#: mirror are untouched; today only ``MAX_ITEMS`` has a ceiling. The text reaches the model only as
+#: the RESULT of ``list_services``, inside the core's tool-result fence that already neutralises the
+#: item NAME — never in the system block, never in a log.
+DESCRIPTION_PRINT_CEILING = 280
+
+
+def clip_description(description: str) -> str:
+    """The item's description as ``list_services`` PRINTS it: whitespace AND line breaks collapsed
+    to single spaces (so a description never fabricates a line of its own), cut at the last word
+    boundary before :data:`DESCRIPTION_PRINT_CEILING` and ended with "…" (the whole result, "…"
+    included, fits the ceiling). Square brackets print as parentheses. ``""`` when there is none.
+    """
+    desc = " ".join((description or "").split()).strip()
+    # Square brackets are the id spelling of the grid line (``_grid_with_id``): a description prints
+    # them as parentheses, so its line never carries — nor ends in — something read as an item id.
+    desc = desc.replace("[", "(").replace("]", ")")
+    if len(desc) <= DESCRIPTION_PRINT_CEILING:
+        return desc
+    cut = desc[:DESCRIPTION_PRINT_CEILING]
+    boundary = cut.rfind(" ")
+    # One word longer than the ceiling: drop one more character so the "…" stays inside it.
+    return (cut[:boundary] if boundary > 0 else cut[:-1]).rstrip() + "…"
+
+
+def _with_description(line: str, description: str) -> str:
+    """The item line, plus — when the item HAS a description — a SECOND, INDENTED line
+    (``  descrição: <texto>``) right after it, OUTSIDE the ``name — duration — value — who`` grid
+    the voice and the nets read, and indented so it is never taken for another item. An item WITHOUT
+    a description renders the line byte-for-byte as before."""
+    desc = clip_description(description)
+    return f"{line}\n  descrição: {desc}" if desc else line
+
+
 def format_service_line(it: CatalogItem, hosts: Sequence[Host]) -> str:
-    """The ONE spelling of a service line (the duration-aware booking reads it too). ``name — 2 h — R$ 260,00 — Ana,
-    Bia``; a missing value → "sem valor publicado"; ``all_hosts`` → "todos"."""
+    """The ONE spelling of a service line (the duration-aware booking reads its FIRST line too).
+    ``name — 2 h — R$ 260,00 — Ana, Bia``; a missing value → "sem valor publicado"; ``all_hosts`` →
+    "todos". A description, when the item has one, follows on a second indented line (``format``
+    grid untouched)."""
     value = it.value_text or "sem valor publicado"
     who = "todos" if it.all_hosts else ", ".join(_who_names(it, hosts))
-    return f"{it.name} — {format_duration(it.duration_minutes)} — {value} — {who}"
+    return _with_description(
+        f"{it.name} — {format_duration(it.duration_minutes)} — {value} — {who}", it.description)
 
 
 def format_product_line(it: CatalogItem) -> str:
-    """The ONE spelling of a product line: ``name — R$ 60,00`` (or "sem valor publicado")."""
-    return f"{it.name} — {it.value_text or 'sem valor publicado'}"
+    """The ONE spelling of a product line: ``name — R$ 60,00`` (or "sem valor publicado"), with the
+    item's description on a second indented line when it has one."""
+    return _with_description(f"{it.name} — {it.value_text or 'sem valor publicado'}", it.description)
 
 
 def format_duration(minutes: int) -> str:
@@ -565,11 +606,22 @@ def format_duration(minutes: int) -> str:
     return f"{m} min"
 
 
+def _grid_with_id(block: str, item_id: str) -> str:
+    """Append the item's id as ``[item_id]`` to its GRID line (the first) — the SAME spelling the
+    refusals print (``service.py``: «name [item_id]»), so the model passes the id it has already
+    seen in a refusal. Added HERE and never in ``format_service_line`` (which carries no id, so an
+    id never reaches a line shared with the duration booking): the id lives only in the
+    ``list_services`` OUTPUT, on the grid line, BEFORE any description line."""
+    head, sep, rest = block.partition("\n")
+    return f"{head} [{item_id}]{sep}{rest}"
+
+
 def render_service_catalog(items: Sequence[CatalogItem], hosts: Sequence[Host]) -> str:
-    """The two SEPARATE lists for ``list_services`` (and the host's prompt block, via the shared
-    line definition): services with duration+value+who (those with nobody to perform them now are
-    dropped), then products with value. Empty catalog → the "nothing configured" line. Logs
-    ``catalog_unoffered`` (count only)."""
+    """The two SEPARATE lists for ``list_services``: services with duration+value+who (those with
+    nobody to perform them now are dropped) then products with value, each with its id in brackets
+    (the spelling the refusals use) so the model can pass it as ``service_id``, and a description on
+    an indented second line when the item has one. Empty catalog → the "nothing configured" line.
+    Logs ``catalog_unoffered`` (count only)."""
     services = [it for it in items if it.is_service and _who_names(it, hosts)]
     products = [it for it in items if it.is_product]
     n_unoffered = unoffered_count(items, hosts)
@@ -579,11 +631,48 @@ def render_service_catalog(items: Sequence[CatalogItem], hosts: Sequence[Host]) 
         return "No services or products are configured."
     blocks: list[str] = []
     if services:
-        blocks.append("Serviços:\n" + "\n".join(f"- {format_service_line(s, hosts)}"
-                                                 for s in services))
+        blocks.append("Serviços:\n" + "\n".join(
+            f"- {_grid_with_id(format_service_line(s, hosts), s.item_id)}" for s in services))
     if products:
-        blocks.append("Produtos:\n" + "\n".join(f"- {format_product_line(p)}" for p in products))
+        blocks.append("Produtos:\n" + "\n".join(
+            f"- {_grid_with_id(format_product_line(p), p.item_id)}" for p in products))
     return "\n\n".join(blocks)
+
+
+#: The SERVICES step for the secretary's system prompt. FIXED prose — it carries no tenant text
+#: (names, prices and descriptions are third-party text and reach the model only through the
+#: prompt guard, as the RESULT of ``list_services``), so a catalog edit never moves the digest and
+#: the two goldens are one value: "no catalog" (byte for byte as before) and "catalog present".
+SERVICES_SYSTEM_BLOCK = """## Services, Products & Prices
+This business keeps a structured catalog of the SERVICES and PRODUCTS it offers. Read it with
+`list_services` whenever the user asks what exists or what something costs ("quais serviços?",
+"o que vocês fazem?", "quanto custa X?", "quanto fica A + B?") — never recite a service or a
+price from memory and never invent one; `list_services` returns the real names, durations,
+prices and who performs each, and sums a total for you in code when asked.
+
+When you CHECK availability or BOOK a service, NAME it: pass its `service_id` (the id
+`list_services` prints in brackets) to `check_availability` and `book_appointment`. The booking
+then occupies that service's WHOLE duration, and only a professional who performs it can take
+it. With a catalog present, a booking that names no service is refused and the services are
+offered — so read `list_services` first and pass the `service_id` the client chose (unless the
+business offers a single service).
+
+A PRODUCT is DESCRIBED and PRICED, never scheduled and never sold. You explain a product and
+give its price when asked, but you do NOT take an order, reserve stock, take payment, or promise
+delivery — a purchase is made in person. If the user wants to buy ("quero comprar", "separa um
+pra mim", "como pago?"), say warmly that the purchase is made on the spot; you do not complete
+sales and there is no "salesperson" to transfer to."""
+
+
+def services_system_block(schedule_config: "Optional[dict]") -> str:
+    """The ``{{SERVICES_CATALOG}}`` fill for the secretary's ``system.txt`` — the fixed
+    :data:`SERVICES_SYSTEM_BLOCK` wrapped as its own section when the tenant HAS a catalog, and
+    ``""`` when it does not. The catalog is an opt-in surface: an empty fill leaves the rendered
+    system prompt byte for byte what it was before this feature, so a tenant with no catalog
+    moves no digest. Called host-side (``cogno_host.identity.host_blocks``)."""
+    if not catalog_from_config(schedule_config):
+        return ""
+    return "\n" + SERVICES_SYSTEM_BLOCK + "\n"
 
 
 def render_catalog_report(parse: CatalogParse, hosts: Sequence[Host], role: str) -> str:

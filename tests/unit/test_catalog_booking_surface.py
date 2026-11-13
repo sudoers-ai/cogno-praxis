@@ -1,0 +1,158 @@
+"""The booking TOOLS carry ``service_id`` to the service, and the secretary's system prompt
+gains a catalog step only when a catalog exists.
+
+Before this change the ``book_appointment`` / ``check_availability`` tool wrappers dropped
+``service_id`` on the floor: the duration-aware booking and the product guard lived on the
+SERVICE methods but no tool reached them. A PRODUCT id handed to the booking tool therefore
+booked a normal slot. These twins drive the TOOLS (not the service methods) and fail on that
+older wrapper; the control is the no-service and no-catalog paths, which are unchanged.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+
+import pytest
+
+from cogno_praxis.scheduler import Host, InMemoryAppointmentStore, SchedulerService
+from cogno_praxis.scheduler import catalog as C
+from cogno_praxis.scheduler.server import build_server
+
+_TODAY = date(2026, 6, 30)
+_DAY = "2026-07-01"           # tomorrow, a working day
+
+
+def _catalog_service() -> SchedulerService:
+    store = InMemoryAppointmentStore()
+    store.hosts["belmira"] = Host("belmira", "Belmira Quostral", "Cabeleireira")
+    items = C.parse_catalog_block(
+        "SERVIÇOS:\n- Coloração | 120 min | R$ 260,00 | Belmira\n"
+        "PRODUTOS:\n- Shampoo | R$ 60,00\n",
+        [Host("belmira", "Belmira Quostral", "Cabeleireira")]).items
+    return SchedulerService(store, today=lambda: _TODAY, catalog=items)
+
+
+def _text(call_result) -> str:
+    content = call_result[0]
+    return "\n".join(b.text for b in content if getattr(b, "type", None) == "text")
+
+
+async def test_book_appointment_tool_refuses_a_product_id_and_writes_nothing():
+    """A product id reaches the product guard THROUGH the tool — the wrapper forwards
+    ``service_id`` (FastMCP surfaces the SchedulerError as a tool error). The old wrapper
+    ignored it and booked the slot (the red)."""
+    svc = _catalog_service()
+    with pytest.raises(Exception) as exc:
+        await build_server(svc).call_tool(
+            "book_appointment",
+            {"host_id": "belmira", "date": _DAY, "time": "10:00",
+             "with_name": "Thessaly Vendrim", "service_id": "product:shampoo"})
+    assert "PRODUCT" in str(exc.value) and "NOTHING was written" in str(exc.value)
+    assert svc.store.list() == []
+
+
+async def test_check_availability_tool_refuses_a_product_id():
+    svc = _catalog_service()
+    with pytest.raises(Exception) as exc:
+        await build_server(svc).call_tool(
+            "check_availability",
+            {"host_id": "belmira", "date": _DAY, "service_id": "product:shampoo"})
+    assert "PRODUCT" in str(exc.value)
+
+
+async def test_list_services_prints_each_item_id_in_brackets_so_the_model_can_pass_it():
+    """BUG before this change: list_services printed no id, so the model could not know the
+    ``service_id`` the prompt told it to pass — every catalog booking fell into the "which service?"
+    refusal. The id now prints in brackets (the refusals' spelling), and it is exactly what the
+    booking tools accept."""
+    out = _text(await build_server(_catalog_service()).call_tool("list_services", {}))
+    assert "[service:coloracao]" in out          # red on base (no id was printed)
+    # and that id is accepted by check_availability (no "unknown service" refusal)
+    out2 = _text(await build_server(_catalog_service()).call_tool(
+        "check_availability", {"host_id": "belmira", "date": _DAY, "service_id": "service:coloracao"}))
+    assert "unknown service" not in out2 and ("Free slots" in out2 or "no free slots" in out2)
+
+
+async def test_book_appointment_tool_books_a_service_by_id():
+    svc = _catalog_service()
+    out = _text(await build_server(svc).call_tool(
+        "book_appointment",
+        {"host_id": "belmira", "date": _DAY, "time": "10:00",
+         "with_name": "Thessaly Vendrim", "service_id": "service:coloracao"}))
+    assert "Booked" in out
+    assert len(svc.store.list()) == 1
+
+
+async def test_the_booking_occupies_the_service_duration_through_the_tool():
+    """A 120 min service booked at 10:00 occupies 10:00–12:00 for that professional, so 11:00
+    is no longer offered — the duration-aware path, reached from the tool via ``service_id``."""
+    svc = _catalog_service()
+    server = build_server(svc)
+    await server.call_tool(
+        "book_appointment",
+        {"host_id": "belmira", "date": _DAY, "time": "10:00",
+         "with_name": "Thessaly Vendrim", "service_id": "service:coloracao"})
+    out = _text(await server.call_tool(
+        "check_availability",
+        {"host_id": "belmira", "date": _DAY, "service_id": "service:coloracao"}))
+    assert "11:00" not in out
+
+
+async def test_no_service_id_is_unchanged_the_compatibility_control():
+    """Without ``service_id`` the tools behave as before: a plain slot booking lands and the
+    free slots read normally. (No catalog is exercised by the module's other suites.)"""
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_silva"] = Host("dr_silva", "Dr. Silva", "GP")
+    svc = SchedulerService(store, today=lambda: _TODAY)
+    out = _text(await build_server(svc).call_tool(
+        "book_appointment",
+        {"host_id": "dr_silva", "date": _DAY, "time": "10:00", "with_name": "Thessaly Vendrim"}))
+    assert "Booked" in out and len(svc.store.list()) == 1
+
+
+# The function DESCRIPTION of each booking tool, frozen to its origin/main text. The native tools
+# payload is NOT pinned by a digest golden, so a description that GREW catalog prose would reach
+# EVERY tenant unseen. The catalog text lives on the ``service_id`` PARAMETER instead — the host
+# strips that property for a no-catalog tenant, and the text goes with it. Regenerate ON PURPOSE
+# only when main's description changes for a real reason.
+_MAIN_DESC_SHA = {
+    "book_appointment": "948e6258a04150e17d5b3efcfb396b3feeff05c618c238683994b7a518628325",
+    "check_availability": "a59f107d0c2439a907a27e1647f858cc51f05418ee892f7ed4a599d503240e2b",
+}
+
+
+async def test_booking_tool_descriptions_stay_frozen_the_catalog_text_lives_on_the_parameter():
+    import hashlib
+    store = InMemoryAppointmentStore()
+    store.hosts["dr_silva"] = Host("dr_silva", "Dr. Silva", "GP")
+    tools = {t.name: t for t in await build_server(
+        SchedulerService(store, today=lambda: _TODAY)).list_tools()}
+    for name, sha in _MAIN_DESC_SHA.items():
+        desc = tools[name].description
+        assert "service_id" not in desc and "list_services" not in desc, (
+            f"{name}'s description grew catalog text — it belongs on the service_id parameter")
+        assert hashlib.sha256(desc.encode()).hexdigest() == sha, (
+            f"{name}'s description changed; regenerate _MAIN_DESC_SHA on purpose if intended")
+        # the text IS on the parameter, which the host strips for a no-catalog tenant
+        pdesc = tools[name].inputSchema["properties"]["service_id"].get("description") or ""
+        assert "catalog service" in pdesc
+
+
+def test_services_system_block_is_empty_without_a_catalog_and_present_with_one():
+    """The ``{{SERVICES_CATALOG}}`` fill: "" with no catalog (so the system prompt is byte for
+    byte what it was), the fixed block with one. It carries NO tenant text (names/prices reach
+    the model only as the guarded result of ``list_services``), so a catalog edit does not move
+    it."""
+    assert C.services_system_block(None) == ""
+    assert C.services_system_block({}) == ""
+    assert C.services_system_block({"catalog": []}) == ""
+    cfg = {"catalog": [
+        {"item_id": "service:coloracao", "kind": "service", "name": "Coloração",
+         "duration_minutes": 120, "value_text": "R$ 260,00", "all_hosts": True}]}
+    block = C.services_system_block(cfg)
+    assert block.startswith("\n## Services, Products & Prices")
+    assert block.endswith("\n")
+    assert "list_services" in block and "service_id" in block
+    assert "never scheduled and never sold" in block
+    # No tenant text leaks into the fixed block.
+    assert "Coloração" not in block and "260" not in block

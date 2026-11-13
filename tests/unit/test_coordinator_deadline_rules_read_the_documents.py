@@ -148,7 +148,9 @@ NEIGHBOURS_AT_MAIN = {
     "interviewer/voice.txt": "0dfe458c1778ed53dfcb8cadbcfdc69993ecd8cc7233e7ca3dcc5de9a8b1887e",
     "scheduler/limits.txt": "92becaf1d23c56570833082fe1507e01c0afe3a52922ee8404ed671a53a6a2a4",
     "scheduler/scope.txt": "b2f942c84374955d9aad03f951ce4082d4cc4d0c45638cad4d1c6b9f89b3448f",
-    "scheduler/system.txt": "49d2c8ce3706642f1baeef66ea2717be061f2262ccd6fa83f132e08cd93d58b2",
+    # scheduler/system.txt: regenerated deliberately — a `{{SERVICES_CATALOG}}` host block was
+    # added (the catalog step, filled host-side; empty renders byte-for-byte as before).
+    "scheduler/system.txt": "4e00df4ee46cade9c804e2132ba6c74263dc611f19928a5eaf186ed434a92372",
     # scheduler/voice.txt: regenerated 2026-11-12, deliberately — the voice examples no longer
     # lend the reply a name, a title or a gender («a Dra. Silva» → «a profissional») and a rule
     # above them says to take the name only from the tools.
