@@ -50,6 +50,23 @@ the mapping in the old line's place, that the old line is gone, that the RULES l
 condition, that the file with the old line put back is `main`'s byte for byte, and that every
 other prompt of every vertical is unchanged.
 
+## Platform AI cost is telemetry, not the institution's finances (2026-11-12)
+
+The coordinator redirects finance — another person's pay asked by a non-coordinator, the
+institution's accounts, invoices, budgets, tuition. The judge grades that rubric from
+`prompts/limits.txt`, and read it strictly: the PLATFORM's own AI/token cost (how much the tenant
+spent on model tokens, served by the host's `token_cost_analytics`) is a legitimate thing to ask,
+but a fail-closed judge reading `limits.txt` as written counted it as the institution's finances
+and rejected a correct answer as out of scope.
+
+The rubric now carves that read out in one localised clause: the AI/token cost read by
+`token_cost_analytics` is telemetry, NOT the institution's finances, so answering it is correct and
+must NOT be rejected as finance. This is the judge side; the scope guard and the host's
+`platform_turn` skip cover the same distinction on the intake side. Because the host embeds this
+persona prompt, the pinned judge digests on the host regenerate deliberately and the model half is
+re-measured there (n=3); nothing in this library reads the bytes. The presence of the carve-out is
+pinned by `tests/unit/test_coordinator_prompts.py::test_the_judge_is_told_platform_ai_cost_is_not_the_institutions_finances`.
+
 ## A `discipline` that names nothing is dropped and said (M6-c, 2026-09-30)
 
 `get_professor_schedule(discipline=…)` filters by subject, typo-tolerant

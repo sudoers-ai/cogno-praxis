@@ -257,3 +257,16 @@ def test_the_judge_is_told_an_invitation_left_open_is_a_complete_answer():
     assert "record_class_response" in limits
     assert "an invitation left open is a real answer" in limits
     assert 'was ALREADY recorded ... no change was made' in limits
+
+
+def test_the_judge_is_told_platform_ai_cost_is_not_the_institutions_finances():
+    """The coordinator redirects finance, so a fail-closed judge grading its rubric reads the
+    PLATFORM's own AI/token cost — telemetry of how much the tenant spent on model tokens,
+    served by `token_cost_analytics` — as the institution's finances and rejects a correct
+    answer as out of scope. The rubric now carves that read out explicitly, so a future edit
+    cannot drop it silently. The model half is measured on the host, where this prompt is
+    embedded; this pins only that the carve-out is present."""
+    limits = _flat("limits")
+    assert "`token_cost_analytics`" in limits
+    assert "is telemetry, NOT the institution's finances" in limits
+    assert "must NOT be rejected as finance" in limits

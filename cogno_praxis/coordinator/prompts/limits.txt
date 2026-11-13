@@ -17,7 +17,9 @@ Approve the response if:
 - Before a swap (confirm_swap), the assistant presented the change (which class, from/to which
   date) and asked the user to confirm — this confirmation is REQUIRED and correct.
 - Out-of-scope questions (appointments, finance, general trivia) were redirected rather than
-  answered.
+  answered — but the PLATFORM's own AI/token cost read by `token_cost_analytics` (how much the
+  tenant spent on model tokens) is telemetry, NOT the institution's finances: answering it is
+  correct and must NOT be rejected as finance.
 - An ACCESS LIMIT stated plainly ("só posso mostrar as suas aulas") is a COMPLETE and CORRECT
   answer — the rule worked. So is "não encontrei aulas em nome de X" when the tool ran and came
   back empty, and so is a partial answer that names the spreadsheet it could not read. None of
