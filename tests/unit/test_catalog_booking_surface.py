@@ -60,6 +60,19 @@ async def test_check_availability_tool_refuses_a_product_id():
     assert "PRODUCT" in str(exc.value)
 
 
+async def test_list_services_prints_each_item_id_in_brackets_so_the_model_can_pass_it():
+    """BUG before this change: list_services printed no id, so the model could not know the
+    ``service_id`` the prompt told it to pass — every catalog booking fell into the "which service?"
+    refusal. The id now prints in brackets (the refusals' spelling), and it is exactly what the
+    booking tools accept."""
+    out = _text(await build_server(_catalog_service()).call_tool("list_services", {}))
+    assert "[service:coloracao]" in out          # red on base (no id was printed)
+    # and that id is accepted by check_availability (no "unknown service" refusal)
+    out2 = _text(await build_server(_catalog_service()).call_tool(
+        "check_availability", {"host_id": "belmira", "date": _DAY, "service_id": "service:coloracao"}))
+    assert "unknown service" not in out2 and ("Free slots" in out2 or "no free slots" in out2)
+
+
 async def test_book_appointment_tool_books_a_service_by_id():
     svc = _catalog_service()
     out = _text(await build_server(svc).call_tool(
