@@ -13,6 +13,7 @@ from cogno_praxis.scheduler.engine import (
     SchedulerConfig,
     Slot,
 )
+from cogno_praxis.scheduler.catalog import catalog_from_config, services_for_choice
 from cogno_praxis.scheduler.durability import is_perishable_edge
 from cogno_praxis.scheduler.server import build_server, free_slots_of
 # The `resolve_date` model-facing text is exported at package level ON PURPOSE: it is a
@@ -42,6 +43,8 @@ __all__ = [
     "build_server",
     "free_slots_of",
     "is_perishable_edge",
+    "catalog_from_config",
+    "services_for_choice",
     "SchedulerService",
     "SchedulerError",
     "SchedulerConfig",

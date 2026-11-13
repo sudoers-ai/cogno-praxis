@@ -2,6 +2,12 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Fixed — a booking that names no service is decided UPFRONT, and a service can be named by name or slug
+
+- **`scheduler/catalog.py::services_for_choice`** (new, exported from `scheduler`): the ONE predicate for "a booking must choose a service" — the services when there are two or more, else `()` (none, or exactly one which is used unambiguously). `SchedulerService._require_service_when_catalog` now enforces through it, and `cogno_host` reads it to refuse ARMING a held booking that carries no `service_id` BEFORE it proposes, so the "which service?" refusal no longer lands only on the contact's «sim».
+- **`scheduler/service.py::_canonical_service_id`**: a `service_id` the model gave as a NAME or slug («Coloração», «coloracao») resolves to the exact catalog id through the SAME `resolve_item_token` the total uses, when it names exactly ONE item; a token matching nobody or two is left as given (the "unknown service"/ambiguous refusal of before still fires), and a PRODUCT name resolves to its id and is still refused as a product. `_guard_service_id` and `_service_item` read it.
+- Tests: `tests/unit/test_catalog_service_id_resolution.py`.
+
 ### Added — an invented `host_id` is repaired from the name the client gave
 
 - **`scheduler/names.py::host_id_rewrite`** (new, re-exported on `scheduler/service.py`): when a

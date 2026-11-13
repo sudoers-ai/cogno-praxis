@@ -720,6 +720,17 @@ def resolve_item_token(token: str, items: Sequence[CatalogItem]) -> Optional[Cat
     return named[0] if len(named) == 1 else None
 
 
+def services_for_choice(items: Sequence[CatalogItem]) -> "tuple[CatalogItem, ...]":
+    """The SERVICES a booking that names none must CHOOSE among — the services when there are TWO
+    or more, else ``()`` (no catalog or products only → no choice; exactly one service → it is used
+    unambiguously, so still no choice). ONE definition: ``SchedulerService._require_service_when_catalog``
+    enforces it at book time, and ``cogno_host`` reads it to refuse arming a held booking with no
+    ``service_id`` BEFORE it proposes — instead of letting the "which service?" refusal land only on
+    the «sim»."""
+    services = [it for it in items if it.is_service]
+    return tuple(services) if len(services) >= 2 else ()
+
+
 def catalog_total(item_ids: Sequence[str], items: Sequence[CatalogItem]
                   ) -> "tuple[Decimal, str, list[tuple[str, str]]]":
     """Sum the values of the named items IN CODE: ``(total, currency, [(name, value_text)])``.
