@@ -9,6 +9,10 @@ professional?*, shared by two callers that must never disagree:
   against the schedulable catalogue, so a name that resolves to nobody (or to two people)
   invalidates the line instead of inventing a professional or picking the first of two.
 
+:func:`host_id_rewrite` builds on the SAME matcher for a third caller — the host's held-booking
+gate — so a model-invented ``host_id`` the scheduler would repair on the «sim» is the one the
+host arms, never a copy that could decide differently.
+
 A second copy of this matcher would let the SECRETARY offer a service by a name the booking
 path then fails to resolve, or the reverse. Pure, no I/O.
 """
@@ -17,6 +21,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from typing import Optional
 
 from cogno_praxis.honorifics import is_host_name_title
 from cogno_praxis.scheduler.store import Host
@@ -111,3 +116,39 @@ def host_candidates(text: str, hosts: "list[Host]", *, by_role: bool = True) -> 
     if key and by_role:
         return [h for h in hosts if h.role and _norm_host(h.role) == key]
     return []
+
+
+def host_id_rewrite(host_id: str, host_name: str,
+                    hosts: "list[Host]") -> "Optional[Host]":
+    """The professional a model-invented ``host_id`` should be REWRITTEN to, or ``None``.
+
+    The ONE rule behind both the scheduler's :meth:`SchedulerService.resolve_agenda` (the agenda
+    door for the availability READ and the booking WRITE) and the host's held-booking gate — so
+    *what praxis accepts, the host arms*, with no second copy to drift. It fires for one shape,
+    measured live in a scheduling conversation (2026-11): a ``host_id`` the model made up
+    (``prof_ulpiano_krusvel`` —
+    no professional in ``hosts`` answers to it) carried beside the professional the client NAMED
+    (``host_name="Dr. Ulpiano"``). When that name resolves to EXACTLY ONE bookable professional,
+    the id is rewritten to theirs and the call proceeds on the agenda the client actually named,
+    instead of failing «unknown host» and losing the turn.
+
+    *Only* that shape, so the stricter refusals stay exactly as they are:
+
+    * the id already names someone (``host_candidates`` finds it) → ``None``: not an invented id,
+      so trace 731's valid-id-with-another-name «two agendas» refusal is reached untouched;
+    * a blank name, a name nobody answers to, or a name two namesakes share → ``None``: the
+      caller keeps its own refusal (the id's roster, or «ask which one»). The partial-name match
+      is NOT a new rule — it is :func:`host_candidates` level 2 (*every word said is a word of the
+      name*, honorific dropped: «Dr. Ulpiano» ⊆ «Dr. Ulpiano Krusvel»), the SAME matcher the
+      booking resolver and the catalog import door use, so a one-character initial never decides
+      an agenda.
+
+    Pure, no I/O.
+    """
+    gid, name = (host_id or "").strip(), (host_name or "").strip()
+    if not gid or not name:
+        return None
+    if host_candidates(gid, hosts):           # the id already names a professional → not a repair
+        return None
+    cands = host_candidates(name, hosts)
+    return cands[0] if len(cands) == 1 else None

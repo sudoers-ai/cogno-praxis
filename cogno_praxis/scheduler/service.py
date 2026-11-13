@@ -34,6 +34,7 @@ from cogno_praxis.scheduler.names import (  # noqa: F401  (re-exported for calle
     _host_tokens,
     _norm_host,
     host_candidates,
+    host_id_rewrite,
     host_label,
 )
 from cogno_praxis.scheduler.store import (
@@ -542,6 +543,18 @@ class SchedulerService:
             raise SchedulerError(
                 f"unknown host: none was given, and NOTHING was written. The professionals who "
                 f"can be booked are: {self._roster()}. Ask the client which one they mean.")
+        # A model-invented ``host_id`` — one no professional in the catalogue answers to — is
+        # REWRITTEN to the professional the client NAMED, when that name resolves to exactly one
+        # (measured 2026-11: ``host_id="prof_ulpiano_krusvel"``, ``host_name="Dr. Ulpiano"``,
+        # the lone Ulpiano; the read failed «unknown host» and the turn was lost). The rule lives in
+        # ``names.host_id_rewrite`` so the host's held-booking gate arms exactly what this door then
+        # accepts on the «sim». It fires ONLY for that shape, BEFORE the branches below, so they are
+        # untouched: a blank/unknown/ambiguous name returns ``None`` here and falls through to the
+        # id's own refusal, and a VALID id (which `host_id_rewrite` leaves alone) still reaches the
+        # trace-731 «two agendas» check.
+        repaired = host_id_rewrite(given, named, self.store.list_hosts())
+        if repaired is not None:
+            return repaired
         by_id = self._host_for(given) if given else None
         by_name = self._host_for(named) if named else None
         if by_id is not None and by_name is not None and by_id.host_id != by_name.host_id:

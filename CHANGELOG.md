@@ -2,6 +2,22 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Added — an invented `host_id` is repaired from the name the client gave
+
+- **`scheduler/names.py::host_id_rewrite`** (new, re-exported on `scheduler/service.py`): when a
+  booking/availability call carries a `host_id` no professional in the catalogue answers to — a
+  slug the model made up — beside the professional the client NAMED, and that name resolves to
+  EXACTLY ONE bookable host (`host_candidates` level 2, *every word said is a word of the name*),
+  the id is rewritten to theirs. `scheduler/service.py::resolve_agenda` (the ONE door for the
+  availability READ and the booking WRITE) applies it before its refusals, so a measured defect —
+  the model passing an id it never read, the read answering «unknown host», the model repeating it
+  and the turn being lost — now resolves to the agenda the client actually named. STRICT where it
+  guards a write, UNCHANGED: a VALID id carrying another professional's name is still the «two
+  agendas» refusal (trace 731), and a name that matches nobody or two namesakes does NOT rescue the
+  call (the id's own refusal, or «which one?», stays). No prefix/initial matching — a one-character
+  token never decides an agenda. The rule is ONE function, shared with the host's held-booking gate
+  so what the resolver accepts the gate arms. Twin: `tests/unit/test_a_named_agenda_repairs_an_invented_id.py`.
+
 ### Added — `free_slots_of`, the reader half of the availability line
 
 - **`scheduler/server.py::free_slots_of`** (new, exported at `scheduler` package level): parses a `check_availability` result into `{(host_id, YYYY-MM-DD): {HH:MM, …}}` — the slots a read showed as FREE, keyed by professional and day. Both printed shapes are read: the direct `Free slots for …` listing and the full-day overflow that offers the NEXT day's slots (filed under the day they belong to, never the full one). A consumer that refuses to act on an hour no read returned FREE — the host's retention guard — parses it HERE rather than re-grepping the line elsewhere, so the PARSER lives beside the PRINTER (quem imprime, lê): one grammar, one reader, in one module. Pure; never raises. Round-trip twin: a set of slots printed through the real tool and read back gives the same set, so a change to the line's wording breaks `tests/unit/test_free_slots_of.py` first, never a downstream consumer in silence. The `check_availability` tool output is byte-for-byte unchanged (only a cross-reference comment was added beside the printer).
