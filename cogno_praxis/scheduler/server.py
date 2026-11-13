@@ -49,6 +49,60 @@ from cogno_praxis.scheduler.store import (
     InMemoryAppointmentStore,
 )
 
+# ── the availability line and its reader, in ONE module (quem imprime, lê) ────────────
+# `check_availability` (inside `build_server`) is the ONLY place a FREE slot is printed, in
+# two shapes:
+#   1. "Free slots for {name} ({host_id}) on {date}: 09:00, 10:00"
+#   2. "{name} ({host_id}) has no free slots on {date}. Next available day is {ndate}:
+#       14:00, 15:00 — offer this to the client."   (the overflow: the slots are {ndate}'s)
+# `free_slots_of` below is their structured reader. A consumer that needs to know which
+# (host, day, hour) a read showed as FREE — the host's retention guard, which refuses to ARM
+# a held booking on an hour no availability read of THIS turn returned — parses it HERE rather
+# than re-greppping the line somewhere else, so a change to the wording breaks the round-trip
+# twin in this repo (`tests/unit/test_free_slots_of.py`) and never a downstream consumer in
+# silence. Pure; never raises.
+import re as _re
+
+_FREE_SLOTS_RE = _re.compile(r"Free slots for (?P<who>.+?) on (?P<day>\d{4}-\d{2}-\d{2}): (?P<slots>.+)$")
+_NEXT_DAY_RE = _re.compile(
+    r"(?P<who>.+?) has no free slots on \d{4}-\d{2}-\d{2}\. "
+    r"Next available day is (?P<day>\d{4}-\d{2}-\d{2}): (?P<slots>.+?)"
+    r"(?: — offer this to the client\.)?$")
+_HOST_ID_RE = _re.compile(r"\(([^()]*)\)\s*$")     # the "(host_id)" tail of "Name (host_id)"
+_HHMM_RE = _re.compile(r"\b(\d{1,2}:\d{2})\b")
+
+
+def _host_id_from_who(who: str) -> str:
+    """``"Dr. Silva (dr_silva)"`` → ``"dr_silva"``; a bare ``"dr_silva"`` → itself. The echoed
+    professional is ``f"{host.name} ({host.host_id})"`` (check_availability), so the id is the
+    parenthesised tail; a form with no tail is used whole (the id is all there is)."""
+    tail = _HOST_ID_RE.search(who.strip())
+    return (tail.group(1).strip() if tail else who.strip())
+
+
+def free_slots_of(result: str) -> "dict[tuple[str, str], set[str]]":
+    """Parse a ``check_availability`` result into ``{(host_id, YYYY-MM-DD): {HH:MM, …}}`` — the
+    slots a read showed as FREE, keyed by professional and day. Both printed shapes (the direct
+    listing and the full-day overflow that offers the NEXT day's slots) are read; the overflow's
+    slots are filed under the day they belong to (the next day), never the full day. Anything
+    else — an error, a "no slots" line, a listing — yields ``{}``. Pure; never raises.
+
+    This is the reader half of the availability line printed above; the two live in one module on
+    purpose (one grammar, one parser), and the round-trip twin proves that printing a set of slots
+    and reading them back with this function returns the same set."""
+    text = str(result or "")
+    out: "dict[tuple[str, str], set[str]]" = {}
+    for pat in (_FREE_SLOTS_RE, _NEXT_DAY_RE):
+        m = pat.search(text)
+        if not m:
+            continue
+        host_id = _host_id_from_who(m.group("who"))
+        hours = set(_HHMM_RE.findall(m.group("slots")))
+        if host_id and hours:
+            out[(host_id, m.group("day"))] = hours
+        break
+    return out
+
 
 def _status_reply(appt: Appointment, changed: bool) -> str:
     """Shared wording for the status verbs — a no-op must SAY it was a no-op.
@@ -209,6 +263,8 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         # `re.search(r"\[(\w+)\]")`, and a bracketed id would win that search.
         who = f"{host.name} ({host.host_id})"
         free = svc.check_availability(host.host_id, date)
+        # The two shapes below are the ONLY free-slot lines; `free_slots_of` (module top) is
+        # their reader. Change the wording here and the round-trip twin there breaks first.
         if free:
             return f"Free slots for {who} on {date}: " + ", ".join(free)
         # Full day → look ahead so the secretary can offer the overflow instead of dead-ending.
