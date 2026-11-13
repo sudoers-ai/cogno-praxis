@@ -1058,7 +1058,7 @@ def test_a_linha_do_postgres_le_a_persona_na_posicao_certa():
     colunas = [c.strip() for c in _APPT_COLS.split(",")]
     assert colunas[-1] == "value_text", "a coluna nova tem de ser a última, como o mapeador lê"
 
-    # The Fatia C service columns ride at the END (service_id, duration_minutes, value_text), so
+    # The service columns ride at the END (service_id, duration_minutes, value_text), so
     # the existing positions stay put and each new one is mapped at its own index.
     linha = ("a1", "dr_silva", "2026-07-01", "09:00", "Ulpiano Krusvel", CONFIRMED, "", "nota",
              "g1", "Dr. Silva", "CLOSER", "service:coloracao", 120, "R$ 260,00")
