@@ -417,7 +417,7 @@ def test_overlapping_intervals_for_one_professional_yield_exactly_one():
     10:00 and a 30-min manicure at 10:30 on the SAME professional. The unique index does not see
     them (different starts); the advisory lock makes the loser lose, as a domain refusal."""
     store = _drop_and_store("salon")
-    store.add_host(Host("h1", "Ana", auto_confirm=True))
+    store.add_host(Host("h1", "Ulpiano Krusvel", auto_confirm=True))
 
     booked, refused = [], []
     barrier = threading.Barrier(2)
@@ -456,11 +456,12 @@ def test_overlapping_intervals_for_one_professional_yield_exactly_one():
 
 
 def test_same_interval_different_professionals_both_commit_through_postgres():
-    """The lock key carries ``host_id``: a 2-hour colour at 10:00 with Ana and the SAME slot with
-    Bia do not contend — one professional's day never blocks another's. Both bookings commit."""
+    """The lock key carries ``host_id``: a 2-hour colour at 10:00 with Ulpiano Krusvel and the SAME
+    slot with Draventa Simbroe do not contend — one professional's day never blocks another's. Both
+    bookings commit."""
     store = _drop_and_store("salon2")
-    store.add_host(Host("h1", "Ana", auto_confirm=True))
-    store.add_host(Host("h2", "Bia", auto_confirm=True))
+    store.add_host(Host("h1", "Ulpiano Krusvel", auto_confirm=True))
+    store.add_host(Host("h2", "Draventa Simbroe", auto_confirm=True))
 
     booked, refused = [], []
     barrier = threading.Barrier(2)
@@ -486,4 +487,59 @@ def test_same_interval_different_professionals_both_commit_through_postgres():
 
     assert len(booked) == 2 and not refused, (booked, refused)
     assert {a.host_id for a in booked} == {"h1", "h2"}
+    store.close()
+
+
+def test_a_reschedule_and_a_booking_onto_overlapping_intervals_yield_exactly_one():
+    """A MOVE races a BOOK for the same professional/day: a 2-hour colour rescheduled to 10:00 and a
+    30-min manicure booked at 10:30, concurrently. The reschedule writes through ``update_if_free``
+    under the same advisory lock as ``add_if_free``, so exactly one interval survives — the unique
+    index alone (equal starts only) would let both commit."""
+    store = _drop_and_store("salon3")
+    store.add_host(Host("h1", "Quintino Abravel", auto_confirm=True))
+    seed = SchedulerService(PgAppointmentStore(DSN, "salon3"), today=lambda: _TODAY,
+                            catalog=_DURATION_CATALOG)
+    moving = seed.book("h1", "2026-07-01", "14:00", "Belmira", guest_id="g_bel",
+                       service_id="service:coloracao")
+
+    done, refused = [], []
+    barrier = threading.Barrier(2)
+
+    def _move() -> None:
+        s = PgAppointmentStore(DSN, "salon3")
+        svc = SchedulerService(s, today=lambda: _TODAY, catalog=_DURATION_CATALOG)
+        barrier.wait()
+        try:
+            done.append(svc.reschedule(moving.appointment_id, "2026-07-01", "10:00"))
+        except SchedulerError as exc:
+            refused.append(str(exc))
+        finally:
+            s.close()
+
+    def _book() -> None:
+        s = PgAppointmentStore(DSN, "salon3")
+        svc = SchedulerService(s, today=lambda: _TODAY, catalog=_DURATION_CATALOG)
+        barrier.wait()
+        try:
+            done.append(svc.book("h1", "2026-07-01", "10:30", "Odilse", guest_id="g_odi",
+                                 service_id="service:manicure"))
+        except SchedulerError as exc:
+            refused.append(str(exc))
+        finally:
+            s.close()
+
+    threads = [threading.Thread(target=_move), threading.Thread(target=_book)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(done) == 1 and len(refused) == 1, (done, refused)
+    with psycopg.connect(DSN) as c:
+        rows = c.execute(
+            "SELECT time, duration_minutes FROM appointments WHERE scope='salon3' AND host_id='h1' "
+            "AND status IN ('PENDING','CONFIRMED') AND date='2026-07-01' ORDER BY time").fetchall()
+    starts = [(t, d) for t, d in rows]
+    assert not (("10:00", 120) in starts and ("10:30", 30) in starts), \
+        "a moved interval and a new booking overlap"
     store.close()

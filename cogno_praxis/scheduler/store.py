@@ -155,17 +155,11 @@ class InMemoryAppointmentStore:
     def add(self, appointment: Appointment) -> None:
         self.appointments[appointment.appointment_id] = appointment
 
-    def add_if_free(self, appointment: Appointment, *, slot_minutes: int) -> None:
-        """Add a row only if its interval overlaps no ACTIVE booking on the same professional/day —
-        the in-memory twin of the Postgres adapter's advisory-locked insert.
-
-        A single process has no race to close, so this is just the interval check the fixed-slot
-        store did by equal-start, widened to overlap: a row with ``duration_minutes`` 0 occupies
-        ``[time, time+slot_minutes)``; a service row occupies its own duration. On an overlap it
-        raises :class:`SlotTakenError`, exactly as the Postgres unique index/lock would, so the
-        service answers a lost slot the same way on both stores. A multi-worker host must still
-        inject the Postgres adapter — this guard is process-local, like the rest of this default."""
-        a = appointment
+    def _refuse_overlap(self, a: Appointment, slot_minutes: int) -> None:
+        """Raise :class:`SlotTakenError` when ``a``'s interval overlaps an ACTIVE booking of the same
+        professional/day (``a`` itself excluded). A row with ``duration_minutes`` 0 occupies
+        ``[time, time+slot_minutes)``. The one interval scan ``add_if_free`` and ``update_if_free``
+        share."""
         start = _minutes_of(a.time)
         end = start + (a.duration_minutes or slot_minutes)
         for other in self.appointments.values():
@@ -178,7 +172,28 @@ class InMemoryAppointmentStore:
             if start < o_end and o_start < end:
                 raise SlotTakenError(
                     f"{a.time} on {a.date} is already booked for {a.host_id}")
-        self.appointments[a.appointment_id] = a
+
+    def add_if_free(self, appointment: Appointment, *, slot_minutes: int) -> None:
+        """Add a row only if its interval overlaps no ACTIVE booking on the same professional/day —
+        the in-memory twin of the Postgres adapter's advisory-locked insert.
+
+        A single process has no race to close, so this is just the interval check the fixed-slot
+        store did by equal-start, widened to overlap: a row with ``duration_minutes`` 0 occupies
+        ``[time, time+slot_minutes)``; a service row occupies its own duration. On an overlap it
+        raises :class:`SlotTakenError`, exactly as the Postgres unique index/lock would, so the
+        service answers a lost slot the same way on both stores. A multi-worker host must still
+        inject the Postgres adapter — this guard is process-local, like the rest of this default."""
+        self._refuse_overlap(appointment, slot_minutes)
+        self.appointments[appointment.appointment_id] = appointment
+
+    def update_if_free(self, appointment: Appointment, *, slot_minutes: int) -> None:
+        """Rewrite a row only if, once written, its interval overlaps no OTHER ACTIVE booking — the
+        guard for a write that MOVES or REVIVES a booking (reschedule, a status back to the live
+        agenda). Same scan as :meth:`add_if_free`; a row that is not active occupies nothing and
+        is written as is."""
+        if appointment.status in ACTIVE_STATUS:
+            self._refuse_overlap(appointment, slot_minutes)
+        self.appointments[appointment.appointment_id] = appointment
 
     def get(self, appointment_id: str) -> Optional[Appointment]:
         return self.appointments.get(appointment_id)

@@ -489,6 +489,18 @@ class SchedulerService:
         else:
             self.store.add(appt)
 
+    def _update_appt(self, appt: Appointment) -> None:
+        """Persist a row that MOVES or REVIVES (reschedule; a status back to the live agenda) through
+        the store's ``update_if_free`` — the same interval guard and, on Postgres, the same advisory
+        lock as :meth:`_add_appt` — else the plain ``update`` after the service's own pre-check. A
+        move written outside the lock could commit an interval that overlaps a concurrent booking
+        from a different start, which the unique index (equal starts only) does not see."""
+        update_if_free = getattr(self.store, "update_if_free", None)
+        if update_if_free is not None:
+            update_if_free(appt, slot_minutes=self._config.slot_duration_minutes)
+        else:
+            self.store.update(appt)
+
     def _host_for(self, text: str) -> Host:
         """Exactly one catalogue host for a free string, or a refusal that says which case it is.
 
@@ -720,7 +732,14 @@ class SchedulerService:
         grid = (self._engine.fitting_starts(_iso_to_date(date), duration, [])
                 if item is not None else list(self._slots))
         if time not in grid:
-            raise SchedulerError(f"{time} is not a bookable slot")
+            if item is None:
+                raise SchedulerError(f"{time} is not a bookable slot")
+            # A service start that would cross lunch, overrun the day or sit off the grid: carry the
+            # starts where THIS service's whole duration fits, so the model offers them in one shot.
+            fits = self._free_starts(host_id, date, item)
+            raise SchedulerError(
+                f"{time} is not a bookable start for {item.name!r} ({item.duration_minutes} min). "
+                f"Starts where it fits on {date}: {', '.join(fits) if fits else 'none that day'}")
         start, end = minutes_of(time), minutes_of(time) + duration
         if any(intervals_overlap(start, end, t0, t1)
                for t0, t1 in self._taken_intervals(host_id, date)):
@@ -925,9 +944,16 @@ class SchedulerService:
             # scan da agenda inteira do profissional.
             if appt.status not in ACTIVE_STATUS:
                 self._refuse_if_slot_retaken(appt)
+        reviving = appt.status not in ACTIVE_STATUS and status in ACTIVE_STATUS
         appt.status = status
         try:
-            self.store.update(appt)
+            # A revival re-occupies the row's whole interval: written under the same guard/lock as a
+            # new booking. Every other transition keeps the plain update (no scan on a routine
+            # confirm — the reason the pre-check above runs only on a revival).
+            if reviving:
+                self._update_appt(appt)
+            else:
+                self.store.update(appt)
         except SlotTakenError:
             # Lost race behind the pre-check above (Postgres adapter only). Same domain wording.
             raise SchedulerError(
@@ -942,10 +968,13 @@ class SchedulerService:
         Ana's id → two CONFIRMED rows at 09:00. The service trusted ``store.update`` to raise,
         but only the Postgres adapter does; the default overwrites blindly. A rule the default
         store does not enforce is not a rule."""
-        taken = next((a for a in self.store.list(host_id=appt.host_id)
-                      if a.date == appt.date and a.time == appt.time
-                      and a.appointment_id != appt.appointment_id
-                      and a.status in ACTIVE_STATUS), None)
+        # By INTERVAL, not equal start: a 2-hour row revived at 10:00 must not land on a booking
+        # someone made at 11:00 while it was cancelled.
+        start = minutes_of(appt.time)
+        end = start + (appt.duration_minutes or self._config.slot_duration_minutes)
+        taken = next((iv for iv in self._taken_intervals(appt.host_id, appt.date,
+                                                          exclude_id=appt.appointment_id)
+                      if intervals_overlap(start, end, iv[0], iv[1])), None)
         if taken is not None:
             raise SchedulerError(
                 f"{appt.appointment_id} cannot return to the agenda: {appt.time} on "
@@ -1031,12 +1060,7 @@ class SchedulerService:
         is_service_row = bool(appt.service_id)
         grid = (self._engine.fitting_starts(_iso_to_date(new_date), duration, [])
                 if is_service_row else list(self._slots))
-        if new_time not in grid:
-            raise SchedulerError(f"{new_time} is not a bookable slot")
-        if (new_date, new_time) == (appt.date, appt.time):
-            return appt                                       # already there → no-op
         taken = self._taken_intervals(appt.host_id, new_date, exclude_id=appointment_id)
-        start, end = minutes_of(new_time), minutes_of(new_time) + duration
 
         def _free() -> str:
             if is_service_row:
@@ -1047,13 +1071,25 @@ class SchedulerService:
                                    for t0, t1 in taken)]
             return ", ".join(fits) if fits else "none that day"
 
+        if new_time not in grid:
+            if not is_service_row:
+                raise SchedulerError(f"{new_time} is not a bookable slot")
+            # The row's OWN duration does not fit there (lunch, end of day, off-grid): say where it
+            # does, the same shape as the conflict below.
+            raise SchedulerError(
+                f"{new_time} is not a bookable start for this {duration}-min appointment. "
+                f"Starts where it fits on {new_date}: {_free()}")
+        if (new_date, new_time) == (appt.date, appt.time):
+            return appt                                       # already there → no-op
+        start, end = minutes_of(new_time), minutes_of(new_time) + duration
+
         if any(intervals_overlap(start, end, t0, t1) for t0, t1 in taken):
             raise SchedulerError(
                 f"{new_time} on {new_date} is already booked. Free slots on {new_date}: {_free()}")
         appt.date = new_date
         appt.time = new_time
         try:
-            self.store.update(appt)
+            self._update_appt(appt)
         except SlotTakenError:
             # Lost the race with a concurrent booking of the target slot — same answer the
             # pre-check above gives, so the model can offer alternatives instead of retrying.

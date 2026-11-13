@@ -275,6 +275,17 @@ class PgAppointmentStore:
         except psycopg.errors.UniqueViolation as exc:
             raise _slot_taken(exc, a) from exc
 
+    def _update_row(self, conn: "psycopg.Connection", a: Appointment) -> None:
+        """One UPDATE of an appointment row — shared by ``update`` and ``update_if_free``."""
+        conn.execute(
+            """UPDATE appointments SET host_id = %s, date = %s, time = %s, with_name = %s,
+                   status = %s, cancel_reason = %s, notes = %s, guest_id = %s, host_name = %s,
+                   service_id = %s, duration_minutes = %s, value_text = %s
+               WHERE scope = %s AND appointment_id = %s""",
+            (a.host_id, a.date, a.time, a.with_name, a.status, a.cancel_reason, a.notes,
+             a.guest_id, a.host_name, a.service_id, a.duration_minutes, a.value_text,
+             self._scope, a.appointment_id))
+
     def _insert(self, conn: "psycopg.Connection", a: Appointment) -> None:
         """One INSERT of an appointment row, columns in ``_APPT_COLS`` order + scope. Shared by
         ``add`` (its own autocommit statement) and ``add_if_free`` (inside the locked transaction),
@@ -307,26 +318,47 @@ class PgAppointmentStore:
         duration (the service resolves it before calling). ``block_schedule`` passes through here
         too. The old unique index stays (harmless, redundant for equal starts)."""
         a = appointment
-        start = int(a.time.split(":")[0]) * 60 + int(a.time.split(":")[1])
-        end = start + (a.duration_minutes or slot_minutes)
         try:
             with self._conn.transaction():
-                self._conn.execute(
-                    "SELECT pg_advisory_xact_lock(hashtext(%s))",
-                    (f"{self._scope}/{a.host_id}/{a.date}",))
-                rows = self._conn.execute(
-                    "SELECT time, COALESCE(NULLIF(duration_minutes, 0), %s) "
-                    "FROM appointments WHERE scope = %s AND host_id = %s AND date = %s "
-                    "AND status = ANY(%s) AND appointment_id <> %s",
-                    (slot_minutes, self._scope, a.host_id, a.date, list(_ACTIVE),
-                     a.appointment_id)).fetchall()
-                for t, dur in rows:
-                    o_start = int(t.split(":")[0]) * 60 + int(t.split(":")[1])
-                    o_end = o_start + int(dur)
-                    if start < o_end and o_start < end:
-                        raise SlotTakenError(
-                            f"{a.time} on {a.date} is already booked for {a.host_id}")
+                self._lock_and_refuse_overlap(a, slot_minutes)
                 self._insert(self._conn, a)
+        except psycopg.errors.UniqueViolation as exc:
+            raise _slot_taken(exc, a) from exc
+
+    def _lock_and_refuse_overlap(self, a: Appointment, slot_minutes: int) -> None:
+        """Inside the caller's transaction: take the per-(scope, host_id, date) advisory lock, read
+        the day's ACTIVE intervals (``a`` itself excluded) and raise :class:`SlotTakenError` on an
+        overlap. ONE place for the read-under-lock, shared by the insert and the update."""
+        start = int(a.time.split(":")[0]) * 60 + int(a.time.split(":")[1])
+        end = start + (a.duration_minutes or slot_minutes)
+        self._conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtext(%s))",
+            (f"{self._scope}/{a.host_id}/{a.date}",))
+        rows = self._conn.execute(
+            "SELECT time, COALESCE(NULLIF(duration_minutes, 0), %s) "
+            "FROM appointments WHERE scope = %s AND host_id = %s AND date = %s "
+            "AND status = ANY(%s) AND appointment_id <> %s",
+            (slot_minutes, self._scope, a.host_id, a.date, list(_ACTIVE),
+             a.appointment_id)).fetchall()
+        for t, dur in rows:
+            o_start = int(t.split(":")[0]) * 60 + int(t.split(":")[1])
+            o_end = o_start + int(dur)
+            if start < o_end and o_start < end:
+                raise SlotTakenError(
+                    f"{a.time} on {a.date} is already booked for {a.host_id}")
+
+    def update_if_free(self, appointment: Appointment, *, slot_minutes: int) -> None:
+        """Rewrite a row that MOVES or REVIVES (reschedule; a status back to the live agenda) only
+        if its interval then overlaps no other ACTIVE booking — under the SAME advisory lock as
+        :meth:`add_if_free`, so a reschedule and a concurrent book for the same professional/day
+        cannot both commit overlapping intervals from different starts (the unique index sees only
+        equal starts). A row that is not active occupies nothing: written without the scan."""
+        a = appointment
+        try:
+            with self._conn.transaction():
+                if a.status in _ACTIVE:
+                    self._lock_and_refuse_overlap(a, slot_minutes)
+                self._update_row(self._conn, a)
         except psycopg.errors.UniqueViolation as exc:
             raise _slot_taken(exc, a) from exc
 
@@ -354,17 +386,7 @@ class PgAppointmentStore:
 
     def update(self, appointment: Appointment) -> None:
         a = appointment
-        # The slot index guards UPDATEs too — moving an appointment onto an occupied slot
-        # (reschedule) or reviving a CANCELED one into a since-taken slot (update_status) both
-        # violate it. Same domain translation as ``add``.
         try:
-            self._conn.execute(
-                """UPDATE appointments SET host_id = %s, date = %s, time = %s, with_name = %s,
-                       status = %s, cancel_reason = %s, notes = %s, guest_id = %s, host_name = %s,
-                       service_id = %s, duration_minutes = %s, value_text = %s
-                   WHERE scope = %s AND appointment_id = %s""",
-                (a.host_id, a.date, a.time, a.with_name, a.status, a.cancel_reason, a.notes,
-                 a.guest_id, a.host_name, a.service_id, a.duration_minutes, a.value_text,
-                 self._scope, a.appointment_id))
+            self._update_row(self._conn, a)
         except psycopg.errors.UniqueViolation as exc:
             raise _slot_taken(exc, a) from exc

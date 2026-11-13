@@ -1060,7 +1060,7 @@ def test_a_linha_do_postgres_le_a_persona_na_posicao_certa():
 
     # The Fatia C service columns ride at the END (service_id, duration_minutes, value_text), so
     # the existing positions stay put and each new one is mapped at its own index.
-    linha = ("a1", "dr_silva", "2026-07-01", "09:00", "Ana", CONFIRMED, "", "nota",
+    linha = ("a1", "dr_silva", "2026-07-01", "09:00", "Ulpiano Krusvel", CONFIRMED, "", "nota",
              "g1", "Dr. Silva", "CLOSER", "service:coloracao", 120, "R$ 260,00")
     a = _appt(linha)
     assert a.persona_id == "CLOSER" and a.host_name == "Dr. Silva" and a.guest_id == "g1"
