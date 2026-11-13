@@ -30,11 +30,14 @@ This library follows the Cogno house rule: **libraries emit, the host configures
   raising would be worse than continuing: a sheet that could not be read, a configuration line
   that was skipped, a mailbox variable that is not valid JSON, an index that could not be
   built, a seed file that could not be read whole.
-- **INFO** — 2 calls: the coordinator saying that `cogno-herald` is not installed, so no
-  calendar mail is configured; and a rehearsal seed of classes that was applied.
-- **DEBUG** — 5 calls: a race in the scheduler's store that resolved itself, a row of the
-  hours tab whose total could not be read, and a seed file that was NOT applied to this turn's
-  tenant (the guard doing its job).
+- **INFO** — 3 calls: the coordinator saying that `cogno-herald` is not installed, so no
+  calendar mail is configured; a rehearsal seed of classes that was applied; and the
+  services/products catalog being written through an admin door (how many valid, how many
+  rejected).
+- **DEBUG** — 6 calls: a race in the scheduler's store that resolved itself, a row of the
+  hours tab whose total could not be read, a seed file that was NOT applied to this turn's
+  tenant (the guard doing its job), and a catalog read finding services with nobody to perform
+  them now.
 
 The `mcp` SDK does its own logging under the `mcp` namespace (FastMCP's stdio server prints
 request lines); configure or redirect it separately.
@@ -66,6 +69,8 @@ the logger, the event, the level, the `key=` fields and whether the line carries
 | `cogno_praxis.scheduler.stores.postgres` | `slot_uniqueness_unavailable` (`reason`, `error`) | WARNING | the index could not be built for any other reason; `reason` is the SQLSTATE. The service-level pre-check remains the guard |
 | `cogno_praxis.scheduler.stores.postgres` | `slot_uniqueness_built_concurrently` | DEBUG | a sibling process built that index first — nothing to do |
 | `cogno_praxis.scheduler.stores.postgres` | `sync_hosts_empty_refused` (`scope_sha`, `kept`) | WARNING | an empty catalog was ignored rather than deleting the scope's professionals (`kept` says how many stayed). An operator who meant to empty the catalog learns here that it was not emptied |
+| `cogno_praxis.scheduler.catalog` | `catalog_saved` (`door=ecrã\|import`, `valid`, `invalid`) | INFO | the services/products catalog was written through one of the two admin doors: how many items were valid and how many lines were rejected. `door` is a fixed token; never any tenant text |
+| `cogno_praxis.scheduler.catalog` | `catalog_unoffered` (`n`) | DEBUG | a read of the catalog found `n` services with nobody to perform them now (every listed professional lost their schedule): they are not offered. Fires on a read; count only |
 
 `sheet_unreadable` is ONE call, in a helper the four reads share, and `smtp_env_ignored` is two
 calls with the same fields: one row each. So are `seed_unreadable` (five calls) and
@@ -124,6 +129,7 @@ The admin vertical, the bookkeeper, the companies vertical, the closer and the i
 - `cogno_praxis.scheduler`
 - `cogno_praxis.scheduler.durability`
 - `cogno_praxis.scheduler.grounding`
+- `cogno_praxis.scheduler.names`
 - `cogno_praxis.scheduler.server`
 - `cogno_praxis.scheduler.service`
 - `cogno_praxis.scheduler.store`
@@ -156,12 +162,15 @@ There is no class for text.
 |---|---|---|
 | `action` | closed | the fixed query that lists the duplicate rows |
 | `count` | count | how many e-mail cells of the professors tab were refused for one calendar |
+| `door` | closed | `ecrã` or `import` — which of the two admin catalog doors wrote; never tenant text |
+| `invalid` | count | how many catalog lines a write rejected |
 | `country_sha` | digest | the holiday calendar's country, as the host configured it — the tenant's configuration, unbounded, so never in clear |
 | `error` | type | the class of the exception |
 | `excerpts` | count | how many sentences of the rules were recognised |
 | `keys` | closed | the pay keys found in prose (`PAY_RATE_PER_HOUR`, `HOURS_PER_CLASS`, `IBOPE_BONUS`, `IBOPE_MIN_RESPONSE_PCT`), comma-joined |
 | `kept` | count | how many professionals stayed |
 | `missing` | closed | `hours`, `subject`, or both |
+| `n` | count | how many catalog services have nobody to perform them now |
 | `pairs` | count | how many pairs of rows were not joined |
 | `path` | constant | `calendar` — the host's word for this send path |
 | `reason` | closed | the SQLSTATE of the Postgres error, or `unknown`; otherwise a literal |
@@ -175,6 +184,7 @@ There is no class for text.
 | `status` | count | the HTTP status the store's exception carried, or `0` |
 | `tab` | closed | `schedule`, `hours`, `ibope` or `professors` — never the name the tenant gave the tab |
 | `value_len` | count | the length of the value that is not an id |
+| `valid` | count | how many catalog items a write accepted |
 | `var` | closed | the name of the mailbox variable, `COGNO_COORDINATOR_SMTP` — never its value |
 
 ### What is not in the log

@@ -14,13 +14,23 @@ are the host's job, not the scheduler's.
 from __future__ import annotations
 
 import re
-import unicodedata
 import uuid
 from datetime import date, timedelta
 from typing import Callable, Iterable, Optional
 
-from cogno_praxis.honorifics import is_host_name_title
+from cogno_praxis.scheduler.catalog import CatalogItem
 from cogno_praxis.scheduler.engine import AvailabilityEngine, SchedulerConfig
+# The ONE name checker (fold, normalisation, matching, labelling) lives in ``names`` so the
+# booking resolver below and the catalog import door share a single definition — a second copy
+# would let one offer a professional the other could not resolve. Re-exported here because the
+# resolver's historical importers reach for these on ``service``.
+from cogno_praxis.scheduler.names import (  # noqa: F401  (re-exported for callers/tests)
+    _fold,
+    _host_tokens,
+    _norm_host,
+    host_candidates,
+    host_label,
+)
 from cogno_praxis.scheduler.store import (
     ACTIVE_STATUS,
     CANCELED,
@@ -63,27 +73,6 @@ _ISO_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 _NUMERIC_RE = re.compile(r"\b(\d{1,2})[/.\-](\d{1,2})(?:[/.\-](\d{2,4}))?\b")
 # Named: "9 de julho", "09 julho de 2026", "9 jul".
 _NAMED_RE = re.compile(r"\b(\d{1,2})\s*(?:de\s+)?([a-z]+)(?:\s+de\s+(\d{4}))?")
-
-
-def _fold(s: str) -> str:
-    """The ecosystem's ONE fold — a REPLICA of ``cogno_host.textfold.fold`` (its base, no flags).
-
-    NFKD → combining marks removed → ``casefold()``: the host's operations in the host's order
-    (NFKD FIRST, which is what makes the fold idempotent — ``lower`` first left the characters
-    whose compatibility decomposition is upper-case, the mathematical "fancy" letters of many
-    WhatsApp display names among them, upper-case after folding). The contract is SYNC WITH THE
-    HOST: ``cogno-host`` pins this function against its own over 100 000 strings, because a copy
-    that answered differently would find a professional here that the host could not, or the
-    reverse.
-
-    It used to be ``NFKD(lower).encode("ascii", "ignore")``, which does not strip an accent but
-    DELETES every character outside ASCII: «Łucja Øverby» folded to ``"ucja verby"`` and a name
-    in a non-Latin script to ``""`` — the same empty key as every other one, so no such
-    professional could be found by name. Now only the marks go; the letters stay. ``casefold``
-    and not ``lower``, as in the host since 2026-09-23: «Straße» and «Strasse» are one name.
-    """
-    folded = unicodedata.normalize("NFKD", s or "")
-    return "".join(ch for ch in folded if not unicodedata.combining(ch)).casefold()
 
 
 # Spelled-out counts the model actually emits. Digits are handled by the regex; these cover
@@ -271,46 +260,6 @@ def _parse_calendar_date(e: str, today: date) -> Optional[date]:
     return None
 
 
-def host_label(h: Host) -> str:
-    """How ``list_schedulable_hosts`` names a professional: the name, then the role in brackets.
-
-    The ONE spelling of that line. The resolver accepts it back as that professional: a model
-    copies the line it was shown into ``host_name``, and a door that refused its own list's label
-    turned a «sim» into "nobody bookable here goes by that" for the very person just listed.
-    """
-    return h.name + (f" ({h.role})" if h.role else "")
-
-
-def _norm_host(s: str) -> str:
-    """Fold to a comparable key for fuzzy host matching: accent-free, no honorific, alnum only —
-    so 'dr_otavio_renan_bertholdi', 'Dr. Otávio Renan Bertholdi' and 'otaviorenanbertholdi'
-    all collapse equal."""
-    folded = _fold(s)
-    for hon in ("dra", "dr", "sr", "sra"):
-        folded = folded.replace(hon, "")
-    return "".join(ch for ch in folded if ch.isalnum())
-
-
-# Honorifics as WHOLE tokens (the one list, :mod:`cogno_praxis.honorifics`). ``_norm_host`` strips them as substrings anywhere in the
-# string, which is fine for collapsing one name to one key and wrong for splitting a name into
-# words ("Pedro" would lose its "dr"). The two normalisers therefore stay separate.
-
-
-def _host_tokens(s: str) -> frozenset[str]:
-    """The folded word tokens of a person's name, honorifics dropped, 1-char words dropped.
-
-    Token-wise, unlike :func:`_norm_host`, which collapses the whole string to a single key.
-    A contact says "a Dra. Marina" and the catalogue holds "Dra. Marina Aloe": only a token
-    comparison can tell *every word they said is in this name* from *no match at all*, and
-    that difference is what separates "book it" from "ask which one".
-
-    One-character tokens are dropped from the QUERY side on purpose — a bare initial matches
-    almost anything, and a match that loose is exactly what must not resolve to one agenda.
-    """
-    return frozenset(t for t in re.split(r"[\W_]+", _fold(s)) if len(t) > 1
-                     and not is_host_name_title(t))
-
-
 class SchedulerError(RuntimeError):
     """A recoverable domain error (unknown host, slot taken, past date, unknown id)."""
 
@@ -325,8 +274,14 @@ class SchedulerService:
         state: Optional[str] = None,
         holidays: Optional[Iterable[date]] = None,
         today: Optional[Callable[[], date]] = None,
+        catalog: Optional[Iterable["CatalogItem"]] = None,
     ) -> None:
         self.store: AppointmentStore = store or InMemoryAppointmentStore()
+        # The tenant's catalog (services + products), the single source read from
+        # ``schedule_config["catalog"]``. Empty (the default) → the SECRETARY behaves exactly as
+        # before. In this slice its only agenda-side effect is the PRODUCT guard below: a product
+        # id is never scheduled. A later change reads ``duration_minutes`` to book by duration.
+        self.catalog: tuple[CatalogItem, ...] = tuple(catalog or ())
         # The tenant's rules (hours/lunch/weekends/slot) drive the availability engine; the
         # host injects config + location (country/state → holidays) per tenant. With none,
         # sensible defaults apply (classic 09–17 working day, no holiday filtering).
@@ -398,30 +353,35 @@ class SchedulerService:
     def _host_candidates(self, text: str) -> list[Host]:
         """Every catalogue host a free string could mean — 0, 1 or many. Never picks.
 
-        Three tiers, first non-empty wins, each STRICTER than the phrase it answers:
-        the catalogue key itself (id, full name, or the line ``list_schedulable_hosts`` printed —
-        :func:`host_label` — accent/honorific/separator-insensitive),
-        then *every word the caller said is a word of this name* ("Marina" → "Dra. Marina
-        Aloe"), then a specialty ("o cardiologista"). A tier that matches two hosts returns
-        both, so the caller asks instead of guessing — the old resolver collapsed that case
-        into "unknown host", which reads as *nobody* when the truth is *which of these two*.
+        Delegates to :func:`cogno_praxis.scheduler.names.host_candidates` over this service's
+        own roster, so the booking resolver and the catalog import door agree by construction.
         """
-        hosts = self.store.list_hosts()
-        key = _norm_host(text)
-        if key:
-            exact = [h for h in hosts
-                     if key in (_norm_host(h.host_id), _norm_host(h.name), _norm_host(host_label(h)))]
-            if exact:
-                return exact
-        want = _host_tokens(text)
-        if want:
-            partial = [h for h in hosts
-                       if want <= (_host_tokens(h.name) | _host_tokens(h.host_id))]
-            if partial:
-                return partial
-        if key:
-            return [h for h in hosts if h.role and _norm_host(h.role) == key]
-        return []
+        return host_candidates(text, self.store.list_hosts())
+
+    def _guard_service_id(self, service_id: str) -> None:
+        """The PRODUCT guard: a booking call that names a catalog PRODUCT is refused —
+        recoverably — because a product is never scheduled, it is explained. An id the catalog
+        does not know is refused WITH the bookable services (never booked blind, never a pick).
+
+        No catalog, or no ``service_id`` → nothing happens (the carrier-absent path is exactly
+        today's behaviour). With a catalog present, a service id passes through; this slice does
+        not yet book by its duration — a later change does — so a service id is otherwise inert here.
+        """
+        sid = (service_id or "").strip()
+        if not sid or not self.catalog:
+            return
+        by_id = {it.item_id: it for it in self.catalog}
+        it = by_id.get(sid)
+        if it is None:
+            services = ", ".join(f"{s.name} [{s.item_id}]"
+                                 for s in self.catalog if s.is_service) or "(none)"
+            raise SchedulerError(
+                f"unknown service: {sid!r} is not in the catalog, and NOTHING was written. The "
+                f"bookable services are: {services}. Do NOT pick one yourself — show them and ask.")
+        if it.is_product:
+            raise SchedulerError(
+                f"{it.name} is a PRODUCT, not a service — it cannot be scheduled. Describe it and "
+                f"its price if asked; the purchase is made in person. NOTHING was written.")
 
     def _host_for(self, text: str) -> Host:
         """Exactly one catalogue host for a free string, or a refusal that says which case it is.
@@ -487,9 +447,12 @@ class SchedulerService:
     def list_hosts(self) -> list[Host]:
         return self.store.list_hosts()
 
-    def check_availability(self, host_id: str, date: str, *, host_name: str = "") -> list[str]:
+    def check_availability(self, host_id: str, date: str, *, host_name: str = "",
+                           service_id: str = "") -> list[str]:
         """Free slots on a date. ``host_name`` is the professional the CLIENT named — passing it
-        makes this read verify the agenda instead of trusting the id it was handed."""
+        makes this read verify the agenda instead of trusting the id it was handed. ``service_id``
+        (when a catalog is configured) is PRODUCT-guarded: a product cannot be scheduled."""
+        self._guard_service_id(service_id)
         host_id = self.resolve_agenda(host_id, host_name).host_id
         self._require_future(date)
         self._require_working_day(date)
@@ -620,7 +583,11 @@ class SchedulerService:
     # ── writes ─────────────────────────────────────────────────────────
     def book(self, host_id: str, date: str, time: str, with_name: str,
              notes: str = "", *, guest_id: str = "", host_name: str = "",
-             persona_id: str = "") -> Appointment:
+             persona_id: str = "", service_id: str = "") -> Appointment:
+        # ``service_id`` is PRODUCT-guarded first: a product id never becomes a booking,
+        # an unknown id is refused with the services. A service id otherwise passes through — this
+        # slice does not yet book by its duration (a later change does).
+        self._guard_service_id(service_id)
         # The agenda is decided ONCE, here, against the catalogue — and ``host_name`` is read as
         # the professional the client NAMED, not as a display label to copy down. A call whose id
         # and name are two different people is refused before anything is written.
@@ -896,7 +863,7 @@ class SchedulerService:
 
     def reschedule(self, appointment_id: str, new_date: str, new_time: str, *,
                    identity_id: Optional[str] = None, role: Optional[str] = None,
-                   ) -> Appointment:
+                   service_id: str = "") -> Appointment:
         """Move an existing appointment to a new date/time in ONE atomic step (keeps the id).
 
         Ownership (parent parity; host-authorised) is enforced via ``_authorize``.
@@ -906,7 +873,11 @@ class SchedulerService:
         rules mirror book: future date, valid+free slot (a conflict carries the free slots).
         Moving to the slot it already occupies is a no-op. The appointment keeps its status
         (the host may treat a reschedule as needing re-confirmation via its own flow).
+
+        ``service_id`` is PRODUCT-guarded: a product id is refused before anything
+        moves. This change does not re-slot by a service's duration — a later one does.
         """
+        self._guard_service_id(service_id)
         appt = self.store.get(appointment_id)
         if appt is None:
             raise SchedulerError(f"unknown appointment: {appointment_id}")
