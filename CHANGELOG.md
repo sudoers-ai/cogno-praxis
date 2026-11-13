@@ -27,7 +27,9 @@
   and the nets read), indented so it is never taken for another item. An item with NO description
   renders the line byte-for-byte as before. `clip_description` collapses whitespace and line breaks
   to single spaces (a description never fabricates a line of its own) and cuts at the last word
-  boundary before `DESCRIPTION_PRINT_CEILING` (280, the `PERSONA_TEXT_CEILINGS` mould) with "…". It
+  boundary before `DESCRIPTION_PRINT_CEILING` (280, the `PERSONA_TEXT_CEILINGS` mould) with "…" —
+  the "…" included, even for one word longer than the ceiling — and prints square brackets as
+  parentheses, so a description line never ends in something read as an item id. It
   is clipped ON PRINT only — NOT a new import refusal (the thirteen reasons and the screen mirror
   are untouched). The description is third-party text that reaches the model ONLY as the RESULT of
   `list_services`, inside the core's tool-output fence (`cogno_anima.stages.ego` sanitises + fences
