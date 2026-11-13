@@ -160,7 +160,8 @@ def test_render_gives_two_lists_with_current_names_and_descriptions():
         {"kind": "product", "name": "Shampoo", "value_text": "R$ 60,00"}], hosts).items
     out = C.render_service_catalog(items, hosts)
     assert "Serviços:" in out and "Produtos:" in out
-    assert "Coloração — 2 h — R$ 260,00 — Belmira Quostral" in out
+    # the GRID line is unchanged; the description follows on a SECOND, indented line
+    assert "- Coloração — 2 h — R$ 260,00 — Belmira Quostral\n  descrição: coloração completa" in out
     # a rename in the directory shows the NEW name (the link is the host_id)
     renamed = [Host("belmira", "Belmira Quostral-Nova", "Cabeleireira"), hosts[1]]
     assert "Belmira Quostral-Nova" in C.render_service_catalog(items, renamed)

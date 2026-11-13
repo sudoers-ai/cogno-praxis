@@ -20,6 +20,20 @@
 ### Added — the booking TOOLS carry `service_id`, and a catalog step for the secretary's system prompt
 
 - **`scheduler/server.py`**: the `book_appointment` and `check_availability` TOOLS now take an optional `service_id`, forwarded to the service methods that already read it — the duration-aware booking and the PRODUCT guard become reachable from the model's tools (before, the wrappers dropped the argument and a product id handed to the booking tool booked a plain slot). This is the "later change" the `list_services` comment named. The two tools' NATIVE schemas now declare `service_id`; it is a PER-TENANT surface — the host strips it for a tenant with **no** catalog (that tenant's tool payload and prompt digests are byte-for-byte unchanged) and keeps it for a tenant **with** a catalog (whose native `tools` payload moves, so the model half is measured there). `reschedule_appointment` keeps the duration stored on the row and is not given the argument. The two tools' function DESCRIPTIONS stay byte-for-byte as before (the native payload is not covered by a digest golden, so description prose that grew would reach EVERY tenant unseen): the `service_id` text lives on the PARAMETER (`Annotated[str, Field(description=…)]`), so the host's property-strip removes the text with it — a no-catalog tenant's whole native scheduler payload is byte-identical to the one served before this feature.
+- **`scheduler/catalog.py` — the item DESCRIPTION reaches the reader.** `format_service_line` /
+  `format_product_line` now add a SECOND, INDENTED line (`  descrição: <texto>`) after the item
+  when it has a description — OUTSIDE the `name — duration — value — who` grid (the fields the voice
+  and the nets read), indented so it is never taken for another item. An item with NO description
+  renders the line byte-for-byte as before. `clip_description` collapses whitespace and line breaks
+  to single spaces (a description never fabricates a line of its own) and cuts at the last word
+  boundary before `DESCRIPTION_PRINT_CEILING` (280, the `PERSONA_TEXT_CEILINGS` mould) with "…". It
+  is clipped ON PRINT only — NOT a new import refusal (the thirteen reasons and the screen mirror
+  are untouched). The description is third-party text that reaches the model ONLY as the RESULT of
+  `list_services`, inside the core's tool-output fence (`cogno_anima.stages.ego` sanitises + fences
+  every tool output — the host twin drives that real path with headers DERIVED from the anima's
+  block tables); never in the system block, never in a log. Tests: `tests/unit/test_catalog_description.py`;
+  `test_scheduler_catalog.py` pins the second-line form. list_services OUTPUT goldens move only for
+  an item WITH a description; the prompt digests do NOT move (the description is in no template).
 - **`scheduler/catalog.py`**: `SERVICES_SYSTEM_BLOCK` (fixed prose) + `services_system_block(schedule_config)` — the `{{SERVICES_CATALOG}}` fill for the secretary's `system.txt`: `""` when the tenant has no catalog (so the rendered system prompt is byte-for-byte what it was — the catalog is an opt-in surface), the fixed block when it does. The block carries NO tenant text (names, prices and descriptions are third-party text and reach the model only as the guarded result of `list_services`), so a catalog edit never moves the digest and the two goldens are one value. It teaches: read `list_services`, pass the chosen `service_id` to check/book, and that a PRODUCT is explained and priced but never scheduled and never SOLD (the purchase is made in person).
 - **`scheduler/prompts/system.txt`**: a `{{SERVICES_CATALOG}}` placeholder (host-filled, like `{{ROLE_CAPABILITIES}}`); empty renders byte-for-byte as before.
 - Tests: `tests/unit/test_catalog_booking_surface.py` (the tools forward `service_id`; a product id is refused through the tool with nothing written; a service occupies its whole duration; the no-service and no-catalog paths are the controls; `services_system_block` is empty/present with no tenant text).
