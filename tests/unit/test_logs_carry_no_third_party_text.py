@@ -67,6 +67,11 @@ _PINNED: "dict[str, set[str]]" = {
     "reason": {"getattr(exc, 'sqlstate', None) or 'unknown'"},
     "tab": {"tab"},
     "var": {"TENANT_SMTP_ENV"},
+    "door": {"token"},
+    # ── count (catalog) ──
+    "valid": {"int(valid)"},
+    "invalid": {"int(invalid)"},
+    "n": {"n_unoffered"},
     # ── type ──  (the shape is held below: `type(<name>).__name__`)
     "error": {"type(exc).__name__"},
     # ── digest ──  (the shape is held below: `id_sha(<anything>)`)

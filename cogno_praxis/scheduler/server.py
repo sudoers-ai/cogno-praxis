@@ -24,6 +24,13 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from cogno_praxis.render import Field, render_block
+from cogno_praxis.scheduler.catalog import (
+    CatalogTotalError,
+    catalog_from_config,
+    catalog_total,
+    render_service_catalog,
+    resolve_item_token,
+)
 from cogno_praxis.scheduler.engine import SchedulerConfig
 from cogno_praxis.scheduler.service import (
     RESOLVE_DATE_DESCRIPTION,
@@ -145,6 +152,43 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         spoken = format_date(date.fromisoformat(iso),
                              os.environ.get("COGNO_SCHEDULER_LANG", "pt"))
         return resolve_date_answer(iso, spoken)
+
+    # ``list_services`` is a NEW read tool (the catalog reader). It is DIGEST-NEUTRAL on the host
+    # surface until the host grants it in ``scheduler_rbac`` (a later change): an un-granted
+    # tool is stripped before the EGO/SCOPE sees it, so a tenant's prompt digests do not move. The
+    # ``service_id`` ARGUMENT of book/check is NOT added to these tool schemas here — adding it to
+    # a tool the host already offers would move EVERY tenant's digest. It lives on the SERVICE
+    # methods (`SchedulerService.book/check_availability`, product-guarded) for the duration-aware booking to drive
+    # and for the host to surface per-tenant (behind a mask for tenants with a catalog, in a later change).
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    def list_services(total_of: str = "") -> str:
+        """List the services (name, how long, price, who performs it) and the products (name,
+        price) this business offers — call it for "quais serviços?", "o que vocês fazem?",
+        "quanto custa X?". A PRODUCT is described and priced but NEVER scheduled.
+
+        ``total_of``: a comma-separated list of service/product names (or ids) to ADD UP, for
+        "quanto fica corte + manicure?". The total is summed HERE, in code, from the published
+        prices — never estimate it yourself. An item with no published value, or two different
+        currencies, comes back saying so instead of a number."""
+        catalog = svc.catalog
+        body = render_service_catalog(catalog, svc.list_hosts())
+        tokens = [t.strip() for t in (total_of or "").split(",") if t.strip()]
+        if not tokens:
+            return body
+        resolved: list[str] = []
+        for tok in tokens:
+            it = resolve_item_token(tok, catalog)
+            if it is None:
+                return (f"{body}\n\nTotal: não encontrei o item {tok!r} no catálogo — "
+                        f"confirme o nome com a lista acima.")
+            resolved.append(it.item_id)
+        try:
+            total, currency, lines = catalog_total(resolved, catalog)
+        except CatalogTotalError as exc:
+            return f"{body}\n\nTotal: {exc}."
+        named = " + ".join(f"{name} ({value})" for name, value in lines)
+        amount = f"{total:.2f}".replace(".", ",")
+        return f"{body}\n\nTotal ({named}): {currency} {amount}"
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
     def check_availability(host_id: str, date: str, host_name: str = "") -> str:
@@ -483,8 +527,12 @@ def _seeded_service() -> SchedulerService:
     # COGNO_SCHEDULER_CONFIG = the schedule_config JSON (hours/lunch/weekends/slot);
     # COGNO_SCHEDULER_COUNTRY / _STATE = location → holiday calendar.
     raw = os.environ.get("COGNO_SCHEDULER_CONFIG")
-    cfg = SchedulerConfig(json.loads(raw)) if raw else None
-    return SchedulerService(store, config=cfg, today=clock,
+    raw_config = json.loads(raw) if raw else None
+    cfg = SchedulerConfig(raw_config) if raw_config else None
+    # The catalog travels inside the SAME schedule_config the host already serialises (the
+    # ``catalog`` key SchedulerConfig allowlists away), so no new env is needed. Absent → ().
+    catalog = catalog_from_config(raw_config)
+    return SchedulerService(store, config=cfg, today=clock, catalog=catalog,
                             country=os.environ.get("COGNO_SCHEDULER_COUNTRY"),
                             state=os.environ.get("COGNO_SCHEDULER_STATE"))
 

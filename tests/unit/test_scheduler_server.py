@@ -17,6 +17,32 @@ def _server():
     return build_server(SchedulerService(store, today=lambda: _TODAY))
 
 
+def _catalog_server():
+    """A server built WITH a catalog — the surface the B' mask reveals."""
+    from cogno_praxis.scheduler import catalog as C
+    store = InMemoryAppointmentStore()
+    store.hosts["belmira"] = Host("belmira", "Belmira Quostral", "Cabeleireira")
+    items = C.parse_catalog_block(
+        "SERVIÇOS:\n- Coloração | 120 min | R$ 260,00 | Belmira\n"
+        "PRODUTOS:\n- Shampoo | R$ 60,00\n",
+        [Host("belmira", "Belmira Quostral", "Cabeleireira")]).items
+    return build_server(SchedulerService(store, today=lambda: _TODAY, catalog=items))
+
+
+async def test_list_services_is_empty_without_a_catalog_and_full_with_one():
+    """list_services is ALWAYS registered (one surface for the admin reader + the real server);
+    with no catalog it says nothing is configured, with one it gives the two lists and a code
+    total. Hiding it from a no-catalog tenant is the HOST's per-turn mask, not this module's."""
+    empty = _text(await _server().call_tool("list_services", {}))
+    assert "No services or products are configured." in empty
+    out = _text(await _catalog_server().call_tool("list_services", {}))
+    assert "Serviços:" in out and "Coloração — 2 h — R$ 260,00 — Belmira Quostral" in out
+    assert "Produtos:" in out and "Shampoo — R$ 60,00" in out
+    out2 = _text(await _catalog_server().call_tool(
+        "list_services", {"total_of": "Coloração, Shampoo"}))
+    assert "Total" in out2 and "R$ 320,00" in out2
+
+
 def _clocked_server():
     """A server whose "today" moves, so a booking can be played forward to its own day.
 
@@ -39,12 +65,16 @@ def _text(call_result):
 async def test_tools_and_annotations():
     tools = await _server().list_tools()
     ann = {t.name: t.annotations for t in tools}
-    assert set(ann) == {"resolve_date", "list_schedulable_hosts", "check_availability",
+    # The praxis exposes ONE full surface (list_services + service_id always registered); the
+    # per-tenant MASK that hides them from a no-catalog tenant is the HOST's (offered-tools).
+    assert set(ann) == {"resolve_date", "list_schedulable_hosts", "list_services",
+                        "check_availability",
                         "book_appointment", "block_schedule", "list_appointments",
                         "reschedule_appointment", "confirm_appointment",
                         "complete_appointment",
                         "cancel_appointment", "get_schedule_settings",
                         "set_schedule_settings", "set_auto_confirm"}
+    assert ann["list_services"].readOnlyHint is True
     assert ann["get_schedule_settings"].readOnlyHint is True
     assert ann["set_schedule_settings"].readOnlyHint is False
     assert ann["set_auto_confirm"].readOnlyHint is False

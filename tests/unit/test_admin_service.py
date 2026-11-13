@@ -82,10 +82,12 @@ def test_the_scheduler_is_read_with_its_real_tools_and_annotations():
     assert sched["prompt_slots"] == ["system", "scope", "limits", "voice"]
     tools = {t["name"]: t for t in sched["tools"]}
     assert list(tools) == [
-        "list_schedulable_hosts", "resolve_date", "check_availability", "book_appointment",
+        "list_schedulable_hosts", "resolve_date", "list_services", "check_availability",
+        "book_appointment",
         "block_schedule", "list_appointments", "reschedule_appointment", "confirm_appointment",
         "complete_appointment", "cancel_appointment", "get_schedule_settings",
         "set_schedule_settings", "set_auto_confirm"]
+    assert tools["list_services"]["read_only"] is True
     assert tools["check_availability"]["read_only"] is True
     assert tools["book_appointment"]["read_only"] is False
     assert tools["book_appointment"]["destructive"] is False
