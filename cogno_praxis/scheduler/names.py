@@ -124,13 +124,13 @@ def host_id_rewrite(host_id: str, host_name: str,
 
     The ONE rule behind both the scheduler's :meth:`SchedulerService.resolve_agenda` (the agenda
     door for the availability READ and the booking WRITE) and the host's held-booking gate — so
-    *what praxis accepts, the host arms*, with no second copy to drift. It fires for one shape,
-    measured live in a scheduling conversation (2026-11): a ``host_id`` the model made up
-    (``prof_ulpiano_krusvel`` —
-    no professional in ``hosts`` answers to it) carried beside the professional the client NAMED
-    (``host_name="Dr. Ulpiano"``). When that name resolves to EXACTLY ONE bookable professional,
-    the id is rewritten to theirs and the call proceeds on the agenda the client actually named,
-    instead of failing «unknown host» and losing the turn.
+    *an id the scheduler repairs, the host repairs too*, with no second copy to drift. It fires
+    for one shape, measured live in a scheduling conversation (2026-11): a held booking whose
+    ``host_id`` was a value the model made up (``"REDACTED"`` — no professional in ``hosts``
+    answers to it) beside the professional the client NAMED (``host_name="Dr. Ulpiano
+    Krusvel"``). When that name resolves to EXACTLY ONE bookable professional, the id is
+    rewritten to theirs and the call proceeds on the agenda the client actually named, instead of
+    being refused «unknown host».
 
     *Only* that shape, so the stricter refusals stay exactly as they are:
 

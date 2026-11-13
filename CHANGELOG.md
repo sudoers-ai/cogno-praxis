@@ -10,13 +10,13 @@
   EXACTLY ONE bookable host (`host_candidates` level 2, *every word said is a word of the name*),
   the id is rewritten to theirs. `scheduler/service.py::resolve_agenda` (the ONE door for the
   availability READ and the booking WRITE) applies it before its refusals, so a measured defect —
-  the model passing an id it never read, the read answering «unknown host», the model repeating it
-  and the turn being lost — now resolves to the agenda the client actually named. STRICT where it
+  a held booking whose `host_id` the model made up (`"REDACTED"`) beside the professional the
+  client named, refused «unknown host» — now resolves to the agenda the client actually named. STRICT where it
   guards a write, UNCHANGED: a VALID id carrying another professional's name is still the «two
   agendas» refusal (trace 731), and a name that matches nobody or two namesakes does NOT rescue the
   call (the id's own refusal, or «which one?», stays). No prefix/initial matching — a one-character
   token never decides an agenda. The rule is ONE function, shared with the host's held-booking gate
-  so what the resolver accepts the gate arms. Twin: `tests/unit/test_a_named_agenda_repairs_an_invented_id.py`.
+  so the gate repairs exactly the ids the resolver repairs. Twin: `tests/unit/test_a_named_agenda_repairs_an_invented_id.py`.
 
 ### Added — `free_slots_of`, the reader half of the availability line
 

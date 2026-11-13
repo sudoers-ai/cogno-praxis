@@ -545,10 +545,10 @@ class SchedulerService:
                 f"can be booked are: {self._roster()}. Ask the client which one they mean.")
         # A model-invented ``host_id`` — one no professional in the catalogue answers to — is
         # REWRITTEN to the professional the client NAMED, when that name resolves to exactly one
-        # (measured 2026-11: ``host_id="prof_ulpiano_krusvel"``, ``host_name="Dr. Ulpiano"``,
-        # the lone Ulpiano; the read failed «unknown host» and the turn was lost). The rule lives in
-        # ``names.host_id_rewrite`` so the host's held-booking gate arms exactly what this door then
-        # accepts on the «sim». It fires ONLY for that shape, BEFORE the branches below, so they are
+        # (measured 2026-11: a held booking with ``host_id="REDACTED"``, a value the model made up,
+        # beside ``host_name="Dr. Ulpiano Krusvel"``, the lone Ulpiano). The rule lives in
+        # ``names.host_id_rewrite`` so the host's held-booking gate repairs exactly the ids this door
+        # repairs on the «sim». It fires ONLY for that shape, BEFORE the branches below, so they are
         # untouched: a blank/unknown/ambiguous name returns ``None`` here and falls through to the
         # id's own refusal, and a VALID id (which `host_id_rewrite` leaves alone) still reaches the
         # trace-731 «two agendas» check.

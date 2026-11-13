@@ -1,12 +1,12 @@
 """An invented ``host_id`` is REWRITTEN to the professional the client NAMED — when, and only
 when, that name resolves to exactly one bookable host.
 
-The shape, measured live over a scheduling conversation (2026-11): a model calls
-``check_availability`` / ``book_appointment`` with a ``host_id`` no professional in the catalogue
-answers to (``REDACTED``, a placeholder it made up) beside the professional the client actually
-named (``host_name``). On the base tree the id's own refusal fires before the name is ever
-consulted, so the read answers «unknown host», the model repeats the same id, and the turn is
-lost. The repair lets the NAME decide the agenda — the id is rewritten to theirs — which is the
+The shape, measured live over a scheduling conversation (2026-11): a model held a
+``book_appointment`` whose ``host_id`` no professional in the catalogue answers to (``REDACTED``,
+a value it made up) beside the professional the client actually named (``host_name="Dr. Ulpiano
+Krusvel"``). On the base tree the id's own refusal fires before the name is ever consulted, so
+the call answers «unknown host» although the client named a real professional; the
+availability read goes through the same door. The repair lets the NAME decide the agenda — the id is rewritten to theirs — which is the
 same thing a human reading «Dr. Ulpiano» next to a broken id would do.
 
 The rule is one function, ``names.host_id_rewrite``, shared with the booking door and (in the
@@ -61,8 +61,8 @@ def test_the_invented_id_on_its_own_names_nobody():
 
 def test_an_invented_id_is_rewritten_to_the_named_professional():
     hosts = _svc().list_hosts()
-    # a PARTIAL name — «Dr. Ulpiano» ⊆ «Dr. Ulpiano Krusvel», the honorific dropped — is the real
-    # measured form, and it resolves because he is the only Ulpiano.
+    # the measured held form carries the FULL name; a PARTIAL name — «Dr. Ulpiano» ⊆ «Dr. Ulpiano
+    # Krusvel», the honorific dropped — resolves too, because he is the only Ulpiano.
     assert host_id_rewrite(_INVENTED, "Dr. Ulpiano", hosts).host_id == "h-7f3a2c"
     assert host_id_rewrite(_INVENTED, "Dr. Ulpiano Krusvel", hosts).host_id == "h-7f3a2c"
 
