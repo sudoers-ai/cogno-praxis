@@ -542,17 +542,53 @@ def unoffered_count(items: Sequence[CatalogItem], hosts: Sequence[Host]) -> int:
     return n
 
 
+#: The per-item ceiling on a catalog DESCRIPTION as ``list_services`` PRINTS it (the
+#: ``PERSONA_TEXT_CEILINGS`` mould — a NAMED number). The description is the business's own text
+#: (third-party) that the Secretary describes the item by; this clips it ON OUTPUT so one item
+#: cannot flood the result. It is NOT a new IMPORT refusal — the thirteen reasons and the screen
+#: mirror are untouched; today only ``MAX_ITEMS`` has a ceiling. The text reaches the model only as
+#: the RESULT of ``list_services``, inside the core's tool-result fence that already neutralises the
+#: item NAME — never in the system block, never in a log.
+DESCRIPTION_PRINT_CEILING = 280
+
+
+def clip_description(description: str) -> str:
+    """The item's description as ``list_services`` PRINTS it: whitespace AND line breaks collapsed
+    to single spaces (so a description never fabricates a line of its own), cut at the last word
+    boundary before :data:`DESCRIPTION_PRINT_CEILING` and ended with "…". ``""`` when there is none.
+    """
+    desc = " ".join((description or "").split()).strip()
+    if len(desc) <= DESCRIPTION_PRINT_CEILING:
+        return desc
+    cut = desc[:DESCRIPTION_PRINT_CEILING]
+    boundary = cut.rfind(" ")
+    return (cut[:boundary] if boundary > 0 else cut).rstrip() + "…"
+
+
+def _with_description(line: str, description: str) -> str:
+    """The item line, plus — when the item HAS a description — a SECOND, INDENTED line
+    (``  descrição: <texto>``) right after it, OUTSIDE the ``name — duration — value — who`` grid
+    the voice and the nets read, and indented so it is never taken for another item. An item WITHOUT
+    a description renders the line byte-for-byte as before."""
+    desc = clip_description(description)
+    return f"{line}\n  descrição: {desc}" if desc else line
+
+
 def format_service_line(it: CatalogItem, hosts: Sequence[Host]) -> str:
-    """The ONE spelling of a service line (the duration-aware booking reads it too). ``name — 2 h — R$ 260,00 — Ana,
-    Bia``; a missing value → "sem valor publicado"; ``all_hosts`` → "todos"."""
+    """The ONE spelling of a service line (the duration-aware booking reads its FIRST line too).
+    ``name — 2 h — R$ 260,00 — Ana, Bia``; a missing value → "sem valor publicado"; ``all_hosts`` →
+    "todos". A description, when the item has one, follows on a second indented line (``format``
+    grid untouched)."""
     value = it.value_text or "sem valor publicado"
     who = "todos" if it.all_hosts else ", ".join(_who_names(it, hosts))
-    return f"{it.name} — {format_duration(it.duration_minutes)} — {value} — {who}"
+    return _with_description(
+        f"{it.name} — {format_duration(it.duration_minutes)} — {value} — {who}", it.description)
 
 
 def format_product_line(it: CatalogItem) -> str:
-    """The ONE spelling of a product line: ``name — R$ 60,00`` (or "sem valor publicado")."""
-    return f"{it.name} — {it.value_text or 'sem valor publicado'}"
+    """The ONE spelling of a product line: ``name — R$ 60,00`` (or "sem valor publicado"), with the
+    item's description on a second indented line when it has one."""
+    return _with_description(f"{it.name} — {it.value_text or 'sem valor publicado'}", it.description)
 
 
 def format_duration(minutes: int) -> str:
