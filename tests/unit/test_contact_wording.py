@@ -57,7 +57,13 @@ AT_MAIN = {
     ("interviewer", "voice"): "0dfe458c1778ed53dfcb8cadbcfdc69993ecd8cc7233e7ca3dcc5de9a8b1887e",
     ("scheduler", "limits"): "92becaf1d23c56570833082fe1507e01c0afe3a52922ee8404ed671a53a6a2a4",
     ("scheduler", "system"): "49d2c8ce3706642f1baeef66ea2717be061f2262ccd6fa83f132e08cd93d58b2",
-    ("scheduler", "voice"): "68c17d7ea87916af677d8d03f532975de41c729b90e9e4b3587a5ddc5e68ae9b",
+    # scheduler voice regenerated 2026-11-12, deliberately: the illustrative examples no longer
+    # lend the reply a name, a title or a gender («a Dra. Silva» → «a profissional»), and a rule
+    # above them says to take the name only from the tools. None of the FIVE paired sentences
+    # (the `{identity_label}` greetings) changed — they stop before the example's professional —
+    # so `contact_wording.WORDINGS` stays in sync (`test_every_today…` is green) and the
+    # by-reference proof still holds: reversing the swap reconstructs this file byte for byte.
+    ("scheduler", "voice"): "b420762b7ac5f045503299c204ab63420033be450246f35e7a505541170b2d5e",
 }
 
 #: How many times each template names the contact in line — 21 in 11 files. DERIVED: the test

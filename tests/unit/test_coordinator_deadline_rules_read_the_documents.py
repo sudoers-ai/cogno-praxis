@@ -149,7 +149,10 @@ NEIGHBOURS_AT_MAIN = {
     "scheduler/limits.txt": "92becaf1d23c56570833082fe1507e01c0afe3a52922ee8404ed671a53a6a2a4",
     "scheduler/scope.txt": "b2f942c84374955d9aad03f951ce4082d4cc4d0c45638cad4d1c6b9f89b3448f",
     "scheduler/system.txt": "49d2c8ce3706642f1baeef66ea2717be061f2262ccd6fa83f132e08cd93d58b2",
-    "scheduler/voice.txt": "68c17d7ea87916af677d8d03f532975de41c729b90e9e4b3587a5ddc5e68ae9b",
+    # scheduler/voice.txt: regenerated 2026-11-12, deliberately — the voice examples no longer
+    # lend the reply a name, a title or a gender («a Dra. Silva» → «a profissional») and a rule
+    # above them says to take the name only from the tools.
+    "scheduler/voice.txt": "b420762b7ac5f045503299c204ab63420033be450246f35e7a505541170b2d5e",
 }
 
 
