@@ -601,11 +601,22 @@ def format_duration(minutes: int) -> str:
     return f"{m} min"
 
 
+def _grid_with_id(block: str, item_id: str) -> str:
+    """Append the item's id as ``[item_id]`` to its GRID line (the first) — the SAME spelling the
+    refusals print (``service.py``: «name [item_id]»), so the model passes the id it has already
+    seen in a refusal. Added HERE and never in ``format_service_line`` (which carries no id, so an
+    id never reaches a line shared with the duration booking): the id lives only in the
+    ``list_services`` OUTPUT, on the grid line, BEFORE any description line."""
+    head, sep, rest = block.partition("\n")
+    return f"{head} [{item_id}]{sep}{rest}"
+
+
 def render_service_catalog(items: Sequence[CatalogItem], hosts: Sequence[Host]) -> str:
-    """The two SEPARATE lists for ``list_services`` (and the host's prompt block, via the shared
-    line definition): services with duration+value+who (those with nobody to perform them now are
-    dropped), then products with value. Empty catalog → the "nothing configured" line. Logs
-    ``catalog_unoffered`` (count only)."""
+    """The two SEPARATE lists for ``list_services``: services with duration+value+who (those with
+    nobody to perform them now are dropped) then products with value, each with its id in brackets
+    (the spelling the refusals use) so the model can pass it as ``service_id``, and a description on
+    an indented second line when the item has one. Empty catalog → the "nothing configured" line.
+    Logs ``catalog_unoffered`` (count only)."""
     services = [it for it in items if it.is_service and _who_names(it, hosts)]
     products = [it for it in items if it.is_product]
     n_unoffered = unoffered_count(items, hosts)
@@ -615,10 +626,11 @@ def render_service_catalog(items: Sequence[CatalogItem], hosts: Sequence[Host]) 
         return "No services or products are configured."
     blocks: list[str] = []
     if services:
-        blocks.append("Serviços:\n" + "\n".join(f"- {format_service_line(s, hosts)}"
-                                                 for s in services))
+        blocks.append("Serviços:\n" + "\n".join(
+            f"- {_grid_with_id(format_service_line(s, hosts), s.item_id)}" for s in services))
     if products:
-        blocks.append("Produtos:\n" + "\n".join(f"- {format_product_line(p)}" for p in products))
+        blocks.append("Produtos:\n" + "\n".join(
+            f"- {_grid_with_id(format_product_line(p), p.item_id)}" for p in products))
     return "\n\n".join(blocks)
 
 

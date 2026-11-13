@@ -65,5 +65,6 @@ def test_render_service_catalog_keeps_the_description_indented_under_its_item():
     out = render_service_catalog(
         [_service("Mechas e tonalização."), _product("Repara pontas.")],
         [Host("belmira", "Belmira", "Cabeleireira")])
-    assert "- Coloração — 2 h — R$ 260,00 — todos\n  descrição: Mechas e tonalização." in out
-    assert "- Shampoo — R$ 60,00\n  descrição: Repara pontas." in out
+    # the id is appended to the GRID line (in brackets); the description stays on the second line
+    assert "- Coloração — 2 h — R$ 260,00 — todos [service:coloracao]\n  descrição: Mechas e tonalização." in out
+    assert "- Shampoo — R$ 60,00 [product:shampoo]\n  descrição: Repara pontas." in out
