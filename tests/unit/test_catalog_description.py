@@ -44,7 +44,7 @@ def test_line_breaks_collapse_so_the_description_never_fabricates_an_item_line()
     # exactly two lines: the grid, and ONE indented description line (no bare «- » item line)
     assert len(body) == 2
     assert body[1] == "  descrição: linha um - linha dois parece item linha três"
-    assert not any(l.lstrip().startswith("- ") for l in body[1:])
+    assert not any(line.lstrip().startswith("- ") for line in body[1:])
 
 
 def test_a_description_over_the_ceiling_is_cut_at_a_word_boundary_with_an_ellipsis():
