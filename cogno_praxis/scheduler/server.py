@@ -245,13 +245,19 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         return f"{body}\n\nTotal ({named}): {currency} {amount}"
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-    def check_availability(host_id: str, date: str, host_name: str = "") -> str:
+    def check_availability(host_id: str, date: str, host_name: str = "",
+                           service_id: str = "") -> str:
         """List free time slots for a professional on a date (YYYY-MM-DD, from tomorrow on).
 
         Pass ``host_name`` = the professional AS THE CLIENT NAMED THEM whenever the client named
         someone. It is checked against ``host_id``: if the two are different people, or if
         either is not in ``list_schedulable_hosts``, this refuses and hands you the roster to
         offer — it never quietly reads a different agenda than the one you asked for.
+
+        ``service_id`` is the catalog service the client wants (the id ``list_services`` prints):
+        with it, the free starts are the ones where the WHOLE duration of that service fits — a
+        2 h service only shows starts with 2 h clear. A PRODUCT id is refused (it is not
+        scheduled). Without it, the tenant's fixed slot is used, as before.
 
         When the requested day is FULL, this also names the next day that has openings so you
         can OFFER it — do not dead-end the user; propose the overflow day (and its slots)."""
@@ -262,7 +268,7 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         # Parentheses, not brackets: `cogno_host.scheduler_notify` reads the booking STATUS with
         # `re.search(r"\[(\w+)\]")`, and a bracketed id would win that search.
         who = f"{host.name} ({host.host_id})"
-        free = svc.check_availability(host.host_id, date)
+        free = svc.check_availability(host.host_id, date, service_id=service_id)
         # The two shapes below are the ONLY free-slot lines; `free_slots_of` (module top) is
         # their reader. Change the wording here and the round-trip twin there breaks first.
         if free:
@@ -279,7 +285,7 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
     def book_appointment(host_id: str, date: str, time: str, with_name: str,
                          notes: str = "", guest_id: str = "", host_name: str = "",
-                         persona_id: str = "") -> str:
+                         persona_id: str = "", service_id: str = "") -> str:
         """Book an appointment with a professional at a date/time for a client (status PENDING).
 
         ``host_name`` is the professional AS THE CLIENT NAMED THEM — pass it whenever the client
@@ -288,13 +294,20 @@ def build_server(service: Optional[SchedulerService] = None, *, name: str = "cog
         a name that ``list_schedulable_hosts`` does not list. Booking the wrong person's agenda
         costs two people a day; asking costs one question.
 
+        ``service_id`` is the catalog service being booked (the id ``list_services`` prints): the
+        booking then OCCUPIES that service's whole duration, and the professional must be one who
+        performs it. When this business has a catalog, name the service — a booking with none is
+        refused and the services are offered (unless there is exactly one). A PRODUCT id is
+        refused: a product is explained, never scheduled.
+
         ``guest_id`` is the client's STABLE id (host-injected) so the professional sees the
         booking in their own agenda; ``with_name`` is the client's display name.
 
         ``persona_id`` is HOST-INJECTED and is not yours to choose: it records WHICH PERSONA
         booked, which is a fact about the turn and not about the request. Leave it out."""
         appt = svc.book(host_id, date, time, with_name, notes,
-                        guest_id=guest_id, host_name=host_name, persona_id=persona_id)
+                        guest_id=guest_id, host_name=host_name, persona_id=persona_id,
+                        service_id=service_id)
         # The row's OWN host, from the catalogue — the old line echoed the caller's `host_name`,
         # so a booking that landed on one agenda could announce another professional entirely.
         return (f"Booked {appt.appointment_id}: {with_name} with {appt.host_name} "
