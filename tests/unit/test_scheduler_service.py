@@ -1156,3 +1156,13 @@ def test_blank_role_with_identity_scopes_to_own_bookings():
     # and an explicit filter without a role is still honoured (internal/test use)
     only_b = svc.list_appointments(host_id="dr_b")
     assert {a.with_name for a in only_b} == {"Bia"}
+
+
+@pytest.mark.parametrize("expr", ["July 7th to July 8th, 2026", "from July 7 to July 8",
+                                  "7 July to 8 July"])
+def test_resolve_date_refuses_an_english_range_instead_of_its_first_day(expr):
+    """A range names more than one day: refused like before, never collapsed to its first date."""
+    svc = SchedulerService(InMemoryAppointmentStore(), today=lambda: date(2026, 7, 6))
+    with pytest.raises(SchedulerError):
+        svc.resolve_date(expr)
+

@@ -267,6 +267,12 @@ def _parse_calendar_date(e: str, today: date) -> Optional[date]:
             except ValueError:
                 return None
         return _year_for(day, month, today)
+    # A RANGE or a list names more than one day ("July 7th to July 8th, 2026") — the contract is
+    # «it names no single day»: refuse, never resolve it silently to its first date.
+    named = {(mm.group(1), mm.group(2)) for mm in _NAMED_MONTH_FIRST_RE.finditer(e)}
+    named |= {(mm.group(2), mm.group(1)) for mm in _NAMED_RE.finditer(e) if mm.group(2) in _MONTHS}
+    if len(named) > 1:
+        return None
     m = _NAMED_RE.search(e)
     if m and m.group(2) in _MONTHS:
         day, month = int(m.group(1)), _MONTHS[m.group(2)]
