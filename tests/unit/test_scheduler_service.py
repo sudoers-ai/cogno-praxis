@@ -555,6 +555,33 @@ def test_resolve_date_explicit_calendar():
         svc.resolve_date("bananas")
 
 
+def test_resolve_date_english_month_names():
+    """The NOUMENO rewrites a date into canonical English with the month spelled out and the
+    month FIRST ("July 7, 2026"), which the day-first named branch could not read — so a
+    booking by that date dead-ended. The month-first English forms now resolve.
+    """
+    svc = _svc()  # today = 2026-06-30 (Tuesday)
+    # the MEASURED forms (month-first English, full name, ordinals, comma, abbreviation)
+    assert svc.resolve_date("July 7, 2026") == "2026-07-07"
+    assert svc.resolve_date("July 7th, 2026") == "2026-07-07"
+    assert svc.resolve_date("July 7") == "2026-07-07"          # no year → rolls to today-or-later
+    assert svc.resolve_date("Jul 7") == "2026-07-07"           # abbreviated month
+    assert svc.resolve_date("September 3rd") == "2026-09-03"
+    # the English DAY-FIRST form keeps its year through the named branch too
+    assert svc.resolve_date("7 July 2026") == "2026-07-07"
+    assert svc.resolve_date("9 jul") == "2026-07-09"           # abbreviated, day-first
+    # a bare day/month with no year rolls forward — already past this year → next year
+    assert svc.resolve_date("June 1") == "2027-06-01"
+    # controls: the pt-BR and relative forms are untouched
+    assert svc.resolve_date("9 de julho") == "2026-07-09"
+    assert svc.resolve_date("tomorrow") == "2026-07-01"
+    # controls: a non-month word, a lone month (a span, not a day) and a month-only phrase
+    # with a year but no day all still refuse — the parser never invents a day
+    for refuse in ("Someday", "July", "July 2026"):
+        with pytest.raises(SchedulerError):
+            svc.resolve_date(refuse)
+
+
 def test_reschedule_moves_slot_keeps_id():
     svc = _svc()
     a = svc.book("dr_silva", "2026-07-01", "09:00", "Ana")

@@ -2,6 +2,11 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Fixed — `resolve_date` reads English month names, month-first and abbreviated
+
+- **`scheduler/service.py::_parse_calendar_date`**: a named-month date written the English way — the month FIRST, spelled out or abbreviated, with an optional ordinal and the comma before the year («July 7, 2026», «July 7th, 2026», «July 7», «Jul 7») — now resolves. The canonical-English rewrite the perception layer produces emits exactly that form, so a booking by a spelled-out date used to dead-end on «it names no single day» while the ISO date, the pt-BR «7 de julho» and «tomorrow» all resolved. One resolution path: both the day-first and the new month-first match hand `(day, month, year)` to the same `_named_date` helper, and the month-first regex is built from `_MONTHS` so only a real month name opens a match. English month abbreviations (`jan`…`dec`, `sept`) were added to `_MONTHS`, which also makes the day-first «9 jul» the comment always advertised actually parse. The tool DESCRIPTION and error text (the shared cross-shell contract) are unchanged.
+- Tests: `tests/unit/test_scheduler_service.py::test_resolve_date_english_month_names`.
+
 ### Fixed — a booking that names no service is decided UPFRONT, and a service can be named by name or slug
 
 - **`scheduler/catalog.py::services_for_choice`** (new, exported from `scheduler`): the ONE predicate for "a booking must choose a service" — the services when there are two or more, else `()` (none, or exactly one which is used unambiguously). `SchedulerService._require_service_when_catalog` now enforces through it, and `cogno_host` reads it to refuse ARMING a held booking that carries no `service_id` BEFORE it proposes, so the "which service?" refusal no longer lands only on the contact's «sim».

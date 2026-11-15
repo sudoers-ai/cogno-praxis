@@ -73,12 +73,25 @@ _MONTHS = {
     "julho": 7, "agosto": 8, "setembro": 9, "outubro": 10, "novembro": 11, "dezembro": 12,
     "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
     "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+    # English abbreviations — the NOUMENO's canonical-English rewrite may shorten the month
+    # ("Jul 7"), and the day-first branch below already documented "9 jul" as a form it takes.
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7,
+    "aug": 8, "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
 }
 _ISO_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 # Numeric, DAY-FIRST (pt-BR locale): 09/07, 09-07-2026, 9.7.26 → day, month, [year].
 _NUMERIC_RE = re.compile(r"\b(\d{1,2})[/.\-](\d{1,2})(?:[/.\-](\d{2,4}))?\b")
-# Named: "9 de julho", "09 julho de 2026", "9 jul".
-_NAMED_RE = re.compile(r"\b(\d{1,2})\s*(?:de\s+)?([a-z]+)(?:\s+de\s+(\d{4}))?")
+# Named, DAY-FIRST: "9 de julho", "09 julho de 2026", "9 July 2026", "9 jul". The year is
+# optional and takes it with or without "de" so the English "9 July 2026" keeps its year.
+_NAMED_RE = re.compile(r"\b(\d{1,2})\s*(?:de\s+)?([a-z]+)(?:\s+(?:de\s+)?(\d{4}))?")
+# Named, MONTH-FIRST (English): "July 7", "July 7th, 2026", "Jul 7". The month alternation is
+# baked in — built from _MONTHS so only a real month name opens the match (a bare "sala 5"
+# never does), which also lets .search skip a non-month word before the real date. Ordinals
+# ('7th') and the comma before the year are optional. There is ONE resolution path: both
+# branches hand (day, month, year) to the same _parse_calendar_date logic below.
+_MONTH_ALT = "|".join(sorted(_MONTHS, key=len, reverse=True))
+_NAMED_MONTH_FIRST_RE = re.compile(
+    r"\b(" + _MONTH_ALT + r")\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b")
 
 
 # Spelled-out counts the model actually emits. Digits are handled by the regex; these cover
@@ -257,13 +270,25 @@ def _parse_calendar_date(e: str, today: date) -> Optional[date]:
     m = _NAMED_RE.search(e)
     if m and m.group(2) in _MONTHS:
         day, month = int(m.group(1)), _MONTHS[m.group(2)]
-        if m.group(3):
-            try:
-                return date(int(m.group(3)), month, day)
-            except ValueError:
-                return None
-        return _year_for(day, month, today)
+        return _named_date(day, month, m.group(3), today)
+    # Month-FIRST English ("July 7", "July 7th, 2026", "Jul 7") — tried after the day-first
+    # form so a phrase that fits both is read day-first (pt-BR), as the numeric branch is.
+    m = _NAMED_MONTH_FIRST_RE.search(e)
+    if m:
+        month, day = _MONTHS[m.group(1)], int(m.group(2))
+        return _named_date(day, month, m.group(3), today)
     return None
+
+
+def _named_date(day: int, month: int, year: Optional[str], today: date) -> Optional[date]:
+    """Build a date from a named-month match: an explicit year if given, else the year that
+    puts (day, month) today-or-later. None for an impossible day/month."""
+    if year:
+        try:
+            return date(int(year), month, day)
+        except ValueError:
+            return None
+    return _year_for(day, month, today)
 
 
 def _iso_to_date(iso: str) -> date:
