@@ -44,7 +44,9 @@ Assertions about the PROMPT only. Whether the model obeys is measured outside th
 the served guard. Here:
 
 * the DENOMINATOR — the files that say "abusiv…" are DERIVED from disk and must be exactly the
-  five, so a new vertical that blocks abuse is covered the day it arrives;
+  set pinned in ``AT_MAIN``, so a new vertical that blocks abuse is covered the day it arrives.
+  The original five grew to eight when the commercial family (sdr, seller, aftersales) joined,
+  each mirroring the closer's scope; the "five"/"all_five" names below are historical;
 * the TWIN — each of the five carries its sentence (``DEFINITION``, or ``OFFENSIVE`` in the
   interviewer) once, as its last paragraph, after its last mention of the word;
 * the SAMENESS — the definition paragraph read out of each file, with the one substitution
@@ -122,6 +124,9 @@ AT_MAIN = {
     "companies": "b73e4e51036e6ebf17ad5e4ba8c7ef56a1b8b0c31c394047ec9d1a976671e2e4",
     "coordinator": "ff38d9a124d1cb5d28464391868c098fec329874bc400059f9cf5dd2fc912dc3",
     "interviewer": "69b772297a1fb1ef5e5ad90d78b536bb6c19a2e4d11ab5df6d361160041754e3",
+    "sdr": "5e78f252b28f384bb055b63541843e299a0b536cf87b1f8cb514bec123a5c234",
+    "seller": "6ca1837823944bf4cfe5952e666fe3f12b8a47df447065ad0ff5e5da84de555d",
+    "aftersales": "f616d1550a9a43346fab26c3b37e17fcb0764330275668e8d6e550266199319d",
 }
 
 #: ``sha256`` of each file WITH the sentence. Implied by the twin plus the control's first half;
@@ -132,6 +137,9 @@ NOW = {
     "companies": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
     "coordinator": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
     "interviewer": "d80bcb9076c17f2c9cf87776cd1212316801a6f5677f64027509aeed06748b8c",
+    "sdr": "59606ef1b8665f94a40663f0dca7b7abec96e0ffe0b35696e3996d0a8551a495",
+    "seller": "4f46f8016911d07af608eaa4be23c315474525443aa44abf977d8c9b7f4713bf",
+    "aftersales": "dd79da1fd8cd14d32c234f8ed930433d96af8dc073be4d01118bf43bc6e1833d",
 }
 
 #: The scope that never says "abusive", at ``origin/main`` 5f1ae0e. It is not given the sentence:
@@ -171,7 +179,7 @@ def test_the_five_are_exactly_the_scopes_that_say_abusive() -> None:
     definition taken out — and they are the five pinned here, no more, no fewer."""
     users = {v for v, t in _scopes().items() if _ABUSIVE.search(_without_the_definition(t))}
     assert users == set(AT_MAIN), users
-    assert len(users) == 5
+    assert len(users) == 8
 
 
 def test_every_scope_that_blocks_abuse_defines_it() -> None:

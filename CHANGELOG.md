@@ -2,6 +2,28 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Added — the commercial family: SDR, SELLER and AFTERSALES (prompts only)
+
+- **`cogno_praxis/sdr/`, `cogno_praxis/seller/`, `cogno_praxis/aftersales/`** — three
+  prompts-only personas on the CLOSER mould (four slots each: system/scope/voice/limits, no
+  vertical, no engine). They form the commercial chain SDR → CLOSER → SELLER → AFTERSALES:
+  - **SDR** — the front door: a short qualification (decision-maker? has the problem? the right
+    size?), then either a next step with the human team or a plain "not a fit". Does not diagnose,
+    propose, quote a price or charge.
+  - **SELLER (Vendedor)** — receives a contact who already wants to buy: confirms the order (what,
+    how many, the catalogue value of each item), lets the TOTAL be summed by the system (never its
+    own arithmetic), registers the interest and hands to the human sales group. Does not present a
+    proposal and never charges.
+  - **AFTERSALES (Pós-venda)** — follows up after the sale: check-in, usage questions, satisfaction
+    measured **in text** (no poll tool exists yet), early churn signal, hand-back to the SELLER on a
+    new opportunity. Does not charge or renegotiate price.
+- **`cogno_praxis/contact_wording.py`** — `WORDINGS` gains the by-reference pairs for the three
+  verticals' `system`/`voice` openings, so a group turn points the contact's name at the fence.
+- Each `scope.txt` carries the shared "abusive" definition as its last paragraph, like the closer.
+- Tests: `tests/unit/test_contact_wording.py`, `test_abusive_is_defined_in_every_scope.py`,
+  `test_messages_to_the_team_are_in_scope.py`, `test_logging_md_lists_what_the_code_emits.py`
+  (the three verticals join the pinned sets); `LOGGING.md` lists them as modules that log nothing.
+
 ### Fixed — a booking that names no service is decided UPFRONT, and a service can be named by name or slug
 
 - **`scheduler/catalog.py::services_for_choice`** (new, exported from `scheduler`): the ONE predicate for "a booking must choose a service" — the services when there are two or more, else `()` (none, or exactly one which is used unambiguously). `SchedulerService._require_service_when_catalog` now enforces through it, and `cogno_host` reads it to refuse ARMING a held booking that carries no `service_id` BEFORE it proposes, so the "which service?" refusal no longer lands only on the contact's «sim».

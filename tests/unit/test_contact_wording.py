@@ -2,7 +2,7 @@
 
 **Why.** A host keeps the contact's label inside a fence of data and has the prompt point at
 it; the only path left in line is the ``{identity_label}`` the persona templates interpolate
-(21 places, 11 files, 5 verticals — derived below). A label that is itself an order with no
+(27 places, 17 files, 8 verticals — derived below). A label that is itself an order with no
 sentence terminator is not cut by any form a name takes, and one of these sentences tells the
 voice to greet by that string.
 
@@ -55,6 +55,14 @@ AT_MAIN = {
     ("coordinator", "voice"): "21ca2bcf50fc42613687c6cb61f40ec6c0510b6384061a7c22bf8d45308b9ead",
     ("interviewer", "system"): "640c76109c62a142f6304af1b8592b79e1c9808735a3daf067c24f3abc42be27",
     ("interviewer", "voice"): "0dfe458c1778ed53dfcb8cadbcfdc69993ecd8cc7233e7ca3dcc5de9a8b1887e",
+    # the commercial family (SDR → SELLER → AFTERSALES): each names the contact once in
+    # `system` (the opening) and once in `voice` (the greeting), exactly like the closer.
+    ("sdr", "system"): "a61b2e93c99418ada7a741eec094e63904a107238f60912b4e45210902594953",
+    ("sdr", "voice"): "7ba06bfc54203b6877655ec31ccd79f1d4aa01fa3694dab23d81159f12f28f76",
+    ("seller", "system"): "a417453bfeb2f71c70351220e2eae11dd244200b47e5f3dddfe553d26cefb42d",
+    ("seller", "voice"): "8fbc21078103a9c2b7174bd54fa95c5d5b8fa540051698149394e482e447b594",
+    ("aftersales", "system"): "f2b84f0eab09f78ed88b63ce3a18fc83f2cf024a86b680911f08524c4836e7db",
+    ("aftersales", "voice"): "9f9611be849e8cbdcd584f7b9bfea9066b889f2ede98d2728391b40f7068f80d",
     ("scheduler", "limits"): "92becaf1d23c56570833082fe1507e01c0afe3a52922ee8404ed671a53a6a2a4",
     # scheduler system regenerated deliberately: a `{{SERVICES_CATALOG}}` host block was added
     # (the catalog step, filled host-side; empty renders byte-for-byte as before). It names no
@@ -70,7 +78,7 @@ AT_MAIN = {
     ("scheduler", "voice"): "b420762b7ac5f045503299c204ab63420033be450246f35e7a505541170b2d5e",
 }
 
-#: How many times each template names the contact in line — 21 in 11 files. DERIVED: the test
+#: How many times each template names the contact in line — 27 in 17 files. DERIVED: the test
 #: counts the files. The by-reference count is zero for every one of them.
 IN_LINE = {
     ("scheduler", "system"): 2, ("scheduler", "limits"): 1, ("scheduler", "voice"): 5,
@@ -78,9 +86,12 @@ IN_LINE = {
     ("bookkeeper", "system"): 1, ("bookkeeper", "voice"): 1,
     ("closer", "system"): 1, ("closer", "voice"): 1,
     ("interviewer", "system"): 1, ("interviewer", "voice"): 1,
+    ("sdr", "system"): 1, ("sdr", "voice"): 1,
+    ("seller", "system"): 1, ("seller", "voice"): 1,
+    ("aftersales", "system"): 1, ("aftersales", "voice"): 1,
 }
 
-PORTUGUESE = {"closer", "interviewer"}
+PORTUGUESE = {"closer", "interviewer", "sdr", "seller", "aftersales"}
 KEYS = sorted(AT_MAIN)
 
 
@@ -122,13 +133,13 @@ def test_control_the_template_is_byte_for_byte_the_one_of_main(key):
 
 
 def test_control_the_templates_that_name_the_contact_are_these_eleven():
-    """…and the count per file is the declared table: 21 occurrences."""
+    """…and the count per file is the declared table: 27 occurrences."""
     found = {(p.parent.parent.name, p.stem): p.read_text(encoding="utf-8").count(LABEL)
              for p in PKG.glob("*/prompts/*.txt")}
     naming = {k: n for k, n in found.items() if n}
     assert naming == IN_LINE
-    assert sum(naming.values()) == 21 and len(naming) == 11
-    assert len({v for v, _ in naming}) == 5
+    assert sum(naming.values()) == 27 and len(naming) == 17
+    assert len({v for v, _ in naming}) == 8
     assert not any(slot == "scope" for _, slot in naming)       # a scope names nobody
 
 

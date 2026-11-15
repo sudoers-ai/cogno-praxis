@@ -112,6 +112,10 @@ NEIGHBOURS_AT_MAIN = {
     "closer": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
     "companies": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
     "coordinator": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
+    # the commercial family: born without the team-message line (their close is human_handoff).
+    "sdr": "59606ef1b8665f94a40663f0dca7b7abec96e0ffe0b35696e3996d0a8551a495",
+    "seller": "4f46f8016911d07af608eaa4be23c315474525443aa44abf977d8c9b7f4713bf",
+    "aftersales": "dd79da1fd8cd14d32c234f8ed930433d96af8dc073be4d01118bf43bc6e1833d",
 }
 
 

@@ -79,7 +79,8 @@ opens with `stage=coordinator`; a line of the scheduler with `stage=scheduler`.
 
 ## Modules that log nothing
 
-The admin vertical, the bookkeeper, the companies vertical, the closer and the interviewer log nothing.
+The admin vertical, the bookkeeper, the companies vertical, the closer, the interviewer and the
+commercial family (sdr, seller, aftersales) log nothing.
 
 - `cogno_praxis`
 - `cogno_praxis.admin`
@@ -87,6 +88,7 @@ The admin vertical, the bookkeeper, the companies vertical, the closer and the i
 - `cogno_praxis.admin.server`
 - `cogno_praxis.admin.service`
 - `cogno_praxis.admin.summary`
+- `cogno_praxis.aftersales`
 - `cogno_praxis.bookkeeper`
 - `cogno_praxis.bookkeeper.arithmetic`
 - `cogno_praxis.bookkeeper.durability`
@@ -134,6 +136,8 @@ The admin vertical, the bookkeeper, the companies vertical, the closer and the i
 - `cogno_praxis.scheduler.service`
 - `cogno_praxis.scheduler.store`
 - `cogno_praxis.scheduler.stores`
+- `cogno_praxis.sdr`
+- `cogno_praxis.seller`
 
 ## What a line carries
 
