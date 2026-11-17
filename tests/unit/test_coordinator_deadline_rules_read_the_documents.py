@@ -137,10 +137,12 @@ NEIGHBOURS_AT_MAIN = {
     # closer/system.txt, closer/limits.txt and closer/voice.txt regenerated deliberately: the
     # seller's product knowledge now comes from the company's published DOCUMENTS, read this turn
     # with consult_documents, instead of a fixed product block — the executor, the judge and the
-    # voicer all point at the documents. Only closer/scope.txt did not move.
+    # voicer all point at the documents. Only closer/scope.txt did not move. closer/system.txt
+    # regenerated again, deliberately: the prompt now says WHEN to read the documents — at the
+    # insight and the close, never during the diagnosis (limits.txt and voice.txt did not move).
     "closer/limits.txt": "a77a03ebe45a686c7b6d4df93f1400fa8f7942a8cfd213912aab08505dab69c5",
     "closer/scope.txt": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
-    "closer/system.txt": "61219df6273cff7987a4c1f2952d943dfb40f6a65f924e723be4230d2e0f44c8",
+    "closer/system.txt": "421c9c52560b9122757b7172f4e7e272a1fe116e3ee08882c3f9b128ed672c98",
     "closer/voice.txt": "59399234ad61341d54ffa76e4e86fefc3d037b96f67b735300aed9255c9c809d",
     "companies/scope.txt": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
     "coordinator/limits.txt": "693599819f703f755d863a5298caaba2573685fed63091f80690ada60dc7c8d0",
