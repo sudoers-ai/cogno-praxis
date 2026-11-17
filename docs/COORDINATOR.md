@@ -206,6 +206,34 @@ branch (`_own_spellings`) and the pay/e-mail resolver that anchors to the declar
 (`_professor_hits` → groups) are untouched.
 `tests/unit/test_the_full_name_finds_the_short_grade_class.py`.
 
+## A swap carries each cell's FORMATTING, not only its text (2026-11-17)
+
+`swap_rows` (the `SpreadsheetStore` port, `store.py` / `stores/google_sheets.py`) exchanged the
+`content_cols` TEXT between two rows and left the formatting behind, so a class moved to a new row
+kept the old row's colouring — the swapped cells looked like the cells they displaced.
+
+The port now moves a cell's FORMAT with its contents. In the in-memory store a format is recorded
+per cell (`put_formats` / `format_of`, for tests) and the swap exchanges the formats of the
+`content_cols` alongside the text — absence included: a cell with no format that swaps with one
+that has it ends up without, and the other with. The fixed (date) columns are never in
+`content_cols` and stay put. The `SpreadsheetStore` protocol signature is unchanged.
+
+The Google adapter writes the two halves independently and in order: **(a)** the VALUES through
+`values.batchUpdate` (RAW) exactly as before — the proven path does not move, because that API
+carries no formatting; **(b)** THEN the `userEnteredFormat` of each swapped cell through
+`spreadsheets.batchUpdate`, one `updateCells` per row per contiguous run of `content_cols`, A's
+format into B's cell and B's into A's, `fields` pinned to `userEnteredFormat` so the fixed columns
+are untouched. The two new network seams are `_read_formats` (`spreadsheets.get`, which also hands
+back the tab's numeric `sheetId` for the `GridRange`) and `_push_requests`; the four seams are the
+only network methods and the unit tests mock them. If (b) fails, the CONTENTS are already swapped
+— today's state, never worse — and the adapter logs `event=sheet_format_swap_failed` (no cell
+text, no id) and returns without raising, so the caller reports the swap as it does today.
+
+Out of scope, deliberately: `write_cell` writes one VALUE and no format; conditional formatting
+and data validation are RANGE rules that follow a row's POSITION, so a value swap already leaves
+them where they belong. `tests/unit/test_swap_carries_the_cell_format.py`,
+`tests/unit/test_coordinator_google_store.py`.
+
 ## The oversight query drops a title the rewrite adds (2026-11-12)
 
 The `professor` argument of the oversight read is filled by the host's EGO from the NOUMENO's

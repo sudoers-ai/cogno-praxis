@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Optional, Protocol, runtime_checkable
 
+_ABSENT = object()        # "this cell carries no format" — distinct from a stored None/{}
+
 
 @runtime_checkable
 class SpreadsheetStore(Protocol):
@@ -57,9 +59,25 @@ class InMemorySpreadsheetStore:
     def __init__(self, sheets: Optional[dict[tuple[str, str], list[list[str]]]] = None) -> None:
         # key = (sheet_id, tab) → full grid (row 0 is the sheet's row 1)
         self._sheets: dict[tuple[str, str], list[list[str]]] = sheets or {}
+        # key = (sheet_id, tab) → {(grid_row, col): format} — a format per cell, only the cells
+        # that carry one; absence IS "no format", so a swap moves absence like any other value.
+        self._formats: dict[tuple[str, str], dict[tuple[int, int], object]] = {}
 
     def put(self, sheet_id: str, tab: str, grid: list[list[str]]) -> None:
         self._sheets[(sheet_id, tab)] = [list(r) for r in grid]
+
+    def put_formats(self, sheet_id: str, tab: str,
+                    formats: dict[tuple[int, int], object]) -> None:
+        """Record a per-cell format for ``(sheet_id, tab)``, keyed by ``(grid_row, col)`` (the
+        grid's own 0-based rows, row 0 = the sheet's row 1 — the same coordinates ``put`` seeds).
+        Only for tests/dev: the domain never reads a format, it only asks ``swap_rows`` to carry
+        it. A cell left out of ``formats`` has none."""
+        self._formats[(sheet_id, tab)] = dict(formats)
+
+    def format_of(self, sheet_id: str, tab: str, row: int, col: int) -> object:
+        """The format recorded for one cell by ``(grid_row, col)``, or ``None`` when it carries
+        none. For tests: it is how a twin reads where a format landed after a swap."""
+        return self._formats.get((sheet_id, tab), {}).get((row, col))
 
     @staticmethod
     def _first_row(a1_range: str) -> int:
@@ -89,6 +107,16 @@ class InMemorySpreadsheetStore:
         ga, gb = off + row_a, off + row_b
         if grid is None or ga >= len(grid) or gb >= len(grid):
             raise IndexError(f"swap_rows out of range: {row_a}/{row_b} in {sheet_id}/{tab}")
+        fmts = self._formats.get((sheet_id, tab))
         for c in content_cols:
             if c < len(grid[ga]) and c < len(grid[gb]):
                 grid[ga][c], grid[gb][c] = grid[gb][c], grid[ga][c]
+                if fmts is not None:
+                    # The format travels WITH its cell, absence included: a cell with no format
+                    # that swaps with one that has it ends up without, and the other with.
+                    ka, kb = (ga, c), (gb, c)
+                    va, vb = fmts.pop(ka, _ABSENT), fmts.pop(kb, _ABSENT)
+                    if vb is not _ABSENT:
+                        fmts[ka] = vb
+                    if va is not _ABSENT:
+                        fmts[kb] = va

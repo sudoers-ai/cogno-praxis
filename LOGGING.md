@@ -26,7 +26,7 @@ This library follows the Cogno house rule: **libraries emit, the host configures
   (`SchedulerError`, `BookkeeperError`, `CompanyError`, `CoordinatorError`), which the FastMCP
   layer surfaces as a tool error (`isError=True`) → cogno-mcp maps it to `ToolResult(ok=False)`
   and the EGO self-corrects. The host decides how to surface real failures.
-- **WARNING** — 19 calls. A degradation or a refusal the operator has to know about, where
+- **WARNING** — 20 calls. A degradation or a refusal the operator has to know about, where
   raising would be worse than continuing: a sheet that could not be read, a configuration line
   that was skipped, a mailbox variable that is not valid JSON, an index that could not be
   built, a seed file that could not be read whole.
@@ -58,6 +58,7 @@ the logger, the event, the level, the `key=` fields and whether the line carries
 | `cogno_praxis.coordinator.service` | `hours_unreadable` (`sheet_sha`, `row`) | DEBUG | a row of the hours tab names a discipline and carries no readable hour total |
 | `cogno_praxis.coordinator.service` | `email_refused` (`reason=invalid_recipient`, `path=calendar`, `source=professors_tab`, `count`) | WARNING | the professors tab HAS an e-mail for the professor whose calendar was asked for, and it is not ONE address (`email_address.is_one_address`, the host's rule): the calendar is not sent and nothing falls through to the registry (2026-11-02). The host's line for the same refusal has the same `event`, `reason` and `path`. How many cells, never which |
 | `cogno_praxis.coordinator.service` | `faculty_names_not_joined` (`pairs`) | WARNING | rows of the professors tab share an e-mail address and neither name is the other written out: they are NOT joined |
+| `cogno_praxis.coordinator.stores.google_sheets` | `sheet_format_swap_failed` | WARNING | a row swap moved the cell CONTENTS (`values.batchUpdate`) but the follow-up that moves the per-cell FORMATTING did not: the contents are swapped as before and the swap is reported as before. No cell text, no id |
 | `cogno_praxis.coordinator.mailer` | `calendar_mail_not_accepted` | WARNING | the calendar mail was not accepted by the server |
 | `cogno_praxis.coordinator.mailer` | `smtp_env_ignored` (`reason=not_json\|not_an_object`, `var`) | WARNING | the mailbox variable is not valid JSON, or is JSON and not an object: ignored |
 | `cogno_praxis.coordinator.mailer` | `herald_not_installed` | INFO | `cogno-herald` is not installed, so no calendar mail is configured |
@@ -116,7 +117,6 @@ The admin vertical, the bookkeeper, the companies vertical, the closer and the i
 - `cogno_praxis.coordinator.server`
 - `cogno_praxis.coordinator.store`
 - `cogno_praxis.coordinator.stores`
-- `cogno_praxis.coordinator.stores.google_sheets`
 - `cogno_praxis.coordinator.types`
 - `cogno_praxis.declared_values`
 - `cogno_praxis.email_address`
