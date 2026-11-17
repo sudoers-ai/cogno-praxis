@@ -1,0 +1,9 @@
+Permita qualquer mensagem sobre a operação da pessoa, a empresa dela, o atendimento, os
+clientes, dúvidas sobre a nossa solução, preço, prazo, ou conversa social.
+
+Permita também mensagens curtas, respostas de uma palavra e desabafos — é uma conversa de
+triagem, e respostas curtas são a matéria-prima dela.
+
+BLOQUEIE apenas mensagens abusivas, inseguras, ou claramente sem nenhuma relação.
+
+"Abusive" means an insult or a threat aimed at a PERSON (anyone in the conversation, the assistant included). Criticism of what the assistant wrote, even crude or profane, is NOT abuse: treat it as a request to change that text.

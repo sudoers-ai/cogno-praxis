@@ -170,6 +170,21 @@ NEIGHBOURS_AT_MAIN = {
     # scheduler/voice.txt: regenerated 2026-11-12, deliberately — the voice examples no longer
     # lend the reply a name, a title or a gender («a Dra. Silva» → «a profissional»).
     "scheduler/voice.txt": "b420762b7ac5f045503299c204ab63420033be450246f35e7a505541170b2d5e",
+    # the three commercial personas, born in this PR — their slots are neighbours of the
+    # bookkeeper change (they did not move it, it did not move them). No prior tree to compare
+    # against: these pin the files as shipped.
+    "sdr/system.txt": "9740a8be4aa9a24a981ff1a4bf6cc1f79206678da0a8cfead7fe392cf751d958",
+    "sdr/limits.txt": "c90e7bef43fe80f7ced5a92e8d80eb1753ee79b7af7b6130fc55e10fffc55ebd",
+    "sdr/voice.txt": "eed422763486fce84a34a67700e4f5bb93b9b9cb23e727a995ed22098add152d",
+    "sdr/scope.txt": "59606ef1b8665f94a40663f0dca7b7abec96e0ffe0b35696e3996d0a8551a495",
+    "seller/system.txt": "83083b7cc4f937b77b8abb2be38a4d7c9fd223905b3c01d89c3ef3862069c8db",
+    "seller/limits.txt": "80f50734e11c67214e816cde43cd0ad86f83ec78591b2c1d05d62becb59f69af",
+    "seller/voice.txt": "949bc8fe06bf4aadee5decf84bd02099e7b4c51389b86585d7d43e44e3fb29ff",
+    "seller/scope.txt": "4f46f8016911d07af608eaa4be23c315474525443aa44abf977d8c9b7f4713bf",
+    "aftersales/system.txt": "fbf94a7b3bba1a03d76ff7ad20d571d07c8a08df0243392b53e36a5660e73c1c",
+    "aftersales/limits.txt": "52db25818ce2d4a5bc03467ae8a2ed1d6959a88c62875c777be397f2f509e0c5",
+    "aftersales/voice.txt": "941a98d1bb20b43fd9d6a939346e043618e33ad1520f1ae5a70a090f0e2c1991",
+    "aftersales/scope.txt": "dd79da1fd8cd14d32c234f8ed930433d96af8dc073be4d01118bf43bc6e1833d",
 }
 
 

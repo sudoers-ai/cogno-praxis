@@ -60,16 +60,16 @@ MUTATIONS:
     remove ``DEFINITION`` (and its blank line) from ``closer/prompts/scope.txt``
     → ``test_the_definition_is_the_last_paragraph[closer]``,
       ``test_every_scope_that_blocks_abuse_defines_it`` and
-      ``test_the_definition_is_the_same_sentence_in_all_five`` die; the control dies at its
+      ``test_the_definition_is_the_same_sentence_everywhere`` die; the control dies at its
       PRECONDITION (it refuses a file without the paragraph, which IS main's file).
     change one word of the sentence in ``coordinator/prompts/scope.txt`` only
-    → ``test_the_definition_is_the_same_sentence_in_all_five`` dies, and so do the twin and the
+    → ``test_the_definition_is_the_same_sentence_everywhere`` dies, and so do the twin and the
       control for ``coordinator``; the other four survive.
     change one comma elsewhere in ``bookkeeper/prompts/scope.txt``
     → ``test_the_rest_of_each_definition_is_byte_for_byte_main[bookkeeper]`` dies; the twin and
       the sameness survive.
     write the interviewer's variant into ``closer/prompts/scope.txt`` as well
-    → ``test_the_definition_is_the_same_sentence_in_all_five`` dies (the variant is the
+    → ``test_the_definition_is_the_same_sentence_everywhere`` dies (the variant is the
       interviewer's alone), with the twin and control for ``closer``.
     In each case the scope digests that #153 and #154 pin die too, for the same file only.
 """
@@ -115,13 +115,19 @@ def _sentence(vertical: str) -> str:
 def _paragraph(vertical: str) -> str:
     return "\n" + _sentence(vertical) + "\n"
 
-#: ``sha256`` of each ``scope.txt`` at ``origin/main`` 5f1ae0e, before the sentence.
+#: ``sha256`` of each ``scope.txt`` before the sentence. The first five are at ``origin/main``
+#: 5f1ae0e; the three commercial personas (``sdr``, ``seller``, ``aftersales``) were born carrying
+#: the sentence in this PR, so their "before" digest pins their file AS SHIPPED minus the
+#: paragraph, not a prior tree.
 AT_MAIN = {
     "bookkeeper": "4f33eb5c6791691c32c7451d735a72bd4e1af2bd4d7809ba73b0ece076bf240d",
     "closer": "8e4f6efceced8f822b717f82fc311aad14b20ce76772f7175a3ef223a0cd8802",
     "companies": "b73e4e51036e6ebf17ad5e4ba8c7ef56a1b8b0c31c394047ec9d1a976671e2e4",
     "coordinator": "ff38d9a124d1cb5d28464391868c098fec329874bc400059f9cf5dd2fc912dc3",
     "interviewer": "69b772297a1fb1ef5e5ad90d78b536bb6c19a2e4d11ab5df6d361160041754e3",
+    "sdr": "5e78f252b28f384bb055b63541843e299a0b536cf87b1f8cb514bec123a5c234",
+    "seller": "6ca1837823944bf4cfe5952e666fe3f12b8a47df447065ad0ff5e5da84de555d",
+    "aftersales": "f616d1550a9a43346fab26c3b37e17fcb0764330275668e8d6e550266199319d",
 }
 
 #: ``sha256`` of each file WITH the sentence. Implied by the twin plus the control's first half;
@@ -132,6 +138,9 @@ NOW = {
     "companies": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
     "coordinator": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
     "interviewer": "d80bcb9076c17f2c9cf87776cd1212316801a6f5677f64027509aeed06748b8c",
+    "sdr": "59606ef1b8665f94a40663f0dca7b7abec96e0ffe0b35696e3996d0a8551a495",
+    "seller": "4f46f8016911d07af608eaa4be23c315474525443aa44abf977d8c9b7f4713bf",
+    "aftersales": "dd79da1fd8cd14d32c234f8ed930433d96af8dc073be4d01118bf43bc6e1833d",
 }
 
 #: The scope that never says "abusive", at ``origin/main`` 5f1ae0e. It is not given the sentence:
@@ -166,12 +175,12 @@ def _without_the_definition(text: str) -> str:
 
 
 # ── the denominator ──────────────────────────────────────────────────────────────────────────
-def test_the_five_are_exactly_the_scopes_that_say_abusive() -> None:
+def test_the_scopes_that_say_abusive_are_exactly_those_pinned() -> None:
     """The files to define the word in are the files that USE it, read off the disk with the
-    definition taken out — and they are the five pinned here, no more, no fewer."""
+    definition taken out — and they are the eight pinned here, no more, no fewer."""
     users = {v for v, t in _scopes().items() if _ABUSIVE.search(_without_the_definition(t))}
     assert users == set(AT_MAIN), users
-    assert len(users) == 5
+    assert len(users) == 8
 
 
 def test_every_scope_that_blocks_abuse_defines_it() -> None:
@@ -196,7 +205,7 @@ def test_the_definition_is_the_last_paragraph(vertical: str) -> None:
     assert any(_ABUSIVE.search(p) for p in paragraphs[:-1]), "nothing above it to define"
 
 
-def test_the_definition_is_the_same_sentence_in_all_five() -> None:
+def test_the_definition_is_the_same_sentence_everywhere() -> None:
     """THE SAMENESS. Read OUT of each file (its last paragraph), not compared against the constant
     — so two files that drifted apart in the same way would still be caught against the others.
     The interviewer's one substitution is undone first; it is the ONLY file that may carry it."""

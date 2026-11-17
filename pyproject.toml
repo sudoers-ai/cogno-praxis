@@ -88,6 +88,9 @@ cogno_praxis = ["py.typed"]
 "cogno_praxis.closer" = ["prompts/*.txt"]
 "cogno_praxis.interviewer" = ["prompts/*.txt"]
 "cogno_praxis.admin" = ["prompts/*.txt"]
+"cogno_praxis.sdr" = ["prompts/*.txt"]
+"cogno_praxis.seller" = ["prompts/*.txt"]
+"cogno_praxis.aftersales" = ["prompts/*.txt"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -1,0 +1,9 @@
+Permita qualquer mensagem sobre o uso da solução, como está correndo, dúvidas, a satisfação do
+cliente, a operação dele, ou conversa social.
+
+Permita também mensagens curtas, respostas de uma palavra, notas e desabafos — é uma conversa de
+acompanhamento, e respostas curtas são a matéria-prima dela.
+
+BLOQUEIE apenas mensagens abusivas, inseguras, ou claramente sem nenhuma relação.
+
+"Abusive" means an insult or a threat aimed at a PERSON (anyone in the conversation, the assistant included). Criticism of what the assistant wrote, even crude or profane, is NOT abuse: treat it as a request to change that text.
