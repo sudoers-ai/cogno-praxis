@@ -78,9 +78,9 @@ AT_MAIN = {
     # digests pin the file AS SHIPPED, not against a prior tree. Portuguese prompts on the closer
     # mould: the contact's sentence is the closer's, naming the contact once in system and once in
     # voice. A deliberate later edit regenerates its line here AND its pair in WORDINGS.
-    ("sdr", "system"): "d5bf1bea1877df045b16740e4e0b50a2ad7af605a7693c62a8605ce4b73acbc9",
+    ("sdr", "system"): "9740a8be4aa9a24a981ff1a4bf6cc1f79206678da0a8cfead7fe392cf751d958",
     ("sdr", "voice"): "eed422763486fce84a34a67700e4f5bb93b9b9cb23e727a995ed22098add152d",
-    ("seller", "system"): "874f566862bdb3f2789a02253eafbf38cfb9be11063edb73a39d13a874fcc9f0",
+    ("seller", "system"): "83083b7cc4f937b77b8abb2be38a4d7c9fd223905b3c01d89c3ef3862069c8db",
     ("seller", "voice"): "949bc8fe06bf4aadee5decf84bd02099e7b4c51389b86585d7d43e44e3fb29ff",
     ("aftersales", "system"): "fbf94a7b3bba1a03d76ff7ad20d571d07c8a08df0243392b53e36a5660e73c1c",
     ("aftersales", "voice"): "941a98d1bb20b43fd9d6a939346e043618e33ad1520f1ae5a70a090f0e2c1991",
