@@ -2,6 +2,23 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Changed — the closer's prompt says WHEN to read the company's documents
+
+- **`closer/prompts/system.txt`**: product knowledge already came from the company's published
+  documents (read this turn with `consult_documents`), but nothing told the seller WHEN to read
+  them, so the funnel could reach the insight with nothing to anchor it. Three generic sentences
+  now place the reading: at the INSIGHT (with the bottleneck the person named, or when they ask
+  how it works or what the next step is, read what the documents say about that bottleneck and
+  the next step, and fit it); NEVER during the DIAGNOSIS (the diagnosis questions live in the
+  prompt, not the documents — while the person answers, or only asks you to hurry, carry on with
+  one short diagnosis question, no tool); and at the CLOSE, if asked to suggest a time, propose
+  no day or hour — ask which period they prefer and say someone from the team confirms. No fixed
+  product, no plans, no vendor name: the persona stays generic.
+- Tests: the closer `system.txt` digest is regenerated deliberately in
+  `tests/unit/test_contact_wording.py`, `tests/unit/test_bookkeeper_ai_cost_comes_from_the_cost_tool.py`
+  and `tests/unit/test_coordinator_deadline_rules_read_the_documents.py` (the other personas' prompts
+  stay byte-for-byte).
+
 ### Fixed — a row swap carries each cell's FORMATTING, not only its text
 
 - **`coordinator/store.py::InMemorySpreadsheetStore`** and **`coordinator/stores/google_sheets.py::GoogleSheetsStore`**: `swap_rows` exchanged the `content_cols` TEXT between two rows and left the per-cell formatting behind, so a class moved to a new row kept the old row's colouring. The port now moves a cell's FORMAT with its contents (absence included — a cell without a format that swaps with one that has it ends up without). The in-memory store records a format per cell (`put_formats` / `format_of`, for tests); the Google adapter writes the VALUES first (`values.batchUpdate`, RAW — unchanged, the proven path) and THEN the `userEnteredFormat` of each swapped cell through `spreadsheets.batchUpdate` (`updateCells`, `fields="userEnteredFormat"`), via two new mocked-in-tests network seams `_read_formats` and `_push_requests`. If the formatting half fails the contents are already swapped (never worse) and the adapter logs `sheet_format_swap_failed` and returns without raising. The `SpreadsheetStore` protocol signature is unchanged; `write_cell`, conditional formatting and data validation are out of scope.

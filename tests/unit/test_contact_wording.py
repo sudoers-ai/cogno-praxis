@@ -50,9 +50,10 @@ AT_MAIN = {
     # bookkeeper voice regenerated 2026-11-04: pt-BR marks in a Portuguese reply, never rounded
     ("bookkeeper", "voice"): "4360356043abd08b2edc375cf5d288aa0485009fe33c01c71e625e8b7be77f40",
     # closer/system regenerated deliberately: product knowledge now comes from the company's
-    # published documents (consult_documents), not a fixed product block; the contact's sentence
-    # did not move, so this is the control it stays here as.
-    ("closer", "system"): "61219df6273cff7987a4c1f2952d943dfb40f6a65f924e723be4230d2e0f44c8",
+    # published documents (consult_documents), not a fixed product block; and the prompt now
+    # says WHEN to read them — at the insight and the close, never during the diagnosis. The
+    # contact's sentence did not move, so this is the control it stays here as.
+    ("closer", "system"): "421c9c52560b9122757b7172f4e7e272a1fe116e3ee08882c3f9b128ed672c98",
     # closer/voice regenerated deliberately: the voicer now points at the company's documents,
     # not the fixed product block; the contact's sentence did not move.
     ("closer", "voice"): "59399234ad61341d54ffa76e4e86fefc3d037b96f67b735300aed9255c9c809d",
