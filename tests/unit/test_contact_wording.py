@@ -74,9 +74,19 @@ AT_MAIN = {
     # so `contact_wording.WORDINGS` stays in sync (`test_every_today…` is green) and the
     # by-reference proof still holds: reversing the swap reconstructs this file byte for byte.
     ("scheduler", "voice"): "b420762b7ac5f045503299c204ab63420033be450246f35e7a505541170b2d5e",
+    # the three commercial personas, born in this PR — they have no origin/main version, so these
+    # digests pin the file AS SHIPPED, not against a prior tree. Portuguese prompts on the closer
+    # mould: the contact's sentence is the closer's, naming the contact once in system and once in
+    # voice. A deliberate later edit regenerates its line here AND its pair in WORDINGS.
+    ("sdr", "system"): "d5bf1bea1877df045b16740e4e0b50a2ad7af605a7693c62a8605ce4b73acbc9",
+    ("sdr", "voice"): "eed422763486fce84a34a67700e4f5bb93b9b9cb23e727a995ed22098add152d",
+    ("seller", "system"): "874f566862bdb3f2789a02253eafbf38cfb9be11063edb73a39d13a874fcc9f0",
+    ("seller", "voice"): "949bc8fe06bf4aadee5decf84bd02099e7b4c51389b86585d7d43e44e3fb29ff",
+    ("aftersales", "system"): "fbf94a7b3bba1a03d76ff7ad20d571d07c8a08df0243392b53e36a5660e73c1c",
+    ("aftersales", "voice"): "941a98d1bb20b43fd9d6a939346e043618e33ad1520f1ae5a70a090f0e2c1991",
 }
 
-#: How many times each template names the contact in line — 21 in 11 files. DERIVED: the test
+#: How many times each template names the contact in line — 27 in 17 files. DERIVED: the test
 #: counts the files. The by-reference count is zero for every one of them.
 IN_LINE = {
     ("scheduler", "system"): 2, ("scheduler", "limits"): 1, ("scheduler", "voice"): 5,
@@ -84,9 +94,12 @@ IN_LINE = {
     ("bookkeeper", "system"): 1, ("bookkeeper", "voice"): 1,
     ("closer", "system"): 1, ("closer", "voice"): 1,
     ("interviewer", "system"): 1, ("interviewer", "voice"): 1,
+    ("sdr", "system"): 1, ("sdr", "voice"): 1,
+    ("seller", "system"): 1, ("seller", "voice"): 1,
+    ("aftersales", "system"): 1, ("aftersales", "voice"): 1,
 }
 
-PORTUGUESE = {"closer", "interviewer"}
+PORTUGUESE = {"closer", "interviewer", "sdr", "seller", "aftersales"}
 KEYS = sorted(AT_MAIN)
 
 
@@ -127,14 +140,14 @@ def test_control_the_template_is_byte_for_byte_the_one_of_main(key):
     assert hashlib.sha256(_path(*key).read_bytes()).hexdigest() == AT_MAIN[key]
 
 
-def test_control_the_templates_that_name_the_contact_are_these_eleven():
-    """…and the count per file is the declared table: 21 occurrences."""
+def test_control_the_templates_that_name_the_contact_are_these_seventeen():
+    """…and the count per file is the declared table: 27 occurrences."""
     found = {(p.parent.parent.name, p.stem): p.read_text(encoding="utf-8").count(LABEL)
              for p in PKG.glob("*/prompts/*.txt")}
     naming = {k: n for k, n in found.items() if n}
     assert naming == IN_LINE
-    assert sum(naming.values()) == 21 and len(naming) == 11
-    assert len({v for v, _ in naming}) == 5
+    assert sum(naming.values()) == 27 and len(naming) == 17
+    assert len({v for v, _ in naming}) == 8
     assert not any(slot == "scope" for _, slot in naming)       # a scope names nobody
 
 

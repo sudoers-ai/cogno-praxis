@@ -173,6 +173,37 @@ WORDINGS: "dict[tuple[str, str], tuple[Wording, ...]]" = {
             "Escreva a resposta para {identity_label} na voz de",
             f"Escreva a resposta para o contato ({_IS_DATA_PT}; {_SAY_THE_NAME_PT}) na voz de"),
     ),
+    # ── the three commercial personas (Portuguese prompts, on the closer mould) ──────────────
+    ("sdr", "system"): (
+        Wording(
+            "falando com {identity_label}.",
+            f"falando com o contato ({_IS_DATA_PT})."),
+    ),
+    ("sdr", "voice"): (
+        Wording(
+            "Escreva a resposta para {identity_label} na voz de",
+            f"Escreva a resposta para o contato ({_IS_DATA_PT}; {_SAY_THE_NAME_PT}) na voz de"),
+    ),
+    ("seller", "system"): (
+        Wording(
+            "falando com {identity_label}.",
+            f"falando com o contato ({_IS_DATA_PT})."),
+    ),
+    ("seller", "voice"): (
+        Wording(
+            "Escreva a resposta para {identity_label} na voz de",
+            f"Escreva a resposta para o contato ({_IS_DATA_PT}; {_SAY_THE_NAME_PT}) na voz de"),
+    ),
+    ("aftersales", "system"): (
+        Wording(
+            "falando com {identity_label}.",
+            f"falando com o contato ({_IS_DATA_PT})."),
+    ),
+    ("aftersales", "voice"): (
+        Wording(
+            "Escreva a resposta para {identity_label} na voz de",
+            f"Escreva a resposta para o contato ({_IS_DATA_PT}; {_SAY_THE_NAME_PT}) na voz de"),
+    ),
 }
 
 

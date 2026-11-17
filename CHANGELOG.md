@@ -2,6 +2,38 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Added — three commercial personas (SDR, SELLER, AFTERSALES), prompts only, on the closer mould
+
+- **`cogno_praxis/sdr/`, `cogno_praxis/seller/`, `cogno_praxis/aftersales/`**: three new
+  conversational personas, each a package of four prompt slots (`system`, `limits`, `voice`,
+  `scope`) and nothing else — no engine, no server, no data file. They share the closer's shape
+  (an executor that gathers, a separate voice, a judge that ranks truth above answering and
+  classifies the contact's turn first) and change only the role:
+  - **SDR** — first-contact triage: qualifies whoever arrives and either sets up a short
+    conversation with the human team or says plainly it is not a fit; presents no proposal,
+    quotes no closed price, never charges.
+  - **SELLER (Vendedor)** — order-taking: receives a contact who already wants to buy, confirms
+    the order item by item, NEVER sums the total in its head (the team confirms the final value
+    with the payment), NEVER charges, and hands the confirmed order to the human sales group
+    through the human handoff.
+  - **AFTERSALES (Pós-venda)** — follow-up: checks in on the original bottleneck, answers usage
+    questions, measures satisfaction IN TEXT (no poll tool), and catches early the signal that a
+    customer might leave; does not charge or renegotiate price on its own initiative.
+- Product knowledge comes from the **documents the company published for the persona**, read this
+  turn with `consult_documents` — never a fixed `[PRODUTO]` block and no vendor-specific build
+  path. The WHEN of reading is each role's own moment: the SDR only when asked about price or a
+  feature (never during the triage), the SELLER when confirming each item and its value (from the
+  catalogue via `list_services` when that tool is on the table, or from the documents), the
+  AFTERSALES at a usage doubt. The prompts name no specific product, plan or platform.
+- Prompts only, borrowing the runtime's built-in human handoff. The host wires them up and they
+  are born disabled; this library ships only the slots.
+- Tests: `tests/unit/test_sdr_prompts.py`, `tests/unit/test_seller_prompts.py`,
+  `tests/unit/test_aftersales_prompts.py`; the three are added to the derived tables of
+  `tests/unit/test_contact_wording.py` (the by-reference pairs and digests),
+  `tests/unit/test_abusive_is_defined_in_every_scope.py` and
+  `tests/unit/test_messages_to_the_team_are_in_scope.py` (the scope sweepers); and each declares
+  its prompts as package data in `pyproject.toml`.
+
 ### Changed — the closer's prompt says WHEN to read the company's documents
 
 - **`closer/prompts/system.txt`**: product knowledge already came from the company's published
