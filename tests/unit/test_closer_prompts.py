@@ -234,12 +234,8 @@ def test_the_persona_knows_where_its_product_facts_come_from():
     """The product facts come from the company's published DOCUMENTS, which the EXECUTOR reads
     this turn with `consult_documents`. Without the prompt naming that source, the model has a
     source it does not know it has — the first live turn came out generic because it had nothing
-    to say about the product.
-
-    NOTE: `voice.txt` still names the old fixed [PRODUTO] block as "a única fonte". This change
-    moved the executor (`system.txt`) and the judge (`limits.txt`) to the documents; the voice
-    slot's product-facts section is a known follow-up. So this test pins the EXECUTOR's source
-    only."""
+    to say about the product. The VOICE slot names the same source, since the voicer writes the
+    reply from the executor's data."""
     system = (PROMPTS / "system.txt").read_text()
     assert "consult_documents" in system            # the tool that reads them this turn
     assert "documentos que a empresa publicou" in system
@@ -247,6 +243,10 @@ def test_the_persona_knows_where_its_product_facts_come_from():
     assert "[PRODUTO]" not in system                # the fixed block is gone from the executor
     # not knowing must produce "I don't know", never a plausible filler
     assert "Nunca preencha a lacuna" in system
+    # the voice slot points at the same source, not the old fixed block or its index
+    voice = (PROMPTS / "voice.txt").read_text()
+    assert "documentos da empresa" in voice
+    assert "[PRODUTO]" not in voice and "índice" not in voice
 
 
 def test_the_closer_prompts_cite_the_documents_not_a_fixed_product_block():

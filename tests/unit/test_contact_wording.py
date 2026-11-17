@@ -53,7 +53,9 @@ AT_MAIN = {
     # published documents (consult_documents), not a fixed product block; the contact's sentence
     # did not move, so this is the control it stays here as.
     ("closer", "system"): "61219df6273cff7987a4c1f2952d943dfb40f6a65f924e723be4230d2e0f44c8",
-    ("closer", "voice"): "ecf7b265950d2b9797fb2329c430fad558988c07e0e4652228ec81e0a7bb73c1",
+    # closer/voice regenerated deliberately: the voicer now points at the company's documents,
+    # not the fixed product block; the contact's sentence did not move.
+    ("closer", "voice"): "59399234ad61341d54ffa76e4e86fefc3d037b96f67b735300aed9255c9c809d",
     ("coordinator", "system"): "5085d29f398179ea208eb2b81f28b2a51489004b12e6c7f2f3527f02dcee1e89",
     ("coordinator", "voice"): "21ca2bcf50fc42613687c6cb61f40ec6c0510b6384061a7c22bf8d45308b9ead",
     ("interviewer", "system"): "640c76109c62a142f6304af1b8592b79e1c9808735a3daf067c24f3abc42be27",
