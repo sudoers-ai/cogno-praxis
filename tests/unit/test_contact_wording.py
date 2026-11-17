@@ -49,8 +49,13 @@ AT_MAIN = {
     ("bookkeeper", "system"): "39dc42bfe6049b242c61fd8f32e5cc3b58d3a775ca512c5bfdbb3614ac3bdc9a",  # 66a0acf2: week, model, the split, "Not available" (deliberate)
     # bookkeeper voice regenerated 2026-11-04: pt-BR marks in a Portuguese reply, never rounded
     ("bookkeeper", "voice"): "4360356043abd08b2edc375cf5d288aa0485009fe33c01c71e625e8b7be77f40",
-    ("closer", "system"): "c5b30b8faf18562ec7936965e16fe59a8570d4bc9d67654c3156f9c170cf623d",
-    ("closer", "voice"): "ecf7b265950d2b9797fb2329c430fad558988c07e0e4652228ec81e0a7bb73c1",
+    # closer/system regenerated deliberately: product knowledge now comes from the company's
+    # published documents (consult_documents), not a fixed product block; the contact's sentence
+    # did not move, so this is the control it stays here as.
+    ("closer", "system"): "61219df6273cff7987a4c1f2952d943dfb40f6a65f924e723be4230d2e0f44c8",
+    # closer/voice regenerated deliberately: the voicer now points at the company's documents,
+    # not the fixed product block; the contact's sentence did not move.
+    ("closer", "voice"): "59399234ad61341d54ffa76e4e86fefc3d037b96f67b735300aed9255c9c809d",
     ("coordinator", "system"): "5085d29f398179ea208eb2b81f28b2a51489004b12e6c7f2f3527f02dcee1e89",
     ("coordinator", "voice"): "21ca2bcf50fc42613687c6cb61f40ec6c0510b6384061a7c22bf8d45308b9ead",
     ("interviewer", "system"): "640c76109c62a142f6304af1b8592b79e1c9808735a3daf067c24f3abc42be27",
