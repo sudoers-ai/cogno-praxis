@@ -297,6 +297,125 @@ def _named_date(day: int, month: int, year: Optional[str], today: date) -> Optio
     return _year_for(day, month, today)
 
 
+# ── every date MENTIONED in a free sentence ──────────────────────────────────────────────
+# `resolve_date` above is for the ONE expression the MODEL hands a tool. `date_mentions` is for
+# the contact's FREE sentence, read by the host to check a held write's date against the one the
+# contact asked for (`cogno_host.asked_clock`). They are two doors over ONE set of rules, never
+# two implementations: each mention is resolved by the SAME tables and the SAME next-weekday /
+# today-or-later logic `resolve_date` uses, so the pair can never disagree about what a single
+# expression means (pinned: `date_mentions("<expr>") == [resolve_date("<expr>")]`).
+#
+# The difference is the READING. `resolve_date` reads by SUB-STRING and takes the first match —
+# right for the one phrase a model passes it, wrong for a sentence: "a segunda opção às 10h"
+# would be Monday, "hoje não dá, marca para sexta" would be today. `date_mentions` reads each
+# mention BY WHOLE WORD and returns EVERY date, leaving the "exactly one" rule to the host. The
+# whole-word reading is what makes the pt collision guard possible: "segunda|terça|quarta|quinta|
+# sexta" are ALSO ordinals, so a day word followed by `vez|opção|via|chance|parte` is NOT a day;
+# "dia N" with N outside 1–31 is not a day; and "sabadão" is not "sábado".
+
+#: Relative days, longest alternative first so "depois de amanhã" is never read as "amanhã".
+_MENTION_REL_RE = re.compile(
+    r"\bdepois de amanha\b|\bday after tomorrow\b|\bamanha\b|\btomorrow\b|\bhoje\b|\btoday\b")
+#: A weekday word, optionally with "-feira", and the pt collision guard captured right after it.
+_MENTION_WEEKDAY_RE = re.compile(
+    r"\b(" + "|".join(_WEEKDAYS) + r")(?:[-\s]feira)?\b"
+    r"(?:\s+(?P<coll>vez|vezes|opcao|opcoes|via|vias|chance|chances|parte|partes))?")
+#: Only the five weekday words that double as ordinals carry the guard (sábado/domingo do not).
+_WEEKDAY_COLLIDERS = frozenset({"segunda", "terca", "quarta", "quinta", "sexta"})
+#: "dia N" — a bare day-of-month. NOT when it opens a slash date ("dia 30/09" is that date), and
+#: NOT when a month name follows ("dia 9 de julho" is the named form), so neither is read twice.
+_MENTION_DIA_N_RE = re.compile(
+    r"\bdia\s+(\d{1,2})\b(?![/.\-]\d)(?!\s+(?:de\s+)?(?:" + _MONTH_ALT + r")\b)")
+
+
+def _next_day_of_month(day: int, today: date) -> Optional[date]:
+    """The next calendar date whose day-of-month is ``day``, today-or-later — the "dia N" rule,
+    the day-only analogue of `_year_for`. None if no month within the coming year has such a day
+    (e.g. a 31 the caller did not screen; ``day`` is already range-checked to 1–31)."""
+    year, month = today.year, today.month
+    for _ in range(13):
+        try:
+            candidate: Optional[date] = date(year, month, day)
+        except ValueError:
+            candidate = None
+        if candidate is not None and candidate >= today:
+            return candidate
+        month += 1
+        if month > 12:
+            month, year = 1, year + 1
+    return None      # pragma: no cover — a day in 1–31 always lands within 13 months
+
+
+def date_mentions(text: str, today: date) -> "list[date]":
+    """Every calendar date NAMED in a free sentence, resolved against ``today`` — sorted and
+    de-duplicated, ``[]`` when the sentence names none.
+
+    Reads the forms `resolve_date` reads (relative days "hoje"/"amanhã"/"depois de amanhã",
+    weekday names, numeric dd/mm, ISO, and written "9 de julho") PLUS "dia N", each BY WHOLE
+    WORD, and resolves each with `resolve_date`'s own rules (the next weekday strictly after
+    today; a bare day/month that rolls to today-or-later). It is the host's reader for "the date
+    the contact asked for" (`cogno_host.asked_clock`), which applies its own "exactly one date"
+    rule to the list. The whole-word reading and the pt collision guard are the difference from
+    `resolve_date`, which reads by sub-string the single expression a model hands it."""
+    e = _fold(text or "")
+    found: "list[date]" = []
+    # Relative days — one match per phrase; the alternation's order keeps "depois de amanhã"
+    # whole, so its inner "amanhã" is not counted a second time.
+    for m in _MENTION_REL_RE.finditer(e):
+        w = m.group(0)
+        if w in ("depois de amanha", "day after tomorrow"):
+            found.append(today + timedelta(days=2))
+        elif w in ("amanha", "tomorrow"):
+            found.append(today + timedelta(days=1))
+        else:
+            found.append(today)
+    # Weekday names → the NEXT occurrence strictly after today, unless the guard fires.
+    for m in _MENTION_WEEKDAY_RE.finditer(e):
+        word = m.group(1)
+        if word in _WEEKDAY_COLLIDERS and m.group("coll"):
+            continue
+        ahead = (_WEEKDAYS[word] - today.weekday()) % 7 or 7
+        found.append(today + timedelta(days=ahead))
+    # Explicit ISO dates first; then blank them so the numeric pass does not re-read their digits
+    # ("2026-07-11" must not also parse as "07-11").
+    for m in _ISO_RE.finditer(e):
+        try:
+            found.append(date(int(m.group(1)), int(m.group(2)), int(m.group(3))))
+        except ValueError:
+            pass
+    for m in _NUMERIC_RE.finditer(_ISO_RE.sub(" ", e)):
+        day, month = int(m.group(1)), int(m.group(2))
+        if m.group(3):
+            year = int(m.group(3))
+            year += 2000 if year < 100 else 0
+            try:
+                found.append(date(year, month, day))
+            except ValueError:
+                pass
+        else:
+            rolled = _year_for(day, month, today)
+            if rolled is not None:
+                found.append(rolled)
+    # Written months: "N de <mês>" (day-first) and "<Month> N" (month-first English).
+    for m in _NAMED_RE.finditer(e):
+        if m.group(2) in _MONTHS:
+            named = _named_date(int(m.group(1)), _MONTHS[m.group(2)], m.group(3), today)
+            if named is not None:
+                found.append(named)
+    for m in _NAMED_MONTH_FIRST_RE.finditer(e):
+        named = _named_date(int(m.group(2)), _MONTHS[m.group(1)], m.group(3), today)
+        if named is not None:
+            found.append(named)
+    # "dia N" — a bare day-of-month 1–31; out of range is not a day.
+    for m in _MENTION_DIA_N_RE.finditer(e):
+        n = int(m.group(1))
+        if 1 <= n <= 31:
+            dom = _next_day_of_month(n, today)
+            if dom is not None:
+                found.append(dom)
+    return sorted(set(found))
+
+
 def _iso_to_date(iso: str) -> date:
     """'YYYY-MM-DD' → ``date``. A module-level helper because inside the service the parameter is
     itself named ``date`` and shadows the class."""
