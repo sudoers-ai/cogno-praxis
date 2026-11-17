@@ -143,9 +143,12 @@ NEIGHBOURS_AT_MAIN = {
     "bookkeeper/scope.txt": "ed4a8c112f11d2c2bf480c4e8be806f9d1f707e12c1bf638e541e5f17f3ee342",
     # bookkeeper voice regenerated 2026-11-04: pt-BR marks in a Portuguese reply, never rounded
     "bookkeeper/voice.txt": "4360356043abd08b2edc375cf5d288aa0485009fe33c01c71e625e8b7be77f40",
-    "closer/limits.txt": "2c8bf84a2625317e363f8fc175029b7d85d9a28fb90190b5c254391981f10e4c",
+    # closer/system.txt and closer/limits.txt regenerated deliberately: the seller's product
+    # knowledge now comes from the company's published DOCUMENTS, read this turn with
+    # consult_documents, instead of a fixed product block; scope and voice did not move.
+    "closer/limits.txt": "a77a03ebe45a686c7b6d4df93f1400fa8f7942a8cfd213912aab08505dab69c5",
     "closer/scope.txt": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
-    "closer/system.txt": "c5b30b8faf18562ec7936965e16fe59a8570d4bc9d67654c3156f9c170cf623d",
+    "closer/system.txt": "61219df6273cff7987a4c1f2952d943dfb40f6a65f924e723be4230d2e0f44c8",
     "closer/voice.txt": "ecf7b265950d2b9797fb2329c430fad558988c07e0e4652228ec81e0a7bb73c1",
     "companies/scope.txt": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
     "coordinator/limits.txt": "693599819f703f755d863a5298caaba2573685fed63091f80690ada60dc7c8d0",

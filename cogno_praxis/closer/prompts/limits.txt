@@ -18,17 +18,16 @@ satisfeito.
 
 ## 1. VERDADE — rejeite sempre, sem exceção
 - Afirma qualquer capacidade, integração, funcionalidade, prazo, número ou preço que NÃO está
-  no bloco [PRODUTO] nem foi dito pela pessoa. Uma integração que não está listada **não está
-  PRONTA**: dizer que já existe é o pior erro possível desta conversa. Isso NÃO proíbe dizer
-  que é construível — o Cogno conecta a qualquer sistema com API via MCP, e isso está no
-  bloco. "Já integra" é afirmação verificável em cinco minutos; "dá para construir" é fato do
-  produto. Prometer prazo, preço ou esforço da construção continua proibido.
+  nos documentos lidos neste turno nem foi dito pela pessoa. Uma integração que os documentos
+  não listam **não está PRONTA**: dizer que já existe é o pior erro possível desta conversa.
+  "Já integra" é afirmação verificável em cinco minutos. Prometer prazo, preço ou esforço de
+  uma construção que os documentos não descrevem continua proibido.
 - **Exceção — fatos sobre O CONTATO:** origem/indicação, negócio e contexto vindos de
   [MEMORIES] ou de nota do operador são fonte legítima. Afirmá-los ("seu contato veio do
   fulano") é CORRETO — e negar um dado que está na nota ("não tenho acesso") é uma resposta
   ERRADA: rejeite a negação, não a afirmação.
 - Inventa caso de cliente, resultado ou estatística.
-- Confirma "sim, integra com X" quando X não aparece no bloco.
+- Confirma "sim, integra com X" quando X não aparece nos documentos lidos neste turno.
 
 ## 2. RESPONDER — só se a pessoa PERGUNTOU (passo 0)
 Rejeite se a resposta desconversa, adia ou devolve outra pergunta sem responder o que foi
@@ -38,19 +37,16 @@ perguntado.
 respostas completas e diretas. Elas satisfazem este critério por inteiro; não peça mais nada
 além disso. Rejeitá-las é pedir ao agente que invente — e o critério 1 vem antes deste, sempre.
 
-**MAS integração tem DUAS metades, e o exemplo dourado abaixo era só a primeira.** Ele dizia
-que "O Bling não está na lista. O que já vem pronto é WhatsApp, Telegram, Agenda e Sheets"
-DEVIA ser aprovado — e com isso o juiz aprovava meia verdade: o Cogno conecta a qualquer
-sistema com API via MCP, então "não está pronto" não é o fim da resposta. Aprovar a metade
-custava a venda, e o dono do produto corrigiu a regra.
+**Integração perguntada e ausente dos documentos:** a resposta certa é dizer que isso não
+consta nos documentos lidos neste turno e oferecer verificar com uma pessoa. Nunca afirmar que
+já integra — "sim, integra" com um sistema que os documentos não sustentam é a meia verdade
+que custa a conversa inteira, porque é verificável em cinco minutos.
 
-Exemplo que DEVE ser aprovado: *"Pronto, não — o Bling não está na nossa lista. Mas dá para
-construir via MCP, porque conectamos a qualquer sistema com API. Registro para o time
-avaliar?"*
+Exemplo que DEVE ser aprovado: *"Isso não está nos documentos que tenho aqui. Posso levar a
+pergunta ao time e te confirmar?"*
 
-Exemplo que deve ser REJEITADO por incompleto: *"O Bling não está na lista de integrações."*
-sozinho, sem a metade construível — a menos que o bloco [PRODUTO] recebido não mencione MCP,
-caso em que o agente não tinha como saber e a metade única é o certo.
+Exemplo que deve ser REJEITADO: afirmar *"sim, integra com o X"* quando os documentos lidos
+neste turno não dizem isso — o agente não tinha como saber, e inventar a integração é o erro.
 
 Não confunda **oferecer** com **responder**: o agente não deve empurrar plano ou
 funcionalidade sem ser perguntado antes da devolutiva do diagnóstico, mas pergunta direta

@@ -47,21 +47,23 @@ def test_the_judge_rubric_ranks_truth_above_answering():
     integration ("never talk product before the recap"), three attempts per turn, until the
     loop exhausted and the lead got "I'll transfer you to an agent" — 4 of 11 turns.
 
-    Then, told that answering was mandatory, it approved "Sim, o Cogno integra com o Bling" —
-    an integration that appears nowhere. Answering had outranked being true. So the rubric is
-    ORDERED now: truth first, then answering (with "I don't know" explicitly approvable).
-    Rhythm used to be criterion 3 here; it is the voice's business and moved to `voice.txt`."""
+    Then, told that answering was mandatory, it approved an integration claim that appeared in
+    no published document. Answering had outranked being true. So the rubric is ORDERED now:
+    truth first, then answering (with "I don't know" explicitly approvable). Rhythm used to be
+    criterion 3 here; it is the voice's business and moved to `voice.txt`.
+
+    The product facts come from the company's DOCUMENTS, read this turn — the rubric grounds
+    truth in "os documentos lidos neste turno", never in a fixed product block."""
     limits = (PROMPTS / "limits.txt").read_text()
     flat = " ".join(limits.split())
     assert "## 1. VERDADE" in limits and "## 2. RESPONDER" in limits
     assert limits.index("## 1. VERDADE") < limits.index("## 2. RESPONDER")
-    # Integração tem DUAS metades, e a regra mudou por decisão do dono do produto: o Cogno
-    # conecta a qualquer sistema com API via MCP. O absoluto antigo ("não existe") tornava a
-    # metade construível impronunciável e o juiz aprovava meia verdade — o que custava a venda.
-    # O que NÃO pode afrouxar é a outra metade: afirmar que JÁ integra segue sendo o pior erro.
+    # An integration the documents do not list is NOT ready: claiming it already works is still
+    # the worst error. The source of truth is the documents read this turn, not a fixed block.
     assert "não está\n  PRONTA" in limits or "não está PRONTA" in flat
     assert "pior erro possível" in flat                # claiming a ready-made one still is
-    assert "MCP" in limits, "the buildable half must be sayable"
+    assert "documentos lidos neste turno" in flat, "the judge grounds truth in this turn's documents"
+    assert "MCP" not in limits, "no Cogno-specific build path (MCP) leaks into a generic persona"
     assert "prazo, preço ou esforço" in flat, "promising the build is still forbidden"
     assert "Admitir limite É responder — APROVE." in flat
     assert "Não confunda **oferecer** com **responder**" in flat
@@ -84,8 +86,8 @@ def test_the_judge_classifies_the_contact_turn_before_judging_it():
     assert "A pessoa RESPONDEU" in flat and "A pessoa PERGUNTOU" in flat
     assert "não houve pedido" in flat
     # and the honest-limit answer needs an example, since the plain rule kept losing to the
-    # judge's "give a direct answer" instinct
-    assert "não está na lista de integrações" in flat
+    # judge's "give a direct answer" instinct — now grounded in this turn's documents
+    assert "não está nos documentos que tenho" in flat
 
 
 def test_length_is_the_writers_business_and_the_judge_has_no_criterion_for_it():
@@ -229,16 +231,42 @@ def test_the_voice_knows_how_to_open_a_conversation_it_started():
 
 
 def test_the_persona_knows_where_its_product_facts_come_from():
-    """The host injects a [PRODUTO] block (curated catalog + sales sheet). Without the prompt
-    naming it, the model has a source it does not know it has — and the first live turn came
-    out generic because it had nothing to say about the product."""
+    """The product facts come from the company's published DOCUMENTS, which the EXECUTOR reads
+    this turn with `consult_documents`. Without the prompt naming that source, the model has a
+    source it does not know it has — the first live turn came out generic because it had nothing
+    to say about the product.
+
+    NOTE: `voice.txt` still names the old fixed [PRODUTO] block as "a única fonte". This change
+    moved the executor (`system.txt`) and the judge (`limits.txt`) to the documents; the voice
+    slot's product-facts section is a known follow-up. So this test pins the EXECUTOR's source
+    only."""
     system = (PROMPTS / "system.txt").read_text()
-    voice = (PROMPTS / "voice.txt").read_text()
-    for text in (system, voice):
-        assert "[PRODUTO]" in text
-        assert "única" in text.lower()          # it is the ONLY source
+    assert "consult_documents" in system            # the tool that reads them this turn
+    assert "documentos que a empresa publicou" in system
+    assert "única" in system.lower()                # those sources are the ONLY source
+    assert "[PRODUTO]" not in system                # the fixed block is gone from the executor
     # not knowing must produce "I don't know", never a plausible filler
     assert "Nunca preencha a lacuna" in system
+
+
+def test_the_closer_prompts_cite_the_documents_not_a_fixed_product_block():
+    """The Closer serves ANY company, so its prompts must not name a specific product. What it
+    knows about the product comes from the DOCUMENTS the company published, read this turn with
+    `consult_documents` — not from the old fixed [PRODUTO] block, and not from a
+    product-specific build path (MCP).
+
+    Scoped to the two files this change touches — `system.txt` (the executor) and `limits.txt`
+    (the judge): neither may name the product, MCP or the fixed block, and both must point the
+    facts at the company's documents."""
+    system = (PROMPTS / "system.txt").read_text()
+    limits = (PROMPTS / "limits.txt").read_text()
+    for name, text in (("system.txt", system), ("limits.txt", limits)):
+        assert not re.search(r"\bcogno\b", text, re.IGNORECASE), f"{name} names a specific product"
+        assert not re.search(r"\bmcp\b", text, re.IGNORECASE), f"{name} names MCP, a product-specific path"
+        assert "[PRODUTO]" not in text, f"{name} still points at the fixed product block"
+        assert "documentos" in text.lower(), f"{name} must point the facts at the company's documents"
+    # the executor is told the TOOL that reads them this turn
+    assert "consult_documents" in system
 
 
 def test_explaining_how_it_works_is_part_of_the_job():
