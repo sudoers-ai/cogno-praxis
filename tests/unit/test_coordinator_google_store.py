@@ -6,6 +6,7 @@ are patched. The parse test builds a real ``.xlsx`` with openpyxl (skipped if it
 from __future__ import annotations
 
 import io
+import logging
 
 import pytest
 
@@ -116,6 +117,86 @@ def test_swap_rows_builds_batch_update(monkeypatch):
     assert ranges["'Secretaria'!C2"] == "" and ranges["'Secretaria'!C3"] == "Ana"
     assert ranges["'Secretaria'!D2"] == "Livre" and ranges["'Secretaria'!D3"] == "Redes"
     assert "'Secretaria'!A2" not in ranges and "'Secretaria'!B2" not in ranges
+
+
+def test_swap_rows_follows_the_values_with_a_format_update(monkeypatch):
+    """After the VALUES go (byte-for-byte as before), the per-cell FORMATTING follows: one
+    ``updateCells`` per row, on the right ``GridRange`` (0-based rows/cols, the tab's sheetId),
+    A's format written into B's cell and B's into A's, ``fields`` pinned to ``userEnteredFormat``.
+
+    The formats are INVENTED opaque tokens; ``_read_formats`` is the mocked seam that hands them
+    back with the tab's numeric sheetId."""
+    xlsx = _xlsx("Secretaria", [
+        ["Data", "Dia", "Professor", "Disciplina", "Sala"],
+        ["16/07/2026", "Ter", "Ana", "Redes", "101"],       # abs row 2 (1-based) → range row 1
+        ["18/07/2026", "Qui", "", "Livre", "205"],          # abs row 3 → range row 2
+    ])
+    monkeypatch.setattr(GoogleSheetsStore, "_fetch", lambda self, sid: xlsx)
+    pushed_values = {}
+    monkeypatch.setattr(GoogleSheetsStore, "_push_values",
+                        lambda self, sid, data: pushed_values.update({"sid": sid, "data": data}))
+    fmt_a = {2: {"w": "A-C"}, 3: {"w": "A-D"}, 4: {"w": "A-E"}}
+    fmt_b = {2: {"w": "B-C"}, 3: {"w": "B-D"}, 4: {"w": "B-E"}}
+    monkeypatch.setattr(GoogleSheetsStore, "_read_formats",
+                        lambda self, sid, tab, rows: (77, {rows[0]: fmt_a, rows[1]: fmt_b}))
+    pushed_reqs = {}
+    monkeypatch.setattr(GoogleSheetsStore, "_push_requests",
+                        lambda self, sid, requests: pushed_reqs.update({"sid": sid, "r": requests}))
+    store = GoogleSheetsStore("tok")
+
+    store.swap_rows("SID", "Secretaria", "A1:E10", 1, 2, content_cols=[2, 3, 4])
+
+    # (a) the VALUES call is identical to the formatting-free swap of before
+    def _cell(col: str, row: int) -> str:
+        return f"'Secretaria'!{col}{row}"
+
+    ranges = {d["range"]: d["values"][0][0] for d in pushed_values["data"]}
+    assert ranges[_cell("C", 2)] == "" and ranges[_cell("C", 3)] == "Ana"
+    assert ranges[_cell("D", 2)] == "Livre" and ranges[_cell("D", 3)] == "Redes"
+    assert _cell("A", 2) not in ranges and _cell("B", 2) not in ranges
+
+    # (b) two updateCells, one per row, with the swapped formats on the right GridRange
+    reqs = pushed_reqs["r"]
+    assert len(reqs) == 2
+    by_row = {rq["updateCells"]["range"]["startRowIndex"]: rq["updateCells"] for rq in reqs}
+    assert set(by_row) == {1, 2}                             # sheet rows 2 and 3, 0-based
+    cell_a = by_row[1]                                       # row A's position gets B's format
+    assert cell_a["range"] == {"sheetId": 77, "startRowIndex": 1, "endRowIndex": 2,
+                               "startColumnIndex": 2, "endColumnIndex": 5}
+    assert cell_a["fields"] == "userEnteredFormat"
+    assert [v["userEnteredFormat"] for v in cell_a["rows"][0]["values"]] == \
+        [fmt_b[2], fmt_b[3], fmt_b[4]]
+    cell_b = by_row[2]                                       # row B's position gets A's format
+    assert [v["userEnteredFormat"] for v in cell_b["rows"][0]["values"]] == \
+        [fmt_a[2], fmt_a[3], fmt_a[4]]
+
+
+def test_swap_rows_swaps_the_values_even_when_the_format_path_fails(monkeypatch, caplog):
+    """If the formatting read or write fails, the CONTENTS are already swapped — today's state,
+    never worse — and the adapter logs one closed line and returns without raising."""
+    xlsx = _xlsx("Secretaria", [
+        ["Data", "Professor", "Disciplina"],
+        ["16/07/2026", "Ana", "Redes"],                     # abs row 2 → range row 1
+        ["18/07/2026", "", "Livre"],                        # abs row 3 → range row 2
+    ])
+    monkeypatch.setattr(GoogleSheetsStore, "_fetch", lambda self, sid: xlsx)
+    pushed_values = {}
+    monkeypatch.setattr(GoogleSheetsStore, "_push_values",
+                        lambda self, sid, data: pushed_values.update({"data": data}))
+
+    def boom(self, sid, tab, rows):
+        raise RuntimeError("the formatting read did not come back")
+
+    monkeypatch.setattr(GoogleSheetsStore, "_read_formats", boom, raising=False)
+    store = GoogleSheetsStore("tok")
+
+    with caplog.at_level(logging.WARNING):
+        store.swap_rows("SID", "Secretaria", "A1:C10", 1, 2, content_cols=[1, 2])   # no raise
+
+    ranges = {d["range"]: d["values"][0][0] for d in pushed_values["data"]}
+    assert ranges["'Secretaria'!B2"] == "" and ranges["'Secretaria'!B3"] == "Ana"   # values moved
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("event=sheet_format_swap_failed" in m for m in msgs), msgs
 
 
 def test_write_cell_pushes_one_range_and_drops_the_cache(monkeypatch):
