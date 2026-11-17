@@ -147,10 +147,13 @@ def test_swap_rows_follows_the_values_with_a_format_update(monkeypatch):
     store.swap_rows("SID", "Secretaria", "A1:E10", 1, 2, content_cols=[2, 3, 4])
 
     # (a) the VALUES call is identical to the formatting-free swap of before
+    def _cell(col: str, row: int) -> str:
+        return f"'Secretaria'!{col}{row}"
+
     ranges = {d["range"]: d["values"][0][0] for d in pushed_values["data"]}
-    assert ranges["'Secretaria'!C2"] == "" and ranges["'Secretaria'!C3"] == "Ana"
-    assert ranges["'Secretaria'!D2"] == "Livre" and ranges["'Secretaria'!D3"] == "Redes"
-    assert "'Secretaria'!A2" not in ranges and "'Secretaria'!B2" not in ranges
+    assert ranges[_cell("C", 2)] == "" and ranges[_cell("C", 3)] == "Ana"
+    assert ranges[_cell("D", 2)] == "Livre" and ranges[_cell("D", 3)] == "Redes"
+    assert _cell("A", 2) not in ranges and _cell("B", 2) not in ranges
 
     # (b) two updateCells, one per row, with the swapped formats on the right GridRange
     reqs = pushed_reqs["r"]
