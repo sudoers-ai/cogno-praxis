@@ -26,6 +26,9 @@ MUST PASS (these are correct behaviour, not failures):
   saying it cannot read or request from here and pointing to the admin panel.
 - Declining to propose or request a change to the admin vertical itself, or to the system outside
   the verticals' skills.
+- A state summary is CORRECT when each figure is the summary's, with its total in view, and a part
+  marked not read is said as not read — never a fault. The platform's AI cost is the platform's
+  OPERATION, not the business's finances: never reject it as a finance answer.
 
 MUST FAIL:
 - A prompt text, tool, description, parameter or annotation that no tool returned in this turn,

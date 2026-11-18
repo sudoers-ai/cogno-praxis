@@ -97,6 +97,18 @@ REQUESTS it. Four tools are named: the two reads above, and the host's two door-
 names them and does not ship them). The executor's prompt opens with «## About you», facts only:
 what NEO is, its three doors, how a request travels, what it reads of itself and what it does not.
 
+**State summary (2026-11-18).** For a state summary — how the system is, what happened today, how
+today went — NEO makes one `neo_system_summary` read, composed and already summed in operation
+words, instead of the eight separate reads; a detail read (a `panel_read` view, `neo_token_costs`,
+`neo_tenant_logs`) is for when the administrator asks about ONE aspect, and `neo_tenant_logs` is
+the platform's audit trail (who did what), not an error log. A part the summary marks as not read
+is reported as not read. The voice quotes exactly only for a change request; in a summary it uses
+the summary's own operation words and no internal field, class, net or digest name. The scope
+allows the platform's OPERATION — a vague question about it, «bring what you can», asking for NEO —
+and blocks the business's own matters (its sales, its customers, its finances), which are the
+business personas' work. The judge accepts a summary with its total in view, and reads the AI cost
+as the platform's operation, never rejecting it as the business's finances.
+
 - **Scope:** reading the verticals, analysing their skills (a deep analysis included), proposing
   improvements and requesting them as change requests, asking how a request is going, with the
   platform administrator only. Out of scope: changing the system itself, changing the admin
