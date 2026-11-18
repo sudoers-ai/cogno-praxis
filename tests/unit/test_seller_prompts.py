@@ -34,7 +34,7 @@ def test_every_slot_the_host_loads_exists_and_is_not_empty(slot):
 
 def test_the_arc_is_ordered_welcome_confirm_total_handoff():
     system = (PROMPTS / "system.txt").read_text()
-    for step in ("1. ACOLHIMENTO", "2. CONFIRMAÇÃO DO PEDIDO", "3. O TOTAL", "4. REGISTRO E PASSAGEM"):
+    for step in ("1. ACOLHIMENTO", "2. CONFIRMAÇÃO DO PEDIDO", "3. O TOTAL", "4. PASSAGEM AO TIME"):
         assert step in system
 
 
@@ -75,8 +75,10 @@ def test_the_seller_never_charges_and_hands_the_order_to_the_human_team():
     assert "NUNCA cobre" in system                  # never charges
     assert "nunca peça cartão nem Pix" in system
     assert "COBRANÇA — REJEITE SEMPRE." in limits    # the judge rejects a charge
-    # the close is the handoff to the human sales group, not an escape hatch
-    assert "passe a conversa ao grupo de vendas humano" in system
+    # the close is the handoff to the human team, not an escape hatch; no «grupo de vendas»
+    # (the handoff notifies ONE person, not a group) and no «registre» (nothing records yet)
+    assert "passe a conversa ao time" in system
+    assert "grupo de vendas" not in system
     assert "transferência para um atendente humano" in system
 
 
@@ -88,3 +90,41 @@ def test_the_judge_rubric_classifies_the_turn_then_ranks_truth_above_answering()
     assert "A pessoa CONFIRMOU ou RESPONDEU" in flat and "A pessoa PERGUNTOU" in flat
     assert "catálogo nem nos documentos lidos neste turno" in flat
     assert "Forma NÃO é critério seu" in flat
+
+
+def test_the_company_rules_govern_the_how():
+    system = " ".join((PROMPTS / "system.txt").read_text().split())
+    assert "As regras de quem te contratou" in system
+    assert "mandam no COMO" in system
+    assert '# Tenant-specific direction' in system
+
+
+def test_the_voice_carries_the_onboarding_checklist_clause():
+    voice = " ".join((PROMPTS / "voice.txt").read_text().split())
+    assert "bloco de onboarding" in voice
+    assert "SUBSTITUI enquanto existir" in voice
+
+
+def test_the_handoff_has_a_when_it_cannot_pass_fallback():
+    system = " ".join((PROMPTS / "system.txt").read_text().split())
+    assert "Se não houver como passar a conversa a uma pessoa agora" in system
+    assert "entra em contato por este mesmo canal" in system
+
+
+def test_the_total_is_asked_of_the_catalogue_and_only_deferred_without_it():
+    """With the catalogue on the table, ask IT for the total (the catalogue sums in the system)
+    and say THAT; refused (an item with no value, mixed currencies) or absent → the team
+    confirms. Never summed in the head — `test_the_total_is_never_summed...` stays green."""
+    system = " ".join((PROMPTS / "system.txt").read_text().split())
+    assert "peça a ELA o total dos itens confirmados" in system
+    assert "o catálogo soma no sistema" in system
+    assert "o time confirma o valor final" in system
+    assert "NUNCA some o total de cabeça." in system     # the head-sum ban stays
+
+
+def test_no_imperative_to_record_in_the_system():
+    """Nothing records the order yet (até ao create_order), so the prompt asks for none: no
+    «registre» and no «registra para»."""
+    system = (PROMPTS / "system.txt").read_text()
+    assert "registre" not in system
+    assert "registra para" not in system

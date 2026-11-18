@@ -170,20 +170,21 @@ NEIGHBOURS_AT_MAIN = {
     # scheduler/voice.txt: regenerated 2026-11-12, deliberately — the voice examples no longer
     # lend the reply a name, a title or a gender («a Dra. Silva» → «a profissional»).
     "scheduler/voice.txt": "b420762b7ac5f045503299c204ab63420033be450246f35e7a505541170b2d5e",
-    # the three commercial personas, born in this PR — their slots are neighbours of the
-    # bookkeeper change (they did not move it, it did not move them). No prior tree to compare
-    # against: these pin the files as shipped.
-    "sdr/system.txt": "9740a8be4aa9a24a981ff1a4bf6cc1f79206678da0a8cfead7fe392cf751d958",
+    # the three commercial personas — their slots are neighbours of the bookkeeper change (they
+    # did not move it, it did not move them). system.txt and voice.txt of all three were
+    # regenerated deliberately in the commercial-prompts change (capability-directed rewrite);
+    # limits.txt and scope.txt stay byte-for-byte.
+    "sdr/system.txt": "5308d8529c5481a6381c0bad8445d090974b59a4f0b971d7b662e3e6605adf0f",
     "sdr/limits.txt": "c90e7bef43fe80f7ced5a92e8d80eb1753ee79b7af7b6130fc55e10fffc55ebd",
-    "sdr/voice.txt": "eed422763486fce84a34a67700e4f5bb93b9b9cb23e727a995ed22098add152d",
+    "sdr/voice.txt": "8b0ff211c5c7c583ee21939bfb47216048ab51d6b1a6bf4753e882abd62c1d71",
     "sdr/scope.txt": "59606ef1b8665f94a40663f0dca7b7abec96e0ffe0b35696e3996d0a8551a495",
-    "seller/system.txt": "83083b7cc4f937b77b8abb2be38a4d7c9fd223905b3c01d89c3ef3862069c8db",
+    "seller/system.txt": "ef28998bc2fc5c9265370c8bae567efd060da8e68d1b3c2fd1668c9cfe2ba2ad",
     "seller/limits.txt": "80f50734e11c67214e816cde43cd0ad86f83ec78591b2c1d05d62becb59f69af",
-    "seller/voice.txt": "949bc8fe06bf4aadee5decf84bd02099e7b4c51389b86585d7d43e44e3fb29ff",
+    "seller/voice.txt": "e1a9ff13f705c3af5c15d7143bb32d695b78fd5b7c870ebfda8c5566b5ce7394",
     "seller/scope.txt": "4f46f8016911d07af608eaa4be23c315474525443aa44abf977d8c9b7f4713bf",
-    "aftersales/system.txt": "fbf94a7b3bba1a03d76ff7ad20d571d07c8a08df0243392b53e36a5660e73c1c",
+    "aftersales/system.txt": "18b9208a8117e46e9680c00f7799578ee88cf6b1cddb2f471ee4e61d68344d1a",
     "aftersales/limits.txt": "52db25818ce2d4a5bc03467ae8a2ed1d6959a88c62875c777be397f2f509e0c5",
-    "aftersales/voice.txt": "941a98d1bb20b43fd9d6a939346e043618e33ad1520f1ae5a70a090f0e2c1991",
+    "aftersales/voice.txt": "cabf6e80d65f321c1bdb819094b72e84cf3466fb1a6ae89ddefd7e911897fa18",
     "aftersales/scope.txt": "dd79da1fd8cd14d32c234f8ed930433d96af8dc073be4d01118bf43bc6e1833d",
 }
 

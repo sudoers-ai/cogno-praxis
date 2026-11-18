@@ -59,12 +59,16 @@ def test_the_when_to_read_is_a_usage_doubt():
     assert "O momento de consultar é uma dúvida de uso:" in system
 
 
-def test_satisfaction_is_measured_in_text_with_no_poll_tool():
-    """Satisfaction is a plain question in the reply — a word or a 0–10 read — and the persona has
-    no poll tool, in the executor and in the judge alike."""
+def test_satisfaction_is_measured_by_a_poll_when_present_else_in_text():
+    """Satisfaction is capability-directed now: WITH a poll tool on the turn, use it; WITHOUT one,
+    measure IN TEXT — a word or a 0–10 read, living in the conversation. No FIXED absence of a
+    poll tool in the system any more (a real poll skill may wire one in later). The judge's limits
+    clause is unchanged in this change and still guards against confusing the text measure with a
+    poll tool."""
     system = " ".join((PROMPTS / "system.txt").read_text().split())
     limits = " ".join((PROMPTS / "limits.txt").read_text().split())
-    assert "Você NÃO tem ferramenta de enquete" in system
+    assert "Você NÃO tem ferramenta de enquete" not in system      # the fixed absence is gone
+    assert "se houver uma ferramenta de enquete entre as do turno, use-a" in system.lower()
     assert "meça **em texto**" in system
     assert "não a confunda com uma ferramenta de enquete, que esta persona não tem" in limits
 
@@ -84,3 +88,35 @@ def test_the_judge_rubric_classifies_the_turn_then_ranks_truth_above_answering()
     assert "O cliente RESPONDEU" in flat and "O cliente PERGUNTOU" in flat
     assert "documentos lidos neste turno" in flat
     assert "Forma NÃO é critério seu" in flat
+
+
+def test_the_company_rules_govern_the_how():
+    system = " ".join((PROMPTS / "system.txt").read_text().split())
+    assert "As regras de quem te contratou" in system
+    assert "mandam no COMO" in system
+    assert '# Tenant-specific direction' in system
+
+
+def test_the_voice_carries_the_onboarding_checklist_clause():
+    voice = " ".join((PROMPTS / "voice.txt").read_text().split())
+    assert "bloco de onboarding" in voice
+    assert "SUBSTITUI enquanto existir" in voice
+
+
+def test_the_handoff_has_a_when_it_cannot_pass_fallback_and_is_never_a_mere_notice():
+    """When there is no way to pass to a person now, say the team reaches out on this channel and
+    keep helping. And the handoff puts the conversation in HUMAN mode — never used alone as a
+    «notice»: only on the customer's yes."""
+    system = " ".join((PROMPTS / "system.txt").read_text().split())
+    assert "Se não houver como passar a conversa a uma pessoa agora" in system
+    assert "entra em contato por este mesmo canal" in system
+    assert "põe a conversa no modo humano" in system
+
+
+def test_the_new_opportunity_offers_before_passing_and_only_passes_on_yes():
+    """An opportunity (the customer wants more): if there is a way to pass the conversation to the
+    seller on the turn, OFFER first and only pass on yes; otherwise say the commercial team can
+    talk and ask whether they want someone now. No «registre» — nothing records."""
+    system = " ".join((PROMPTS / "system.txt").read_text().split())
+    assert "OFEREÇA antes e só passe no sim" in system
+    assert "registre" not in (PROMPTS / "system.txt").read_text()

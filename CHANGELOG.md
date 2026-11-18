@@ -34,6 +34,38 @@
   `tests/unit/test_messages_to_the_team_are_in_scope.py` (the scope sweepers); and each declares
   its prompts as package data in `pyproject.toml`.
 
+### Changed — the three commercial personas speak in capabilities, and the company's rules govern the HOW
+
+- **`sdr/`, `seller/`, `aftersales/` `system.txt` and `voice.txt`**: a capability-directed pass
+  over the three new personas (each `limits.txt` and `scope.txt` stays byte-for-byte). Every action
+  the prompt asks now maps to a capability some linked skill gives, the text speaks in that
+  capability, and it says what to do when the capability is NOT on the turn:
+  - **All three** — one line under «Seu papel»: the hirer's rules (the `# Tenant-specific
+    direction` section) govern the HOW (what to ask, what to offer, the tone), inside the
+    unbreakable rules. The voice gains the closer's onboarding-checklist clause (the block GOVERNS
+    and REPLACES the arc while it exists, from the opening, without asking leave). The handoff gains
+    a «when it cannot pass» fallback: no tool on the turn, or it says it cannot → say someone from
+    the team reaches out on this same channel, and keep helping.
+  - **SDR** — the services-and-prices catalogue is a conditional source for price and what exists
+    (same rule: only what it brings); the opening asks the first question straight away (the owner
+    retired «peça licença»); the fixed «no agenda» absence becomes «if there is no agenda tool on
+    the turn…».
+  - **SELLER (Vendedor)** — with the catalogue tool on the turn, ask IT for the total (the
+    catalogue sums in the system) and say THAT; refused (an item with no value, mixed currencies)
+    or absent → the team confirms; never summed in the head. The close drops «registre» and «grupo
+    de vendas» (nothing records yet; the handoff notifies one person) and passes the confirmed
+    order to the team.
+  - **AFTERSALES (Pós-venda)** — satisfaction is poll-tool-when-present, else in text (no fixed
+    absence of a poll tool); a new opportunity OFFERS the seller before passing and only passes on
+    the customer's yes (the handoff puts the conversation in human mode, never a mere «notice»);
+    «registre» drops from the risk-signal path.
+- Tests: the twins in `tests/unit/test_sdr_prompts.py`, `tests/unit/test_seller_prompts.py`,
+  `tests/unit/test_aftersales_prompts.py`; the six `system`/`voice` digests regenerated
+  deliberately in `tests/unit/test_contact_wording.py` and
+  `tests/unit/test_bookkeeper_ai_cost_comes_from_the_cost_tool.py` (the paired contact sentence did
+  not move, so the by-reference control still reconstructs each file; the other personas' prompts
+  stay byte-for-byte).
+
 ### Changed — the closer's prompt says WHEN to read the company's documents
 
 - **`closer/prompts/system.txt`**: product knowledge already came from the company's published

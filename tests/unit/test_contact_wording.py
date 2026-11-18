@@ -74,16 +74,20 @@ AT_MAIN = {
     # so `contact_wording.WORDINGS` stays in sync (`test_every_today…` is green) and the
     # by-reference proof still holds: reversing the swap reconstructs this file byte for byte.
     ("scheduler", "voice"): "b420762b7ac5f045503299c204ab63420033be450246f35e7a505541170b2d5e",
-    # the three commercial personas, born in this PR — they have no origin/main version, so these
-    # digests pin the file AS SHIPPED, not against a prior tree. Portuguese prompts on the closer
-    # mould: the contact's sentence is the closer's, naming the contact once in system and once in
-    # voice. A deliberate later edit regenerates its line here AND its pair in WORDINGS.
-    ("sdr", "system"): "9740a8be4aa9a24a981ff1a4bf6cc1f79206678da0a8cfead7fe392cf751d958",
-    ("sdr", "voice"): "eed422763486fce84a34a67700e4f5bb93b9b9cb23e727a995ed22098add152d",
-    ("seller", "system"): "83083b7cc4f937b77b8abb2be38a4d7c9fd223905b3c01d89c3ef3862069c8db",
-    ("seller", "voice"): "949bc8fe06bf4aadee5decf84bd02099e7b4c51389b86585d7d43e44e3fb29ff",
-    ("aftersales", "system"): "fbf94a7b3bba1a03d76ff7ad20d571d07c8a08df0243392b53e36a5660e73c1c",
-    ("aftersales", "voice"): "941a98d1bb20b43fd9d6a939346e043618e33ad1520f1ae5a70a090f0e2c1991",
+    # the three commercial personas — system.txt and voice.txt regenerated deliberately: the
+    # company's rules now govern the HOW (one line in «Seu papel»), the voice carries the closer's
+    # onboarding-checklist clause, the handoff has a «when it cannot pass» fallback, and each
+    # prompt speaks in capabilities (the catalogue total for the seller, a poll tool for
+    # aftersales, no «registre» where nothing records). limits.txt and scope.txt stay byte-for-byte.
+    # Portuguese prompts on the closer mould: the contact's sentence is the closer's, naming the
+    # contact once in system and once in voice — that paired sentence did NOT move, so WORDINGS
+    # stays in sync and the by-reference reversal reconstructs each file byte for byte.
+    ("sdr", "system"): "5308d8529c5481a6381c0bad8445d090974b59a4f0b971d7b662e3e6605adf0f",
+    ("sdr", "voice"): "8b0ff211c5c7c583ee21939bfb47216048ab51d6b1a6bf4753e882abd62c1d71",
+    ("seller", "system"): "ef28998bc2fc5c9265370c8bae567efd060da8e68d1b3c2fd1668c9cfe2ba2ad",
+    ("seller", "voice"): "e1a9ff13f705c3af5c15d7143bb32d695b78fd5b7c870ebfda8c5566b5ce7394",
+    ("aftersales", "system"): "18b9208a8117e46e9680c00f7799578ee88cf6b1cddb2f471ee4e61d68344d1a",
+    ("aftersales", "voice"): "cabf6e80d65f321c1bdb819094b72e84cf3466fb1a6ae89ddefd7e911897fa18",
 }
 
 #: How many times each template names the contact in line — 27 in 17 files. DERIVED: the test
