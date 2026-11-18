@@ -105,10 +105,18 @@ def test_the_voice_carries_the_onboarding_checklist_clause():
     assert "SUBSTITUI enquanto existir" in voice
 
 
-def test_the_handoff_has_a_when_it_cannot_pass_fallback():
+def test_the_handoff_fallback_promises_no_action_without_a_tool():
+    """When there is no way to pass the conversation to a person now, say so plainly and keep
+    helping — but NEVER promise someone will do something (reach out, send, schedule, pass a
+    message) without a tool on the turn that performs it. The old fallback promised the team
+    «entra em contato por este mesmo canal» even when nothing could, which the judge rejected;
+    that promise is gone."""
     system = " ".join((PROMPTS / "system.txt").read_text().split())
     assert "Se não houver como passar a conversa a uma pessoa agora" in system
-    assert "entra em contato por este mesmo canal" in system
+    assert "Nunca prometa que alguém vai fazer algo" in system
+    assert "se não houver no turno uma ferramenta que o faça" in system
+    # the old, unconditional promise is gone
+    assert "entra em contato por este mesmo canal" not in system
 
 
 def test_the_total_is_asked_of_the_catalogue_and_only_deferred_without_it():

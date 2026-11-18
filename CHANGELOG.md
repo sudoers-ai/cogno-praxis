@@ -2,6 +2,28 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Fixed — the commercial personas stop promising what no tool does; after-sales offers the team instead of doing sale discovery
+
+- **`sdr/system.txt`, `seller/system.txt`, `aftersales/system.txt`**: the handoff "when it cannot
+  pass" fallback promised the team "entra em contato por este mesmo canal" even when no tool on the
+  turn could make that happen — a promise nothing backs when the handoff is refused (no agent, or
+  the tool is not on the turn). The reviewer's judge rejected it. The fallback now says plainly
+  that it cannot pass the conversation and keeps helping here, and forbids promising that anyone
+  will do something — contact, send, schedule, pass a message — without a tool on the turn that
+  performs it.
+- **`aftersales/system.txt`**: the "new opportunity" branch is the seller's work, not the
+  after-sales persona's. It no longer does sale discovery (asking what the customer wants to buy);
+  it offers to pass the conversation to the seller and only passes on the customer's yes, and
+  otherwise says the commercial team can help and asks whether they want someone now.
+- The three `system.txt` digests move on purpose; every other persona prompt (the CLOSER and all
+  the unaffected slots, including `sdr/voice.txt`, `seller/voice.txt`, `aftersales/voice.txt` and
+  every `scope.txt`/`limits.txt`) stays byte-for-byte. The digest controls in
+  `tests/unit/test_contact_wording.py` and
+  `tests/unit/test_bookkeeper_ai_cost_comes_from_the_cost_tool.py` are regenerated for the three
+  files, and the prompt tests in `tests/unit/test_sdr_prompts.py`,
+  `tests/unit/test_seller_prompts.py` and `tests/unit/test_aftersales_prompts.py` assert the new
+  wording and the absence of the old promise.
+
 ### Fixed — the commercial personas' triage and satisfaction examples name the HIRING company, not a product's own pain
 
 - **`sdr/system.txt`**: the triage's "does this person have the problem we solve" bullet named a
