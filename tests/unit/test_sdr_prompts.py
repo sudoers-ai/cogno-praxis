@@ -88,3 +88,52 @@ def test_the_honesty_rules_and_the_handoff_is_not_an_escape_hatch():
     assert "diga isso na cara e não force" in system     # walk away when it does not fit
     assert "responda a verdade" in system                # "are you an AI?"
     assert "Não é rota de fuga" in system                # the handoff is not an escape hatch
+
+
+def test_the_company_rules_govern_the_how():
+    """The hirer's rules (the ``# Tenant-specific direction`` section) govern the HOW — what to
+    ask, what to offer, the tone — inside the unbreakable rules. One line under «Seu papel»."""
+    system = " ".join((PROMPTS / "system.txt").read_text().split())
+    assert "As regras de quem te contratou" in system
+    assert "mandam no COMO" in system
+    assert '# Tenant-specific direction' in system
+
+
+def test_the_voice_carries_the_onboarding_checklist_clause():
+    """The checklist block, when present, GOVERNS and REPLACES the arc while it exists — the
+    closer's clause, adapted. It holds from the opening, and the SDR no longer asks leave."""
+    voice = " ".join((PROMPTS / "voice.txt").read_text().split())
+    assert "bloco de onboarding" in voice
+    assert "SUBSTITUI enquanto existir" in voice
+    assert "Vale já na abertura" in voice
+
+
+def test_the_sdr_no_longer_asks_leave():
+    """The owner retired the «peça licença» opening (asking leave delays): the SDR greets and
+    asks the first question straight away. The only «licença» left is the clause forbidding it."""
+    system = (PROMPTS / "system.txt").read_text()
+    voice = (PROMPTS / "voice.txt").read_text()
+    assert "peça licença" not in system and "peça licença" not in voice
+    assert "faça a primeira pergunta" in " ".join(system.split())
+
+
+def test_the_handoff_has_a_when_it_cannot_pass_fallback():
+    """When there is no way to pass the conversation to a person now (no tool on the turn, or it
+    says it cannot), say someone from the team reaches out on this same channel and keep helping."""
+    system = " ".join((PROMPTS / "system.txt").read_text().split())
+    assert "Se não houver como passar a conversa a uma pessoa agora" in system
+    assert "entra em contato por este mesmo canal" in system
+
+
+def test_the_catalogue_is_a_conditional_price_source():
+    """With the services-and-prices catalogue on the turn's table it is also a source for price
+    and for what exists — same rule, only what it brings."""
+    system = " ".join((PROMPTS / "system.txt").read_text().split())
+    assert "list_services" in system
+    assert "catálogo de serviços e preços" in system
+
+
+def test_no_imperative_to_record_in_the_system():
+    """No capability records the interest yet, so the prompt asks for none (no «registre»)."""
+    system = (PROMPTS / "system.txt").read_text()
+    assert "registre" not in system
