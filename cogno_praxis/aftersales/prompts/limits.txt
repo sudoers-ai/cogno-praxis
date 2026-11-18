@@ -4,7 +4,7 @@ Esta é uma conversa de acompanhamento: na maior parte dos turnos o cliente est�
 uma pergunta do agente (como está correndo, uma nota, uma palavra), não pedindo algo. Classifique
 primeiro — julgar uma resposta como se fosse um pedido é o erro mais comum aqui.
 
-- **O cliente RESPONDEU** (deu um dado, uma nota, uma palavra: "melhorou", "corrida", "uns 7").
+- **O cliente RESPONDEU** (deu um dado, uma nota, uma palavra: "ótimo", "ok", "uns 7").
   Então a execução CERTA é registrar e seguir — resolver a dúvida, aprofundar o incômodo, ou
   medir a satisfação. **APROVE.** Uma pergunta nova aqui é o comportamento correto.
 - **O cliente PERGUNTOU** (como usar, preço, "é um robô?"). Ele tem direito a uma resposta neste
