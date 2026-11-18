@@ -177,11 +177,16 @@ NEIGHBOURS_AT_MAIN = {
     # sdr/system.txt regenerated again, deliberately: the triage «problema que resolve» bullet now
     # names the HIRING company's problem, grounded in the documents it published, instead of a
     # fixed, built-in product pain — the SDR serves ANY company (test_sdr_prompts.py).
-    "sdr/system.txt": "2548dd59a872a3d099e81d2dd3ce10c810bfdd062e9a3bc09b20e0fcf1f748f7",
+    # and the handoff «when it cannot pass» fallback no longer promises the team reaches out — it
+    # forbids promising any action (contact, send, schedule, pass a message) without a tool that
+    # performs it (test_sdr_prompts.py).
+    "sdr/system.txt": "4514914c92e4188002a616b93264280ed3fd66323ad4b2929f26d5a0698aeb6f",
     "sdr/limits.txt": "c90e7bef43fe80f7ced5a92e8d80eb1753ee79b7af7b6130fc55e10fffc55ebd",
     "sdr/voice.txt": "8b0ff211c5c7c583ee21939bfb47216048ab51d6b1a6bf4753e882abd62c1d71",
     "sdr/scope.txt": "59606ef1b8665f94a40663f0dca7b7abec96e0ffe0b35696e3996d0a8551a495",
-    "seller/system.txt": "ef28998bc2fc5c9265370c8bae567efd060da8e68d1b3c2fd1668c9cfe2ba2ad",
+    # seller/system.txt regenerated again, deliberately: the same handoff fallback no longer
+    # promises the team reaches out — it forbids promising an action with no tool that performs it.
+    "seller/system.txt": "1691973b8675480fbf40d44c7ce7cfd6062d3099135b6ed8d9b424df8f17c3fb",
     "seller/limits.txt": "80f50734e11c67214e816cde43cd0ad86f83ec78591b2c1d05d62becb59f69af",
     "seller/voice.txt": "e1a9ff13f705c3af5c15d7143bb32d695b78fd5b7c870ebfda8c5566b5ce7394",
     "seller/scope.txt": "4f46f8016911d07af608eaa4be23c315474525443aa44abf977d8c9b7f4713bf",
@@ -189,7 +194,11 @@ NEIGHBOURS_AT_MAIN = {
     # check's example answers no longer cite a busy-morning workload (the product's own pain); the
     # closed question and the short-answer examples are business-neutral and identical across the
     # three slots (test_aftersales_prompts.py). aftersales/scope stays byte-for-byte.
-    "aftersales/system.txt": "03a135c1fdcca882c3ced2ec4e0b395997315fb40ad2f0dd12ee6034630a67d3",
+    # aftersales/system.txt regenerated again, deliberately: the same handoff fallback no longer
+    # promises the team reaches out (it forbids promising an action with no tool), and the «new
+    # opportunity» clause no longer does sale discovery — it offers the seller instead of asking
+    # what the customer wants to buy.
+    "aftersales/system.txt": "f9f0e82a9b94bf4310eadb949181389207a2d74c465e5b892dfeca71309c9044",
     "aftersales/limits.txt": "ac6ff5085a8c0de7c5b2da55f4e9994d01e31a50bcf38fe4bb91831a16bf6a74",
     "aftersales/voice.txt": "e643dbb4e690f75d429d6d3ded8caeb6b0e9f3f443a1ec8f859db8bd1f65c82b",
     "aftersales/scope.txt": "dd79da1fd8cd14d32c234f8ed930433d96af8dc073be4d01118bf43bc6e1833d",

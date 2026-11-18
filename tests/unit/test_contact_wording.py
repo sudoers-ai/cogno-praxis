@@ -83,19 +83,24 @@ AT_MAIN = {
     # contact once in system and once in voice — that paired sentence did NOT move, so WORDINGS
     # stays in sync and the by-reference reversal reconstructs each file byte for byte.
     # sdr/system regenerated again, deliberately: the triage «problema que resolve» bullet now
-    # names the hiring company's problem (grounded in its documents), not a fixed product pain.
-    # The contact's greeting sentence did NOT move, so WORDINGS stays in sync and the by-reference
-    # reversal still reconstructs this file byte for byte.
-    ("sdr", "system"): "2548dd59a872a3d099e81d2dd3ce10c810bfdd062e9a3bc09b20e0fcf1f748f7",
+    # names the hiring company's problem (grounded in its documents), not a fixed product pain;
+    # and the handoff «when it cannot pass» fallback no longer promises the team reaches out —
+    # it now forbids promising any action without a tool that performs it. The contact's greeting
+    # sentence did NOT move, so WORDINGS stays in sync and the by-reference reversal still
+    # reconstructs this file byte for byte.
+    ("sdr", "system"): "4514914c92e4188002a616b93264280ed3fd66323ad4b2929f26d5a0698aeb6f",
     ("sdr", "voice"): "8b0ff211c5c7c583ee21939bfb47216048ab51d6b1a6bf4753e882abd62c1d71",
-    ("seller", "system"): "ef28998bc2fc5c9265370c8bae567efd060da8e68d1b3c2fd1668c9cfe2ba2ad",
+    # seller/system regenerated again, deliberately: the same handoff fallback no longer promises
+    # the team reaches out; it forbids promising an action with no tool that performs it. The
+    # contact's greeting sentence did NOT move.
+    ("seller", "system"): "1691973b8675480fbf40d44c7ce7cfd6062d3099135b6ed8d9b424df8f17c3fb",
     ("seller", "voice"): "e1a9ff13f705c3af5c15d7143bb32d695b78fd5b7c870ebfda8c5566b5ce7394",
-    # aftersales/system and /voice regenerated again, deliberately: the satisfaction check's
-    # example answers no longer cite a busy-morning workload (the product's own pain); the closed
-    # question and the short-answer examples are now business-neutral and identical across the
-    # three slots. The contact's greeting sentence did NOT move, so WORDINGS stays in sync and the
-    # by-reference reversal still reconstructs each file byte for byte.
-    ("aftersales", "system"): "03a135c1fdcca882c3ced2ec4e0b395997315fb40ad2f0dd12ee6034630a67d3",
+    # aftersales/system regenerated again, deliberately: the same handoff fallback no longer
+    # promises the team reaches out (it forbids promising an action with no tool), and the «new
+    # opportunity» clause no longer does sale discovery — it offers the seller instead of asking
+    # what the customer wants to buy. The contact's greeting sentence did NOT move, so WORDINGS
+    # stays in sync and the by-reference reversal still reconstructs each file byte for byte.
+    ("aftersales", "system"): "f9f0e82a9b94bf4310eadb949181389207a2d74c465e5b892dfeca71309c9044",
     ("aftersales", "voice"): "e643dbb4e690f75d429d6d3ded8caeb6b0e9f3f443a1ec8f859db8bd1f65c82b",
 }
 
