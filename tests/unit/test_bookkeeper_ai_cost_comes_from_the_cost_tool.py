@@ -185,9 +185,13 @@ NEIGHBOURS_AT_MAIN = {
     "seller/limits.txt": "80f50734e11c67214e816cde43cd0ad86f83ec78591b2c1d05d62becb59f69af",
     "seller/voice.txt": "e1a9ff13f705c3af5c15d7143bb32d695b78fd5b7c870ebfda8c5566b5ce7394",
     "seller/scope.txt": "4f46f8016911d07af608eaa4be23c315474525443aa44abf977d8c9b7f4713bf",
-    "aftersales/system.txt": "18b9208a8117e46e9680c00f7799578ee88cf6b1cddb2f471ee4e61d68344d1a",
-    "aftersales/limits.txt": "52db25818ce2d4a5bc03467ae8a2ed1d6959a88c62875c777be397f2f509e0c5",
-    "aftersales/voice.txt": "cabf6e80d65f321c1bdb819094b72e84cf3466fb1a6ae89ddefd7e911897fa18",
+    # aftersales/system, /limits and /voice regenerated again, deliberately: the satisfaction
+    # check's example answers no longer cite a busy-morning workload (the product's own pain); the
+    # closed question and the short-answer examples are business-neutral and identical across the
+    # three slots (test_aftersales_prompts.py). aftersales/scope stays byte-for-byte.
+    "aftersales/system.txt": "03a135c1fdcca882c3ced2ec4e0b395997315fb40ad2f0dd12ee6034630a67d3",
+    "aftersales/limits.txt": "ac6ff5085a8c0de7c5b2da55f4e9994d01e31a50bcf38fe4bb91831a16bf6a74",
+    "aftersales/voice.txt": "e643dbb4e690f75d429d6d3ded8caeb6b0e9f3f443a1ec8f859db8bd1f65c82b",
     "aftersales/scope.txt": "dd79da1fd8cd14d32c234f8ed930433d96af8dc073be4d01118bf43bc6e1833d",
 }
 

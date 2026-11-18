@@ -73,6 +73,26 @@ def test_satisfaction_is_measured_by_a_poll_when_present_else_in_text():
     assert "não a confunda com uma ferramenta de enquete, que esta persona não tem" in limits
 
 
+def test_the_satisfaction_examples_are_business_neutral_not_the_products_own_pain():
+    """The satisfaction check's example answers must be neutral — words a customer of ANY business
+    might use, not a specific product's own pain. The old examples cited a busy-morning workload
+    («hoje a manhã está 'tranquila', 'corrida' ou 'um caos'»), which only one kind of business
+    lives; the closed question and the short-answer examples are now neutral and identical across
+    the three slots that carry them."""
+    system = " ".join((PROMPTS / "system.txt").read_text().split())
+    voice = (PROMPTS / "voice.txt").read_text()
+    limits = (PROMPTS / "limits.txt").read_text()
+    # the new, neutral closed question in the system
+    assert "está 'ótimo', 'ok' ou 'ruim'?" in system
+    # the short-answer example set is the same in the voice and in the judge's limits
+    assert '"ótimo", "ok", "uns 7"' in voice
+    assert '"ótimo", "ok", "uns 7"' in limits
+    # the product's-own-pain example is gone from every slot that carried it
+    for name, text in (("system.txt", system), ("voice.txt", voice), ("limits.txt", limits)):
+        for pain in ("hoje a manhã", "um caos", "corrida", "tranquila"):
+            assert pain not in text, f"{name} still cites the busy-morning example: {pain}"
+
+
 def test_the_persona_does_not_charge_or_renegotiate_on_its_own():
     system = " ".join((PROMPTS / "system.txt").read_text().split())
     limits = " ".join((PROMPTS / "limits.txt").read_text().split())

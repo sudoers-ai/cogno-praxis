@@ -90,8 +90,13 @@ AT_MAIN = {
     ("sdr", "voice"): "8b0ff211c5c7c583ee21939bfb47216048ab51d6b1a6bf4753e882abd62c1d71",
     ("seller", "system"): "ef28998bc2fc5c9265370c8bae567efd060da8e68d1b3c2fd1668c9cfe2ba2ad",
     ("seller", "voice"): "e1a9ff13f705c3af5c15d7143bb32d695b78fd5b7c870ebfda8c5566b5ce7394",
-    ("aftersales", "system"): "18b9208a8117e46e9680c00f7799578ee88cf6b1cddb2f471ee4e61d68344d1a",
-    ("aftersales", "voice"): "cabf6e80d65f321c1bdb819094b72e84cf3466fb1a6ae89ddefd7e911897fa18",
+    # aftersales/system and /voice regenerated again, deliberately: the satisfaction check's
+    # example answers no longer cite a busy-morning workload (the product's own pain); the closed
+    # question and the short-answer examples are now business-neutral and identical across the
+    # three slots. The contact's greeting sentence did NOT move, so WORDINGS stays in sync and the
+    # by-reference reversal still reconstructs each file byte for byte.
+    ("aftersales", "system"): "03a135c1fdcca882c3ced2ec4e0b395997315fb40ad2f0dd12ee6034630a67d3",
+    ("aftersales", "voice"): "e643dbb4e690f75d429d6d3ded8caeb6b0e9f3f443a1ec8f859db8bd1f65c82b",
 }
 
 #: How many times each template names the contact in line — 27 in 17 files. DERIVED: the test
