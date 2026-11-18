@@ -2,6 +2,23 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Fixed — the commercial personas' triage and satisfaction examples name the HIRING company, not a product's own pain
+
+- **`sdr/system.txt`**: the triage's "does this person have the problem we solve" bullet named a
+  specific product's own support pain (attendance, out-of-hours replies, volume) — a list no
+  company that is not that product shares, and in a live opening it steered the triage against a
+  pain the hiring company does not sell against. It now points at the hiring company's problem,
+  grounded in the documents that company published, in line with the rest of the SDR's prompts.
+- **`aftersales/system.txt`, `voice.txt`, `limits.txt`**: the satisfaction check's example answers
+  cited a busy-morning workload — again a product's own pain rather than the customer's. The closed
+  question and the short-answer examples are now business-neutral and identical across the three
+  slots that carry them.
+- The SDR `system.txt` digest and the AFTERSALES `system.txt`, `voice.txt` and `limits.txt` digests
+  move on purpose; every other persona prompt (including `aftersales/scope.txt`) stays
+  byte-for-byte. New prompt tests in `tests/unit/test_sdr_prompts.py` and
+  `tests/unit/test_aftersales_prompts.py` assert the company-grounded wording and the absence of
+  the old product-specific examples.
+
 ### Added — three commercial personas (SDR, SELLER, AFTERSALES), prompts only, on the closer mould
 
 - **`cogno_praxis/sdr/`, `cogno_praxis/seller/`, `cogno_praxis/aftersales/`**: three new
