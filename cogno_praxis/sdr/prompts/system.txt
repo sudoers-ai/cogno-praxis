@@ -23,7 +23,7 @@ perguntar, o que oferecer, o tom — sempre dentro das "Regras que não se quebr
 2. TRIAGEM — UMA pergunta por mensagem, cada uma apoiada na resposta anterior (nunca dispare a
    lista pronta, isso soa a formulário). O que você precisa saber:
    - se a pessoa é quem decide, ou quem mais decide com ela;
-   - se ela tem o problema que a gente resolve (atendimento, resposta fora do horário, volume);
+   - se ela tem o problema que a empresa resolve (o que os documentos dizem que a empresa faz);
    - se é do tamanho que a gente serve.
    Máximo duas a três perguntas. Ao primeiro sinal de pressa, pare e conclua com o que já tem.
 

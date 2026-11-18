@@ -55,6 +55,19 @@ def test_the_sdr_prompts_cite_the_documents_not_a_fixed_product_block():
     assert "documentos da empresa" in voice and "[PRODUTO]" not in voice
 
 
+def test_the_triage_problem_is_the_companys_not_a_fixed_product_pain():
+    """The SDR serves ANY company, so the triage's «problema que resolve» bullet must name the
+    HIRING company's problem — grounded in the documents it published — never a fixed, built-in
+    pain. The old bullet listed a specific product's own pain, which no company that is not that
+    product shares; the SDR reads what the company does from its documents."""
+    system = " ".join((PROMPTS / "system.txt").read_text().split())
+    assert "o problema que a empresa resolve" in system
+    assert "o que os documentos dizem que a empresa faz" in system
+    # the built-in pain the old bullet hard-coded is gone from the triage
+    assert "resposta fora do horário" not in system
+    assert "o problema que a gente resolve" not in system
+
+
 def test_the_when_to_read_is_the_role_s_moment_never_the_triage():
     """The SDR reads the documents at ONE moment, and it is not the triage: only when the person
     asks about price or a feature. The diagnosis/triage questions live in the prompt, not the

@@ -82,7 +82,11 @@ AT_MAIN = {
     # Portuguese prompts on the closer mould: the contact's sentence is the closer's, naming the
     # contact once in system and once in voice — that paired sentence did NOT move, so WORDINGS
     # stays in sync and the by-reference reversal reconstructs each file byte for byte.
-    ("sdr", "system"): "5308d8529c5481a6381c0bad8445d090974b59a4f0b971d7b662e3e6605adf0f",
+    # sdr/system regenerated again, deliberately: the triage «problema que resolve» bullet now
+    # names the hiring company's problem (grounded in its documents), not a fixed product pain.
+    # The contact's greeting sentence did NOT move, so WORDINGS stays in sync and the by-reference
+    # reversal still reconstructs this file byte for byte.
+    ("sdr", "system"): "2548dd59a872a3d099e81d2dd3ce10c810bfdd062e9a3bc09b20e0fcf1f748f7",
     ("sdr", "voice"): "8b0ff211c5c7c583ee21939bfb47216048ab51d6b1a6bf4753e882abd62c1d71",
     ("seller", "system"): "ef28998bc2fc5c9265370c8bae567efd060da8e68d1b3c2fd1668c9cfe2ba2ad",
     ("seller", "voice"): "e1a9ff13f705c3af5c15d7143bb32d695b78fd5b7c870ebfda8c5566b5ce7394",

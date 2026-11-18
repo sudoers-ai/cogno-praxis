@@ -174,7 +174,10 @@ NEIGHBOURS_AT_MAIN = {
     # did not move it, it did not move them). system.txt and voice.txt of all three were
     # regenerated deliberately in the commercial-prompts change (capability-directed rewrite);
     # limits.txt and scope.txt stay byte-for-byte.
-    "sdr/system.txt": "5308d8529c5481a6381c0bad8445d090974b59a4f0b971d7b662e3e6605adf0f",
+    # sdr/system.txt regenerated again, deliberately: the triage «problema que resolve» bullet now
+    # names the HIRING company's problem, grounded in the documents it published, instead of a
+    # fixed, built-in product pain — the SDR serves ANY company (test_sdr_prompts.py).
+    "sdr/system.txt": "2548dd59a872a3d099e81d2dd3ce10c810bfdd062e9a3bc09b20e0fcf1f748f7",
     "sdr/limits.txt": "c90e7bef43fe80f7ced5a92e8d80eb1753ee79b7af7b6130fc55e10fffc55ebd",
     "sdr/voice.txt": "8b0ff211c5c7c583ee21939bfb47216048ab51d6b1a6bf4753e882abd62c1d71",
     "sdr/scope.txt": "59606ef1b8665f94a40663f0dca7b7abec96e0ffe0b35696e3996d0a8551a495",
