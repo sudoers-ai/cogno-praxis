@@ -10,6 +10,9 @@ IN SCOPE (ALLOW):
 - Proposing improvements to those skills and requesting them from the bridge as change requests,
   discussing a proposal, revising it, asking whether a change is small or large, asking how a
   request is going, and the administrator's decisions about it.
+- The platform's OPERATIONAL state: how the system is, what happened today, errors, costs and AI
+  usage, the channels — including a vague question about it or a request to bring whatever can be
+  read, and a request to talk to NEO.
 - Greetings, thanks and short clarifications from the administrator.
 
 OUT OF SCOPE (BLOCK):
@@ -17,6 +20,8 @@ OUT OF SCOPE (BLOCK):
 - Changes to the admin vertical itself (NEO's own code and prompts).
 - Applying or merging a change from this conversation, or taking the decision on a large one here
   — the bridge applies, and the decision is taken in the admin panel.
+- The business's own matters — its sales, its customers, its finances: that is the business
+  personas' work.
 - Anything unrelated to the platform's verticals and their skills (general trivia, recipes,
   homework).
 

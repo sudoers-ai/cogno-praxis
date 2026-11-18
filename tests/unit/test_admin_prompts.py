@@ -69,10 +69,11 @@ def test_the_judge_holds_it_to_them(phrase):
 #: The host's two door-1 tools NEO is offered beside the admin server's reads (the host's
 #: ``neo_changes`` manifests; ``docs/ADMIN.md``). The package does not ship them: it names them.
 HOST_TOOLS = {"request_change", "change_status"}
-#: …and the host's READ tools (NEO's dynamic reads, lot 5): offered where the platform switches
-#: them on (``COGNO_NEO_READS``), never shipped here. The executor names them for what is
-#: happening NOW; the judge's limits do not need to.
-HOST_READ_TOOLS = {"panel_read", "neo_tenant_logs", "neo_token_costs"}
+#: …and the host's READ tools (NEO's dynamic reads): offered where the platform switches them on
+#: (``COGNO_NEO_READS``), never shipped here. The executor names them for what is happening NOW —
+#: the state summary (``neo_system_summary``) and the three detail reads; the judge's limits do not
+#: need to.
+HOST_READ_TOOLS = {"neo_system_summary", "panel_read", "neo_tenant_logs", "neo_token_costs"}
 
 
 def test_the_tools_the_prompts_name_are_the_server_s():
@@ -84,12 +85,15 @@ def test_the_tools_the_prompts_name_are_the_server_s():
 
 
 def test_the_executor_names_the_four_tools_and_no_other():
-    """Every ``name(`` the executor's prompt writes is one of the four tools it is offered: the
-    admin server's two reads and the host's two change-request tools."""
+    """Every tool the executor's prompt writes — as ``name(`` or in `backticks` — is one it is
+    offered: the admin server's two reads, the host's two change-request tools, and the host's
+    dynamic reads (the state summary ``neo_system_summary`` and the three detail reads)."""
     from cogno_praxis.admin.service import AdminService
     reads = {t["name"] for t in AdminService().get_vertical_config("admin")["tools"]}
-    called = set(re.findall(r"\b([a-z]+(?:_[a-z]+)+)\(", _read("system")))
-    assert called == reads | HOST_TOOLS | HOST_READ_TOOLS
+    system = _read("system")
+    called = set(re.findall(r"\b([a-z]+(?:_[a-z]+)+)\(", system))
+    backticked = set(re.findall(r"`([a-z]+(?:_[a-z]+)+)`", system))
+    assert called | backticked == reads | HOST_TOOLS | HOST_READ_TOOLS
     for name in HOST_TOOLS:
         assert name in _read("limits"), name
 
@@ -176,18 +180,34 @@ def test_nobody_is_promised_a_notice_when_a_change_is_served(slot):
 @pytest.mark.parametrize("phrase", [
     "Read what is happening NOW — by default",
     "The administrator wants the platform's DYNAMIC, RECENT state, not its fixed configuration",
-    'panel_read(view="served")', 'panel_read(view="channels")', 'panel_read(view="oauth_status")',
-    "the Google connection and its PERMISSIONS (the scopes granted, and any missing → re-consent)",
-    'neo_token_costs(period="today")', 'panel_read(view="outcomes")',
-    "neo_tenant_logs(period_hours=24)", "judge_exhausted and scope_blocked",
+    "For a STATE SUMMARY",
+    "call `neo_system_summary` ONCE",
+    "today's outcomes by reason and the failures by skill",
+    "Use a DETAIL read (a `panel_read` view, `neo_token_costs`, `neo_tenant_logs`) only when the "
+    "administrator asks about ONE aspect",
+    "A part the summary marks as not read is reported as not read, never filled in",
+    "`neo_tenant_logs` is the platform's AUDIT TRAIL (who did what), not an error log",
     "is read ONLY when the administrator asks for it explicitly",
     "Never answer a question about the state with the inventory",
 ])
 def test_the_executor_reads_the_dynamic_state_by_default(phrase):
     """The owner on an «overview» answered with a table of verticals: «não quero saber de coisas
     fixas, e sim de coisas dinâmicas». The DEFAULT is what is happening; the inventory only when
-    asked."""
+    asked. For a state summary it reads once (``neo_system_summary``); the eight separate reads are
+    gone and the detail reads are for one aspect."""
     assert phrase in _flat(_read("system"))
+
+
+@pytest.mark.parametrize("gone", [
+    'panel_read(view="served")', 'panel_read(view="channels")', 'panel_read(view="oauth_status")',
+    'panel_read(view="outcomes")', 'neo_token_costs(period="today")',
+    "neo_tenant_logs(period_hours=24)", "judge_exhausted and scope_blocked",
+    "recent errors and warnings",
+])
+def test_the_eight_separate_reads_are_gone(gone):
+    """The list of eight reads a state summary used to make, one by one, is replaced by the single
+    ``neo_system_summary`` read."""
+    assert gone not in _flat(_read("system"))
 
 
 def test_the_dynamic_reads_come_before_the_tool_usage_rules():
@@ -218,3 +238,39 @@ def test_the_voice_writes_numbers_in_pt_br(phrase):
     the core calls a rounded figure invented (anima's ``_FIGURES_HAVE_A_SOURCE`` and the
     divergence net), so the rule keeps every decimal the data carries."""
     assert phrase in _flat(_read("voice"))
+
+
+# ── a state summary: the voice, the scope and the judge ──────────────────────────────────────
+def test_the_voice_quotes_exactly_only_for_a_change_request():
+    """The quote-exactly rule holds for a change request; a state summary uses the summary's own
+    operation words, never an internal name — so the reads' field, class, net and digest names do
+    not reach the reply."""
+    voice = _flat(_read("voice"))
+    assert ("Quote prompt texts, tool names, descriptions and annotations exactly as the tools "
+            "returned them — never paraphrase a text you are proposing to change, never alter a "
+            "name — for a change request.") in voice
+    assert ("In a STATE SUMMARY, use the summary's own operation words and never an internal "
+            "field, class, net or digest name.") in voice
+
+
+def test_the_scope_allows_the_platform_operation_and_blocks_the_business():
+    """The platform's OPERATIONAL state is in scope (a vague question, «bring what you can», asking
+    for NEO); the business's own matters are out — that is the business personas' work."""
+    scope = _flat(_read("scope"))
+    allow = scope.split("IN SCOPE (ALLOW):", 1)[1].split("OUT OF SCOPE (BLOCK):", 1)[0]
+    block = scope.split("OUT OF SCOPE (BLOCK):", 1)[1]
+    assert ("The platform's OPERATIONAL state: how the system is, what happened today, errors, "
+            "costs and AI usage, the channels — including a vague question about it or a request "
+            "to bring whatever can be read, and a request to talk to NEO.") in allow
+    assert ("The business's own matters — its sales, its customers, its finances: that is the "
+            "business personas' work.") in block
+
+
+def test_the_judge_accepts_a_state_summary_and_reads_ai_cost_as_operation():
+    """A summary with its total in view is correct, a part marked not read is said as not read and
+    not a fault, and the platform's AI cost is operation, never rejected as the business's
+    finances."""
+    assert ("A state summary is CORRECT when each figure is the summary's, with its total in view, "
+            "and a part marked not read is said as not read — never a fault. The platform's AI "
+            "cost is the platform's OPERATION, not the business's finances: never reject it as a "
+            "finance answer.") in _flat(_read("limits"))

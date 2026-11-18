@@ -2,6 +2,32 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Changed — NEO answers a state summary with one read, uses operation words, and reads AI cost as operation
+
+- **`admin/system.txt`**: for a state summary — how the system is, what happened today, how today
+  went — NEO calls `neo_system_summary` ONCE instead of making the eight separate reads
+  (`served`/`health`, `channels`/`telegram_status`, `oauth_status`, `neo_token_costs`, `outcomes`,
+  `neo_tenant_logs`). The summary composes the served version, the health, the channels, the Google
+  connection, today's outcomes by reason and the failures by skill, today's AI usage and cost, and
+  the availability, already summed and in operation words. A detail read (a `panel_read` view,
+  `neo_token_costs`, `neo_tenant_logs`) is for when the administrator asks about ONE aspect, a part
+  the summary marks as not read is reported as not read, and `neo_tenant_logs` is named as the
+  platform's audit trail (who did what), not an error log.
+- **`admin/voice.txt`**: the quote-exactly rule now holds for a change request; in a state summary
+  the voice uses the summary's own operation words and never an internal field, class, net or
+  digest name.
+- **`admin/scope.txt`**: the platform's OPERATIONAL state is in scope (a vague question about it, a
+  request to bring whatever can be read, asking for NEO); the business's own matters — its sales,
+  its customers, its finances — are out of scope, the business personas' work.
+- **`admin/limits.txt`**: a state summary is correct when each figure is the summary's, with its
+  total in view, and a part marked not read is said as not read, never a fault; the platform's AI
+  cost is the platform's operation, not the business's finances, and is never rejected as a finance
+  answer.
+- The four `admin/*` digests move on purpose; every other persona prompt stays byte-for-byte. The
+  digest controls in `tests/unit/test_bookkeeper_ai_cost_comes_from_the_cost_tool.py` and
+  `tests/unit/test_messages_to_the_team_are_in_scope.py` are regenerated for the admin slots, and
+  `tests/unit/test_admin_prompts.py` asserts the new wording and the absence of the eight reads.
+
 ### Fixed — the commercial personas stop promising what no tool does; after-sales offers the team instead of doing sale discovery
 
 - **`sdr/system.txt`, `seller/system.txt`, `aftersales/system.txt`**: the handoff "when it cannot
