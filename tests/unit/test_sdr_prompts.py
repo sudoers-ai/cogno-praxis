@@ -103,6 +103,14 @@ def test_the_honesty_rules_and_the_handoff_is_not_an_escape_hatch():
     assert "Não é rota de fuga" in system                # the handoff is not an escape hatch
 
 
+def test_the_voice_keeps_the_contacts_own_quantity_words_without_inventing_a_unit():
+    """A number the contact gave is repeated with their own words — the voice must not bolt a
+    unit or detail onto it ("umas 30 por dia" stays "umas 30 por dia", never "30 peças por
+    dia"). The rule lives next to the no-invention bullet it extends."""
+    voice = " ".join((PROMPTS / "voice.txt").read_text().split())
+    assert 'nunca "30 peças por dia"' in voice
+
+
 def test_the_company_rules_govern_the_how():
     """The hirer's rules (the ``# Tenant-specific direction`` section) govern the HOW — what to
     ask, what to offer, the tone — inside the unbreakable rules. One line under «Seu papel»."""
