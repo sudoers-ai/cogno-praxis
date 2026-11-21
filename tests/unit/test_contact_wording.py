@@ -54,10 +54,9 @@ AT_MAIN = {
     # says WHEN to read them — at the insight and the close, never during the diagnosis. The
     # contact's sentence did not move, so this is the control it stays here as.
     ("closer", "system"): "421c9c52560b9122757b7172f4e7e272a1fe116e3ee08882c3f9b128ed672c98",
-    # closer/voice regenerated deliberately: the no-invention bullet now also forbids bolting a
-    # unit or detail onto a quantity the contact gave ("umas 30 por dia" stays as said, never
-    # "30 peças por dia"). The contact's greeting sentence did not move.
-    ("closer", "voice"): "aedafd3add8f1c13156a2de770f86b8a90297df0b5d52e3588307d256f62091f",
+    # closer/voice regenerated deliberately: the voicer now points at the company's documents,
+    # not the fixed product block; the contact's sentence did not move.
+    ("closer", "voice"): "59399234ad61341d54ffa76e4e86fefc3d037b96f67b735300aed9255c9c809d",
     ("coordinator", "system"): "5085d29f398179ea208eb2b81f28b2a51489004b12e6c7f2f3527f02dcee1e89",
     ("coordinator", "voice"): "21ca2bcf50fc42613687c6cb61f40ec6c0510b6384061a7c22bf8d45308b9ead",
     ("interviewer", "system"): "640c76109c62a142f6304af1b8592b79e1c9808735a3daf067c24f3abc42be27",
@@ -90,10 +89,7 @@ AT_MAIN = {
     # sentence did NOT move, so WORDINGS stays in sync and the by-reference reversal still
     # reconstructs this file byte for byte.
     ("sdr", "system"): "4514914c92e4188002a616b93264280ed3fd66323ad4b2929f26d5a0698aeb6f",
-    # sdr/voice regenerated deliberately: the same no-invention bullet now also forbids bolting a
-    # unit or detail onto a quantity the contact gave ("umas 30 por dia" stays as said, never
-    # "30 peças por dia"). The contact's greeting sentence did not move.
-    ("sdr", "voice"): "4d1635fab463fde035c2af0d9b863a888a9c1ddbb0441bf75b9d3017971394ac",
+    ("sdr", "voice"): "8b0ff211c5c7c583ee21939bfb47216048ab51d6b1a6bf4753e882abd62c1d71",
     # seller/system regenerated again, deliberately: the same handoff fallback no longer promises
     # the team reaches out; it forbids promising an action with no tool that performs it. The
     # contact's greeting sentence did NOT move.

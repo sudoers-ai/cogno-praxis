@@ -2,6 +2,8 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Reverted — the closer and the SDR no longer carry the "quantity in the contact's own words" line (#228): measured without effect (the unit the model adds: base 6/15 and 4/5, head 8/15 and 2/5) and the judge never exhausted on it (0/20 on the base).
+
 ### Changed — the closer and the SDR repeat a quantity in the contact's own words
 
 - **`closer/prompts/voice.txt`, `sdr/prompts/voice.txt`**: the rule «numbers only as the person gave
