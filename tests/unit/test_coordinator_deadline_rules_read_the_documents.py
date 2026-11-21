@@ -140,10 +140,13 @@ NEIGHBOURS_AT_MAIN = {
     # voicer all point at the documents. Only closer/scope.txt did not move. closer/system.txt
     # regenerated again, deliberately: the prompt now says WHEN to read the documents — at the
     # insight and the close, never during the diagnosis (limits.txt and voice.txt did not move).
+    # closer/voice.txt regenerated again, deliberately: the no-invention bullet now also forbids
+    # bolting a unit or detail onto a quantity the contact gave ("umas 30 por dia" stays as said,
+    # never "30 peças por dia") (test_closer_prompts.py).
     "closer/limits.txt": "a77a03ebe45a686c7b6d4df93f1400fa8f7942a8cfd213912aab08505dab69c5",
     "closer/scope.txt": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
     "closer/system.txt": "421c9c52560b9122757b7172f4e7e272a1fe116e3ee08882c3f9b128ed672c98",
-    "closer/voice.txt": "59399234ad61341d54ffa76e4e86fefc3d037b96f67b735300aed9255c9c809d",
+    "closer/voice.txt": "aedafd3add8f1c13156a2de770f86b8a90297df0b5d52e3588307d256f62091f",
     "companies/scope.txt": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
     "coordinator/limits.txt": "693599819f703f755d863a5298caaba2573685fed63091f80690ada60dc7c8d0",
     "coordinator/scope.txt": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",

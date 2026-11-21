@@ -2,6 +2,16 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Changed — the closer and the SDR repeat a quantity in the contact's own words
+
+- **`closer/prompts/voice.txt`, `sdr/prompts/voice.txt`**: the rule «numbers only as the person gave
+  them» now also says the voice adds NO unit and NO detail to a quantity the contact gave —
+  «umas 30 por dia» stays «umas 30 por dia», never «30 peças por dia». A unit the contact did not
+  say is a fact nobody gave, and the judge is right to reject it; the fix is on the side that
+  writes, the judge's limits are untouched.
+- **Tests:** `test_closer_prompts.py` and `test_sdr_prompts.py` pin the line; the three digest
+  controls that fingerprint these two files carry their new values and nothing else moved.
+
 ### Changed — NEO answers a state summary with one read, uses operation words, and reads AI cost as operation
 
 - **`admin/system.txt`**: for a state summary — how the system is, what happened today, how today
