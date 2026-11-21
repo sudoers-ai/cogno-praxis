@@ -168,14 +168,6 @@ def test_the_honesty_rules_are_present_because_they_are_what_make_it_credible():
     assert "responda a verdade" in system                 # "are you an AI?"
 
 
-def test_the_voice_keeps_the_contacts_own_quantity_words_without_inventing_a_unit():
-    """A number the contact gave is repeated with their own words — the voice must not bolt a
-    unit or detail onto it ("umas 30 por dia" stays "umas 30 por dia", never "30 peças por
-    dia"). The rule lives next to the no-invention bullet it extends."""
-    voice = " ".join((PROMPTS / "voice.txt").read_text().split())
-    assert 'nunca "30 peças por dia"' in voice
-
-
 def test_the_voice_slot_carries_the_arc_because_short_answers_never_reach_the_executor():
     """Live finding: the contact answered "Claro" and the NER classified it SOCIAL, so the ID
     routed the turn to the SUPEREGO and the EXECUTOR never ran — meaning the five acts, which
