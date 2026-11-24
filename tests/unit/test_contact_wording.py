@@ -53,18 +53,10 @@ AT_MAIN = {
     # published documents (consult_documents), not a fixed product block; and the prompt now
     # says WHEN to read them — at the insight and the close, never during the diagnosis. The
     # contact's sentence did not move, so this is the control it stays here as.
-    # closer/system regenerated again, deliberately: when the contact asks something
-    # mid-diagnosis, the agent answers their question FIRST and then the next diagnosis question
-    # (the diagnosis no longer bars documents when the question is about the product). The
-    # contact's sentence did not move, so WORDINGS stays in sync and the by-reference reversal
-    # still reconstructs this file byte for byte.
-    ("closer", "system"): "205559b7ee4bc72dc0fd262ba92be7ec303aec13819b22c100dad78782902365",
+    ("closer", "system"): "421c9c52560b9122757b7172f4e7e272a1fe116e3ee08882c3f9b128ed672c98",
     # closer/voice regenerated deliberately: the voicer now points at the company's documents,
     # not the fixed product block; the contact's sentence did not move.
-    # closer/voice regenerated again, deliberately: the contact's question is answered FIRST,
-    # then the next diagnosis question (both the onboarding-block paragraph and a new bullet).
-    # The contact's sentence did not move.
-    ("closer", "voice"): "9f4ff69770c193b8de2cf9fb45f61f7baa1fde5e5f0eb870c6565713bd46894a",
+    ("closer", "voice"): "59399234ad61341d54ffa76e4e86fefc3d037b96f67b735300aed9255c9c809d",
     ("coordinator", "system"): "5085d29f398179ea208eb2b81f28b2a51489004b12e6c7f2f3527f02dcee1e89",
     ("coordinator", "voice"): "21ca2bcf50fc42613687c6cb61f40ec6c0510b6384061a7c22bf8d45308b9ead",
     ("interviewer", "system"): "640c76109c62a142f6304af1b8592b79e1c9808735a3daf067c24f3abc42be27",
