@@ -2,6 +2,18 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Changed — the closer answers the contact's question first, then the next diagnostic question
+
+- **`closer/prompts/system.txt`, `closer/prompts/voice.txt`**: when the contact asks something
+  in the middle of the diagnosis — on its own or alongside an answer — the agent now answers
+  **their** question first and only then moves to the next diagnostic question; the contact's
+  question never waits behind the agent's own. Inside the onboarding-block paragraph the reply
+  comes first and the block's question after it. During the diagnosis the executor may now consult
+  the company's documents when the contact's question is about the product.
+- **Tests:** `test_closer_prompts.py` pins the new wording and ordering; the digest controls that
+  fingerprint `closer/system.txt` and `closer/voice.txt` carry their new values, and
+  `closer/limits.txt`, `closer/scope.txt` and every other persona prompt stay byte-for-byte.
+
 ### Changed — the after-sales persona measures satisfaction in text, and offers the handoff only when a tool can perform it
 
 - **`aftersales/prompts/system.txt`, `aftersales/prompts/voice.txt`**: satisfaction is now measured
