@@ -2,6 +2,8 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Reverted — the closer's answer-first change from #230 is withdrawn (measured without gain: the robot-question denial and replies in English appeared only with it); the after-sales change from the same PR stays.
+
 ### Changed — the closer answers the contact's question first, then the next diagnostic question
 
 - **`closer/prompts/system.txt`, `closer/prompts/voice.txt`**: when the contact asks something

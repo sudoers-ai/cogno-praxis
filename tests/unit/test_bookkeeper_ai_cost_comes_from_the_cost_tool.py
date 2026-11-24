@@ -151,14 +151,10 @@ NEIGHBOURS_AT_MAIN = {
     # voicer all point at the documents. Only closer/scope.txt did not move. closer/system.txt
     # regenerated again, deliberately: the prompt now says WHEN to read the documents — at the
     # insight and the close, never during the diagnosis (limits.txt and voice.txt did not move).
-    # closer/system.txt and closer/voice.txt regenerated again, deliberately: when the contact
-    # asks something mid-diagnosis, the agent answers their question FIRST and then the next
-    # diagnosis question (the diagnosis no longer bars consulting documents when the question is
-    # about the product). limits.txt and scope.txt stay byte-for-byte.
     "closer/limits.txt": "a77a03ebe45a686c7b6d4df93f1400fa8f7942a8cfd213912aab08505dab69c5",
     "closer/scope.txt": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
-    "closer/system.txt": "205559b7ee4bc72dc0fd262ba92be7ec303aec13819b22c100dad78782902365",
-    "closer/voice.txt": "9f4ff69770c193b8de2cf9fb45f61f7baa1fde5e5f0eb870c6565713bd46894a",
+    "closer/system.txt": "421c9c52560b9122757b7172f4e7e272a1fe116e3ee08882c3f9b128ed672c98",
+    "closer/voice.txt": "59399234ad61341d54ffa76e4e86fefc3d037b96f67b735300aed9255c9c809d",
     "companies/scope.txt": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
     "coordinator/limits.txt": "693599819f703f755d863a5298caaba2573685fed63091f80690ada60dc7c8d0",
     "coordinator/scope.txt": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
