@@ -100,8 +100,14 @@ AT_MAIN = {
     # opportunity» clause no longer does sale discovery — it offers the seller instead of asking
     # what the customer wants to buy. The contact's greeting sentence did NOT move, so WORDINGS
     # stays in sync and the by-reference reversal still reconstructs each file byte for byte.
-    ("aftersales", "system"): "f9f0e82a9b94bf4310eadb949181389207a2d74c465e5b892dfeca71309c9044",
-    ("aftersales", "voice"): "e643dbb4e690f75d429d6d3ded8caeb6b0e9f3f443a1ec8f859db8bd1f65c82b",
+    # aftersales/system and /voice regenerated again, deliberately: satisfaction is measured IN
+    # TEXT only (the «use a poll tool if present» directive is gone), and the new-opportunity
+    # fallback with no tool says plainly it cannot pass the conversation here and keeps helping —
+    # it no longer asks whether to forward nor promises someone will contact. The contact's
+    # greeting sentence did NOT move, so WORDINGS stays in sync and the by-reference reversal
+    # still reconstructs each file byte for byte.
+    ("aftersales", "system"): "c009029f4b44c4c511d6015b319562590818b9a8b82adacd965b334960ed874a",
+    ("aftersales", "voice"): "922316697153d8783bce4bb015d1095ae3d0fad7783fea785d2a4443a8d89c02",
 }
 
 #: How many times each template names the contact in line — 27 in 17 files. DERIVED: the test

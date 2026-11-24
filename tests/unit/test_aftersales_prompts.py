@@ -59,16 +59,16 @@ def test_the_when_to_read_is_a_usage_doubt():
     assert "O momento de consultar é uma dúvida de uso:" in system
 
 
-def test_satisfaction_is_measured_by_a_poll_when_present_else_in_text():
-    """Satisfaction is capability-directed now: WITH a poll tool on the turn, use it; WITHOUT one,
-    measure IN TEXT — a word or a 0–10 read, living in the conversation. No FIXED absence of a
-    poll tool in the system any more (a real poll skill may wire one in later). The judge's limits
-    clause is unchanged in this change and still guards against confusing the text measure with a
-    poll tool."""
+def test_satisfaction_is_measured_in_text():
+    """Satisfaction is measured IN TEXT — a word or a 0–10 read, living in the conversation. The
+    old poll-tool directive («se houver uma ferramenta de enquete entre as do turno, use-a») is
+    gone from the system: this persona has no poll tool, and the earlier fixed absence of one is
+    gone too. The judge's limits clause is unchanged in this change and still guards against
+    confusing the text measure with a poll tool."""
     system = " ".join((PROMPTS / "system.txt").read_text().split())
     limits = " ".join((PROMPTS / "limits.txt").read_text().split())
     assert "Você NÃO tem ferramenta de enquete" not in system      # the fixed absence is gone
-    assert "se houver uma ferramenta de enquete entre as do turno, use-a" in system.lower()
+    assert "se houver uma ferramenta de enquete entre as do turno, use-a" not in system.lower()
     assert "meça **em texto**" in system
     assert "não a confunda com uma ferramenta de enquete, que esta persona não tem" in limits
 
@@ -141,12 +141,26 @@ def test_the_handoff_fallback_promises_no_action_without_a_tool_and_is_never_a_m
 
 def test_the_new_opportunity_offers_the_seller_and_does_no_sale_discovery():
     """An opportunity (the customer wants more) is the SELLER's, not the after-sales persona's: it
-    must NOT ask what the customer wants to buy (sale discovery). It offers to pass the conversation
-    to the seller and only passes on yes; otherwise it says the commercial team can help and asks
-    whether they want someone now. No «registre» — nothing records. The old wording did sale
-    discovery, which the judge flagged as off-role."""
+    must NOT ask what the customer wants to buy (sale discovery). WITH a way to pass the
+    conversation on this turn it offers and only passes on yes; WITHOUT one it says plainly it
+    cannot pass the conversation here, keeps helping — and NEVER asks whether to forward nor
+    promises someone will reach out. No «registre» — nothing records."""
     system = " ".join((PROMPTS / "system.txt").read_text().split())
     assert "NÃO pergunte o que ele quer comprar" in system
     assert "isso é do vendedor" in system
     assert "OFEREÇA e só passe no sim" in system
+    assert "por aqui você não consegue passar a conversa agora" in system
     assert "registre" not in (PROMPTS / "system.txt").read_text()
+
+
+def test_the_handoff_is_never_offered_as_a_question_without_a_tool():
+    """WITHOUT a tool that can pass the conversation on the turn, the persona says so plainly and
+    keeps helping — it never asks «quer que eu encaminhe?» and never promises that someone will
+    contact the customer. The rule is carried by BOTH the executor's system prompt and the
+    voicer's prompt; the old «pergunte se quer que alguém fale com» wording is gone from both."""
+    system = " ".join((PROMPTS / "system.txt").read_text().split())
+    voice = " ".join((PROMPTS / "voice.txt").read_text().split())
+    assert "nunca pergunte se ele quer que você encaminhe" in system
+    assert "nunca pergunte se ele quer que você encaminhe" in voice
+    assert "pergunte se quer que alguém fale com" not in system
+    assert "pergunte se quer que alguém fale com" not in voice

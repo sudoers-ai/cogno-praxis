@@ -200,9 +200,14 @@ NEIGHBOURS_AT_MAIN = {
     # promises the team reaches out (it forbids promising an action with no tool), and the «new
     # opportunity» clause no longer does sale discovery — it offers the seller instead of asking
     # what the customer wants to buy.
-    "aftersales/system.txt": "f9f0e82a9b94bf4310eadb949181389207a2d74c465e5b892dfeca71309c9044",
+    # aftersales/system.txt and /voice.txt regenerated again, deliberately: satisfaction is now
+    # measured IN TEXT only (the «use a poll tool if present» directive is gone — the persona has
+    # none); and the new-opportunity fallback, with no tool to pass the conversation, says plainly
+    # it cannot do that here and keeps helping — it no longer asks whether to forward nor promises
+    # someone will contact the customer (test_aftersales_prompts.py). limits and scope stay.
+    "aftersales/system.txt": "c009029f4b44c4c511d6015b319562590818b9a8b82adacd965b334960ed874a",
     "aftersales/limits.txt": "ac6ff5085a8c0de7c5b2da55f4e9994d01e31a50bcf38fe4bb91831a16bf6a74",
-    "aftersales/voice.txt": "e643dbb4e690f75d429d6d3ded8caeb6b0e9f3f443a1ec8f859db8bd1f65c82b",
+    "aftersales/voice.txt": "922316697153d8783bce4bb015d1095ae3d0fad7783fea785d2a4443a8d89c02",
     "aftersales/scope.txt": "dd79da1fd8cd14d32c234f8ed930433d96af8dc073be4d01118bf43bc6e1833d",
 }
 
