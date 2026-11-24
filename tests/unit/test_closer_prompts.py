@@ -391,3 +391,34 @@ def test_with_the_checklist_block_the_opening_asks_the_item_not_permission():
     assert flat.index("Se o contexto trouxer um bloco") < flat.index("[ABERTURA]")
     assert "a pergunta do bloco entra no lugar do pedido de licença" in flat
 
+
+def test_the_contacts_question_is_answered_before_the_next_diagnosis_question():
+    """When the contact asks something mid-diagnosis — standalone or alongside an answer — the
+    agent answers THEIR question first, then the next diagnosis question, never the other way
+    round. The rule lives in both the executor (system.txt) and the voicer (voice.txt), and
+    inside the onboarding-block paragraph the reply comes FIRST, before the block's question.
+
+    The two slots phrase the lead-in differently (the executor says "ao que ela perguntou", the
+    voice "ao que a pessoa perguntou"), so the shared, load-bearing phrase is the prefix, and
+    each tail is pinned in its own file."""
+    system = (PROMPTS / "system.txt").read_text()
+    voice = (PROMPTS / "voice.txt").read_text()
+    flat_system = " ".join(system.split())
+    flat_voice = " ".join(voice.split())
+    # the rule is in BOTH stages
+    assert "responda primeiro ao que" in flat_system
+    assert "responda primeiro ao que ela perguntou" in flat_system
+    assert "responda primeiro ao que a pessoa perguntou" in flat_voice
+    # the diagnosis carve-out for documents names the product exception
+    assert "a não ser que ela pergunte do produto" in system
+    # in voice, the new bullet sits between the next-question rule and the stop-after-5-to-7 rule
+    anchor_before = flat_voice.index("Se ela respondeu uma pergunta do diagnóstico")
+    anchor_new = flat_voice.index("Se ela PERGUNTOU alguma coisa")
+    anchor_after = flat_voice.index("Depois de 5 a 7 respostas")
+    assert anchor_before < anchor_new < anchor_after
+    # the onboarding-block paragraph: reply first, block question after
+    rule = flat_voice[flat_voice.index("Se o contexto trouxer um bloco de onboarding"):
+                      flat_voice.index("SEM esse bloco")]
+    assert "vem PRIMEIRO" in rule
+    assert "só depois faça a pergunta do bloco" in rule
+

@@ -53,10 +53,18 @@ AT_MAIN = {
     # published documents (consult_documents), not a fixed product block; and the prompt now
     # says WHEN to read them — at the insight and the close, never during the diagnosis. The
     # contact's sentence did not move, so this is the control it stays here as.
-    ("closer", "system"): "421c9c52560b9122757b7172f4e7e272a1fe116e3ee08882c3f9b128ed672c98",
+    # closer/system regenerated again, deliberately: when the contact asks something
+    # mid-diagnosis, the agent answers their question FIRST and then the next diagnosis question
+    # (the diagnosis no longer bars documents when the question is about the product). The
+    # contact's sentence did not move, so WORDINGS stays in sync and the by-reference reversal
+    # still reconstructs this file byte for byte.
+    ("closer", "system"): "205559b7ee4bc72dc0fd262ba92be7ec303aec13819b22c100dad78782902365",
     # closer/voice regenerated deliberately: the voicer now points at the company's documents,
     # not the fixed product block; the contact's sentence did not move.
-    ("closer", "voice"): "59399234ad61341d54ffa76e4e86fefc3d037b96f67b735300aed9255c9c809d",
+    # closer/voice regenerated again, deliberately: the contact's question is answered FIRST,
+    # then the next diagnosis question (both the onboarding-block paragraph and a new bullet).
+    # The contact's sentence did not move.
+    ("closer", "voice"): "9f4ff69770c193b8de2cf9fb45f61f7baa1fde5e5f0eb870c6565713bd46894a",
     ("coordinator", "system"): "5085d29f398179ea208eb2b81f28b2a51489004b12e6c7f2f3527f02dcee1e89",
     ("coordinator", "voice"): "21ca2bcf50fc42613687c6cb61f40ec6c0510b6384061a7c22bf8d45308b9ead",
     ("interviewer", "system"): "640c76109c62a142f6304af1b8592b79e1c9808735a3daf067c24f3abc42be27",
@@ -100,8 +108,14 @@ AT_MAIN = {
     # opportunity» clause no longer does sale discovery — it offers the seller instead of asking
     # what the customer wants to buy. The contact's greeting sentence did NOT move, so WORDINGS
     # stays in sync and the by-reference reversal still reconstructs each file byte for byte.
-    ("aftersales", "system"): "f9f0e82a9b94bf4310eadb949181389207a2d74c465e5b892dfeca71309c9044",
-    ("aftersales", "voice"): "e643dbb4e690f75d429d6d3ded8caeb6b0e9f3f443a1ec8f859db8bd1f65c82b",
+    # aftersales/system and /voice regenerated again, deliberately: satisfaction is measured IN
+    # TEXT only (the «use a poll tool if present» directive is gone), and the new-opportunity
+    # fallback with no tool says plainly it cannot pass the conversation here and keeps helping —
+    # it no longer asks whether to forward nor promises someone will contact. The contact's
+    # greeting sentence did NOT move, so WORDINGS stays in sync and the by-reference reversal
+    # still reconstructs each file byte for byte.
+    ("aftersales", "system"): "c009029f4b44c4c511d6015b319562590818b9a8b82adacd965b334960ed874a",
+    ("aftersales", "voice"): "922316697153d8783bce4bb015d1095ae3d0fad7783fea785d2a4443a8d89c02",
 }
 
 #: How many times each template names the contact in line — 27 in 17 files. DERIVED: the test

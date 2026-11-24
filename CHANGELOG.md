@@ -2,6 +2,34 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Changed — the closer answers the contact's question first, then the next diagnostic question
+
+- **`closer/prompts/system.txt`, `closer/prompts/voice.txt`**: when the contact asks something
+  in the middle of the diagnosis — on its own or alongside an answer — the agent now answers
+  **their** question first and only then moves to the next diagnostic question; the contact's
+  question never waits behind the agent's own. Inside the onboarding-block paragraph the reply
+  comes first and the block's question after it. During the diagnosis the executor may now consult
+  the company's documents when the contact's question is about the product.
+- **Tests:** `test_closer_prompts.py` pins the new wording and ordering; the digest controls that
+  fingerprint `closer/system.txt` and `closer/voice.txt` carry their new values, and
+  `closer/limits.txt`, `closer/scope.txt` and every other persona prompt stay byte-for-byte.
+
+### Changed — the after-sales persona measures satisfaction in text, and offers the handoff only when a tool can perform it
+
+- **`aftersales/prompts/system.txt`, `aftersales/prompts/voice.txt`**: satisfaction is now measured
+  **in text** — a word or a 0–10 read, living in the conversation. The earlier «use a poll tool if
+  one is on the turn» directive is gone: this persona has no poll tool, and the three prompt slots
+  now agree (`limits.txt` already said so and is unchanged).
+- A new opportunity (the customer wants more) is still the seller's, not this persona's. When a
+  tool on the turn can pass the conversation to the seller or to a person, the persona offers and
+  passes only on the customer's yes. When no such tool is available, it now says plainly that it
+  cannot pass the conversation here and keeps helping in the same step — it no longer asks whether
+  to forward, and never promises that someone will contact the customer.
+- **Tests:** `test_aftersales_prompts.py` pins the new wording; the two digest controls that
+  fingerprint these two files carry their new values, and `aftersales/limits.txt`,
+  `aftersales/scope.txt` and every other persona prompt stay byte-for-byte.
+
+
 ### Reverted — the closer and the SDR no longer carry the "quantity in the contact's own words" line (#228): measured without effect (the unit the model adds: base 6/15 and 4/5, head 8/15 and 2/5) and the judge never exhausted on it (0/20 on the base).
 
 ### Changed — the closer and the SDR repeat a quantity in the contact's own words

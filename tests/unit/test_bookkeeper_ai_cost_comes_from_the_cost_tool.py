@@ -151,10 +151,14 @@ NEIGHBOURS_AT_MAIN = {
     # voicer all point at the documents. Only closer/scope.txt did not move. closer/system.txt
     # regenerated again, deliberately: the prompt now says WHEN to read the documents — at the
     # insight and the close, never during the diagnosis (limits.txt and voice.txt did not move).
+    # closer/system.txt and closer/voice.txt regenerated again, deliberately: when the contact
+    # asks something mid-diagnosis, the agent answers their question FIRST and then the next
+    # diagnosis question (the diagnosis no longer bars consulting documents when the question is
+    # about the product). limits.txt and scope.txt stay byte-for-byte.
     "closer/limits.txt": "a77a03ebe45a686c7b6d4df93f1400fa8f7942a8cfd213912aab08505dab69c5",
     "closer/scope.txt": "92c91dc45dbf3e7538b20f697e38ff99e8b3c69ba4f17d3bcb5b1dce746f3714",
-    "closer/system.txt": "421c9c52560b9122757b7172f4e7e272a1fe116e3ee08882c3f9b128ed672c98",
-    "closer/voice.txt": "59399234ad61341d54ffa76e4e86fefc3d037b96f67b735300aed9255c9c809d",
+    "closer/system.txt": "205559b7ee4bc72dc0fd262ba92be7ec303aec13819b22c100dad78782902365",
+    "closer/voice.txt": "9f4ff69770c193b8de2cf9fb45f61f7baa1fde5e5f0eb870c6565713bd46894a",
     "companies/scope.txt": "c410e899125d712a7e5cbc9880627febca04e497a61059af9650ab236f00c805",
     "coordinator/limits.txt": "693599819f703f755d863a5298caaba2573685fed63091f80690ada60dc7c8d0",
     "coordinator/scope.txt": "7a03422e0991306317e48df84a8fcd796c9eb507e5c7b4e0291fa8c401d7264b",
@@ -200,9 +204,14 @@ NEIGHBOURS_AT_MAIN = {
     # promises the team reaches out (it forbids promising an action with no tool), and the «new
     # opportunity» clause no longer does sale discovery — it offers the seller instead of asking
     # what the customer wants to buy.
-    "aftersales/system.txt": "f9f0e82a9b94bf4310eadb949181389207a2d74c465e5b892dfeca71309c9044",
+    # aftersales/system.txt and /voice.txt regenerated again, deliberately: satisfaction is now
+    # measured IN TEXT only (the «use a poll tool if present» directive is gone — the persona has
+    # none); and the new-opportunity fallback, with no tool to pass the conversation, says plainly
+    # it cannot do that here and keeps helping — it no longer asks whether to forward nor promises
+    # someone will contact the customer (test_aftersales_prompts.py). limits and scope stay.
+    "aftersales/system.txt": "c009029f4b44c4c511d6015b319562590818b9a8b82adacd965b334960ed874a",
     "aftersales/limits.txt": "ac6ff5085a8c0de7c5b2da55f4e9994d01e31a50bcf38fe4bb91831a16bf6a74",
-    "aftersales/voice.txt": "e643dbb4e690f75d429d6d3ded8caeb6b0e9f3f443a1ec8f859db8bd1f65c82b",
+    "aftersales/voice.txt": "922316697153d8783bce4bb015d1095ae3d0fad7783fea785d2a4443a8d89c02",
     "aftersales/scope.txt": "dd79da1fd8cd14d32c234f8ed930433d96af8dc073be4d01118bf43bc6e1833d",
 }
 
