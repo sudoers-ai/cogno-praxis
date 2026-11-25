@@ -110,6 +110,18 @@ UNCONFIRMED_SIMILAR_LINE = (
     "registered. Do not guess whose they are, and do not add them.)")
 
 
+#: The footer a read carries when the 30-day default window held classes back. Named ONCE here so
+#: a second reader can recognise it by import rather than by copying the literal — the host appends
+#: a fixed "covers the next 30 days" line to any reply or held delivery built from a windowed read,
+#: and that predicate matches on THIS string. `_fmt_report` is the sole writer of it; the text is
+#: unchanged (byte-for-byte what the literal said), only given a name.
+BEYOND_HORIZON_NOTE = (
+    "(This list covers the next 30 days — this tool's default window when no period was "
+    "asked for. Later classes are one argument away: call again with `month` set to the "
+    "month the user names. Offer to look further ahead; do not say how many are out "
+    "there.)")
+
+
 def _fmt_head(report: Optional[ReadReport]) -> str:
     """The line a read owes ABOVE its classes: the ``discipline`` it was asked for and could not
     find (M6-c), or ``""``.
@@ -190,11 +202,7 @@ def _fmt_report(report: ReadReport, *, discipline: bool = True) -> str:
             "one argument away: call again with `include_past=true`, but only if the user asks "
             "about the past.)")
     if report.beyond_horizon:
-        lines.append(
-            "(This list covers the next 30 days — this tool's default window when no period was "
-            "asked for. Later classes are one argument away: call again with `month` set to the "
-            "month the user names. Offer to look further ahead; do not say how many are out "
-            "there.)")
+        lines.append(BEYOND_HORIZON_NOTE)
     if report.unconfirmed_similar:
         lines.append(UNCONFIRMED_SIMILAR_LINE)
     if report.free_by_word:

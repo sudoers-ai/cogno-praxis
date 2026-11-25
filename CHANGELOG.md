@@ -2,6 +2,19 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Changed — the 30-day window footer is now a named constant, `coordinator.server.BEYOND_HORIZON_NOTE`, so a second reader can recognise it by import instead of copying the literal
+
+- **`coordinator/server.py`**: the "(This list covers the next 30 days — …)" line that
+  `_fmt_report` appends when the default 30-day window held later classes back is now the module
+  constant `BEYOND_HORIZON_NOTE`, and `_fmt_report` renders it instead of the inline literal. Pure
+  extraction — the text is byte-for-byte what it was, only given a name — so every read renders
+  exactly as before and no golden or digest moves. The host appends its own "covers the next 30
+  days" line to a reply or held delivery built from a windowed read, and that predicate matches on
+  THIS constant; naming the note once keeps the two readers from drifting apart. Tests:
+  `tests/unit/test_beyond_horizon_note_is_one_definition.py` (the constant equals the frozen
+  literal; `_fmt_report` renders it with `beyond_horizon`, byte-equal to before; absent without
+  it).
+
 ### Fixed — the Google Sheets store tries IPv4 first, then falls back, so a broken IPv6 route no longer stalls a coordinator tool call
 
 - **`coordinator/stores/google_sheets.py`**: every Google API round trip now goes through one
