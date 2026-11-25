@@ -59,18 +59,28 @@ def test_the_when_to_read_is_a_usage_doubt():
     assert "O momento de consultar é uma dúvida de uso:" in system
 
 
-def test_satisfaction_is_measured_in_text():
-    """Satisfaction is measured IN TEXT — a word or a 0–10 read, living in the conversation. The
-    old poll-tool directive («se houver uma ferramenta de enquete entre as do turno, use-a») is
-    gone from the system: this persona has no poll tool, and the earlier fixed absence of one is
-    gone too. The judge's limits clause is unchanged in this change and still guards against
-    confusing the text measure with a poll tool."""
+def test_satisfaction_is_measured_by_the_poll_when_declared_else_in_text():
+    """Satisfaction is CONDITIONAL. WITH a declared satisfaction poll AND ``send_poll`` on the
+    turn, the persona sends the poll BY ITS ID at the satisfaction moment — it never composes the
+    question or the options. WITHOUT it (no declared poll, or ``send_poll`` off the turn) it
+    measures IN TEXT — a word or a 0–10 read, living in the conversation. The old unconditional
+    «use a poll tool if one is on the turn» directive («se houver uma ferramenta de enquete entre
+    as do turno, use-a») and the old fixed absence («Você NÃO tem ferramenta de enquete») stay
+    gone; the judge's old UNCONDITIONAL clause («não a confunda com uma ferramenta de enquete, que
+    esta persona não tem») is replaced by the conditional rule across all three slots."""
     system = " ".join((PROMPTS / "system.txt").read_text().split())
     limits = " ".join((PROMPTS / "limits.txt").read_text().split())
+    voice = " ".join((PROMPTS / "voice.txt").read_text().split())
+    # the control: the old unconditional strings stay gone
     assert "Você NÃO tem ferramenta de enquete" not in system      # the fixed absence is gone
     assert "se houver uma ferramenta de enquete entre as do turno, use-a" not in system.lower()
+    assert "não a confunda com uma ferramenta de enquete, que esta persona não tem" not in limits
+    # the WITHOUT-poll branch still names the text measure in the system
     assert "meça **em texto**" in system
-    assert "não a confunda com uma ferramenta de enquete, que esta persona não tem" in limits
+    # the conditional send_poll rule reaches the executor's system, the voice and the judge
+    for slot in (system, voice, limits):
+        assert "send_poll" in slot
+        assert "enquete de satisfação declarada" in slot
 
 
 def test_the_satisfaction_examples_are_business_neutral_not_the_products_own_pain():
