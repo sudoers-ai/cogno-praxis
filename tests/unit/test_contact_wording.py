@@ -106,8 +106,13 @@ AT_MAIN = {
     # it no longer asks whether to forward nor promises someone will contact. The contact's
     # greeting sentence did NOT move, so WORDINGS stays in sync and the by-reference reversal
     # still reconstructs each file byte for byte.
-    ("aftersales", "system"): "c009029f4b44c4c511d6015b319562590818b9a8b82adacd965b334960ed874a",
-    ("aftersales", "voice"): "922316697153d8783bce4bb015d1095ae3d0fad7783fea785d2a4443a8d89c02",
+    # aftersales/system and /voice regenerated again, deliberately: satisfaction is now conditional
+    # — with a declared poll AND send_poll on the turn the persona sends the poll by its id,
+    # otherwise it measures in text as before. The contact's greeting sentence did NOT move, so
+    # WORDINGS stays in sync and the by-reference reversal still reconstructs each file byte for
+    # byte.
+    ("aftersales", "system"): "16680a9052779e91f6e12a44b0ca8e9913ea7c2bb47968e1a73648e328041eaa",
+    ("aftersales", "voice"): "399b01a96fce3966c10b28f9d1421d3f051a3472c738b8ad63ae81b4e5b55403",
 }
 
 #: How many times each template names the contact in line — 27 in 17 files. DERIVED: the test

@@ -31,6 +31,25 @@
   `tests/unit/test_coordinator_google_store.py` (IPv4-first, both fallbacks, the clean propagation
   when both fail, no retry on a read timeout, all four methods routed, the connect budget).
 
+### Changed — the after-sales persona sends a declared satisfaction poll when one is on the turn, and measures in text otherwise
+
+- **`aftersales/prompts/system.txt`, `aftersales/prompts/voice.txt`**: at the satisfaction moment
+  the measurement is now conditional. When this persona has a **declared satisfaction poll** AND
+  the `send_poll` tool is on the turn, it sends the poll **by its id** — the question and options
+  are the tenant's, sent verbatim; the model never composes them, it only calls `send_poll` by
+  id. Without a declared poll (or with `send_poll` off the turn) it measures **in text**, as
+  before — a word or a 0–10 read living in the conversation.
+- **`aftersales/prompts/limits.txt`**: the satisfaction-measurement clause is now conditional to
+  match. The text measure is the right behaviour only when no poll is declared or `send_poll` is
+  off the turn; when a poll is declared and `send_poll` is on the turn, sending it by id is the
+  right behaviour and the judge must not reject it. The old unconditional clause («confusing the
+  text measure with a poll tool this persona does not have») is gone.
+- **Tests:** `test_aftersales_prompts.py` pins the new conditional wording across the three slots
+  and keeps the control that the old unconditional strings are gone. The after-sales prompt
+  digests move on purpose for `aftersales/system.txt`, `aftersales/voice.txt` and
+  `aftersales/limits.txt`; their digest controls (which re-render the old bytes) carry their new
+  values, and every other persona prompt stays byte-for-byte.
+
 ### Reverted — the closer's answer-first change from #230 is withdrawn (measured without gain: the robot-question denial and replies in English appeared only with it); the after-sales change from the same PR stays.
 
 ### Changed — the closer answers the contact's question first, then the next diagnostic question

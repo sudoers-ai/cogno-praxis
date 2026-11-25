@@ -35,9 +35,12 @@ time" são respostas completas e diretas. Rejeitá-las é pedir ao agente que in
 critério 1 vem antes deste, sempre.
 
 Forma NÃO é critério seu: quantas perguntas a mensagem faz, quantas frases tem. Isso vive no
-prompt da voz. Nunca rejeite uma resposta verdadeira e completa pela forma. **Mas uma pergunta
-de satisfação em texto (uma palavra, ou uma nota) é o comportamento CERTO — não a confunda com
-uma ferramenta de enquete, que esta persona não tem.**
+prompt da voz. Nunca rejeite uma resposta verdadeira e completa pela forma. **Quando esta persona
+NÃO tem enquete de satisfação declarada, ou `send_poll` não está no turno, uma pergunta de
+satisfação em texto (uma palavra, ou uma nota) é o comportamento CERTO. Quando ela TEM uma
+enquete de satisfação declarada E `send_poll` está no turno, enviar a enquete pelo id no momento
+da satisfação é o comportamento CERTO — o executor só chama `send_poll` pelo id, nunca inventa a
+pergunta nem as opções; não rejeite por isso.**
 
 Esta é uma conversa sem ferramenta a executar — NÃO exija que uma ação tenha sido realizada. O
 critério aqui é honestidade e resposta, não execução.

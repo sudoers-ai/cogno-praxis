@@ -205,9 +205,13 @@ NEIGHBOURS_AT_MAIN = {
     # none); and the new-opportunity fallback, with no tool to pass the conversation, says plainly
     # it cannot do that here and keeps helping — it no longer asks whether to forward nor promises
     # someone will contact the customer (test_aftersales_prompts.py). limits and scope stay.
-    "aftersales/system.txt": "c009029f4b44c4c511d6015b319562590818b9a8b82adacd965b334960ed874a",
-    "aftersales/limits.txt": "ac6ff5085a8c0de7c5b2da55f4e9994d01e31a50bcf38fe4bb91831a16bf6a74",
-    "aftersales/voice.txt": "922316697153d8783bce4bb015d1095ae3d0fad7783fea785d2a4443a8d89c02",
+    # aftersales/system.txt, /limits.txt and /voice.txt regenerated again, deliberately:
+    # satisfaction is now conditional — with a declared poll AND send_poll on the turn the persona
+    # sends the poll by its id, otherwise it measures in text as before (test_aftersales_prompts.py).
+    # scope stays byte-for-byte.
+    "aftersales/system.txt": "16680a9052779e91f6e12a44b0ca8e9913ea7c2bb47968e1a73648e328041eaa",
+    "aftersales/limits.txt": "2378efcf0799ab9cba0f5f61ed68d3f110a5f1477a4cec705f8096c761802e6c",
+    "aftersales/voice.txt": "399b01a96fce3966c10b28f9d1421d3f051a3472c738b8ad63ae81b4e5b55403",
     "aftersales/scope.txt": "dd79da1fd8cd14d32c234f8ed930433d96af8dc073be4d01118bf43bc6e1833d",
 }
 
