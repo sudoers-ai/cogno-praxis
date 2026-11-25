@@ -2,6 +2,22 @@
 
 ## Unreleased — the bookkeeper's AI cost by week and by model, the split by model, «Not available» (2026-11-04)
 
+### Fixed — the Google Sheets store tries IPv4 first, then falls back, so a broken IPv6 route no longer stalls a coordinator tool call
+
+- **`coordinator/stores/google_sheets.py`**: every Google API round trip now goes through one
+  `_request(method, url, **kw)` helper that connects over IPv4 first (a sync `httpx.Client` bound
+  to `local_address="0.0.0.0"`, with a short 3 s connect cap) and, only on a `ConnectError`/
+  `ConnectTimeout` — when nothing was sent — retries once on the default path (IPv6/any, 8 s
+  connect cap). A `ReadTimeout`/`WriteError`/`RemoteProtocolError` is never retried, because the
+  request may already have left and the Sheets `batchUpdate` writes are not idempotent. A
+  synchronous client has no happy-eyeballs racing, so on a host whose IPv6 route to Google is
+  broken the old single client spent ~25 s per call waiting for the IPv4 fallback and blew the
+  30 s tool-call ceiling; the two connect caps plus the read/write budget (3 + 8 + 15 = 26 s) now
+  stay inside it. The default `timeout` drops 30 → 15 s to make room. One `INFO` log line,
+  `event=google_ipv4_connect_failed`, carries only the exception class. Tests:
+  `tests/unit/test_coordinator_google_store.py` (IPv4-first, both fallbacks, the clean propagation
+  when both fail, no retry on a read timeout, all four methods routed, the connect budget).
+
 ### Reverted — the closer's answer-first change from #230 is withdrawn (measured without gain: the robot-question denial and replies in English appeared only with it); the after-sales change from the same PR stays.
 
 ### Changed — the closer answers the contact's question first, then the next diagnostic question

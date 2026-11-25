@@ -37,6 +37,12 @@ _XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 _FORMAT_FIELDS = "sheets(properties(sheetId,title),data(rowData(values(userEnteredFormat))))"
 _DEFAULT_TTL = 600.0                 # 10 min, parent parity
 
+#: The MCP dispatcher that calls this store caps a tool call at 30 s (cogno-mcp ``call_timeout``).
+#: IPv4 first with a SHORT connect cap, then the default path (IPv6/any) — sequential, because a
+#: sync client has no happy eyeballs. 3 + 8 + 15 = 26 s, inside that ceiling with room.
+_CONNECT_IPV4_S = 3.0
+_CONNECT_FALLBACK_S = 8.0
+
 
 class GoogleSheetsStore:
     """A :class:`~cogno_praxis.coordinator.store.SpreadsheetStore` backed by Google Drive.
@@ -45,7 +51,7 @@ class GoogleSheetsStore:
     scheduler's Pg adapter). ``now`` is injectable for deterministic cache-TTL tests."""
 
     def __init__(self, access_token: str, *, ttl_seconds: float = _DEFAULT_TTL,
-                 timeout: float = 30.0, now: Optional[Callable[[], float]] = None) -> None:
+                 timeout: float = 15.0, now: Optional[Callable[[], float]] = None) -> None:
         self._token = access_token
         self._ttl = ttl_seconds
         self._timeout = timeout
@@ -54,25 +60,43 @@ class GoogleSheetsStore:
         self._cache: dict[str, tuple[float, dict[str, list[list[str]]]]] = {}
 
     # ── network seams (mocked in unit tests) ─────────────────────────────────────────
+    def _request(self, method: str, url: str, **kw) -> httpx.Response:
+        """One HTTP round trip, IPv4 first with the IPv6/any default as fallback.
+
+        Only the CONNECT phase retries: on a ``ConnectError``/``ConnectTimeout`` nothing was
+        sent, so a second attempt is safe. A ``ReadTimeout``/``WriteError``/``RemoteProtocolError``
+        is NOT retried — the request may have left, and the Sheets writes (``batchUpdate``) are not
+        idempotent, so retrying would write twice."""
+        try:
+            with httpx.Client(timeout=httpx.Timeout(self._timeout, connect=_CONNECT_IPV4_S),
+                              transport=httpx.HTTPTransport(local_address="0.0.0.0")) as c:
+                return c.request(method, url, **kw)
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:   # NOTHING was sent: safe to retry
+            _log.info("stage=coordinator event=google_ipv4_connect_failed error=%s",
+                      type(exc).__name__)
+            with httpx.Client(timeout=httpx.Timeout(self._timeout,
+                                                    connect=_CONNECT_FALLBACK_S)) as c:
+                return c.request(method, url, **kw)
+
     def _fetch(self, sheet_id: str) -> bytes:
         """Download the spreadsheet as xlsx bytes. Try export (native Google Sheet); on 403
         failedPrecondition (an uploaded .xlsx can't be exported) fall back to raw media."""
         headers = {"Authorization": f"Bearer {self._token}"}
-        with httpx.Client(timeout=self._timeout) as c:
-            r = c.get(f"{_DRIVE}/{sheet_id}/export", params={"mimeType": _XLSX_MIME},
-                      headers=headers)
-            if r.status_code == 403:
-                r = c.get(f"{_DRIVE}/{sheet_id}", params={"alt": "media"}, headers=headers)
-            r.raise_for_status()
-            return r.content
+        r = self._request("GET", f"{_DRIVE}/{sheet_id}/export",
+                          params={"mimeType": _XLSX_MIME}, headers=headers)
+        if r.status_code == 403:
+            r = self._request("GET", f"{_DRIVE}/{sheet_id}", params={"alt": "media"},
+                              headers=headers)
+        r.raise_for_status()
+        return r.content
 
     def _push_values(self, sheet_id: str, data: list[dict]) -> None:
         """Sheets values.batchUpdate — ``data`` = ``[{"range": "Tab!A2:C2", "values": [[...]]}]``."""
         headers = {"Authorization": f"Bearer {self._token}"}
         body = {"valueInputOption": "RAW", "data": data}
-        with httpx.Client(timeout=self._timeout) as c:
-            r = c.post(f"{_SHEETS}/{sheet_id}/values:batchUpdate", headers=headers, json=body)
-            r.raise_for_status()
+        r = self._request("POST", f"{_SHEETS}/{sheet_id}/values:batchUpdate",
+                          headers=headers, json=body)
+        r.raise_for_status()
 
     def _read_formats(self, sheet_id: str, tab: str,
                       abs_rows: list[int]) -> tuple[int, dict[int, dict[int, object]]]:
@@ -87,10 +111,9 @@ class GoogleSheetsStore:
         headers = {"Authorization": f"Bearer {self._token}"}
         pairs = tuple(("ranges", f"'{tab}'!{r + 1}:{r + 1}") for r in abs_rows) \
             + (("fields", _FORMAT_FIELDS),)
-        with httpx.Client(timeout=self._timeout) as c:
-            r = c.get(f"{_SHEETS}/{sheet_id}", params=pairs, headers=headers)
-            r.raise_for_status()
-            payload = r.json()
+        r = self._request("GET", f"{_SHEETS}/{sheet_id}", params=pairs, headers=headers)
+        r.raise_for_status()
+        payload = r.json()
         want = tab.strip().lower()
         sheet = next((s for s in payload.get("sheets", [])
                       if str(s.get("properties", {}).get("title", "")).strip().lower() == want),
@@ -110,10 +133,9 @@ class GoogleSheetsStore:
         """Sheets ``spreadsheets.batchUpdate`` — ``requests`` is the list of request objects
         (here ``updateCells``), the formatting path's write."""
         headers = {"Authorization": f"Bearer {self._token}"}
-        with httpx.Client(timeout=self._timeout) as c:
-            r = c.post(f"{_SHEETS}/{sheet_id}:batchUpdate", headers=headers,
-                       json={"requests": requests})
-            r.raise_for_status()
+        r = self._request("POST", f"{_SHEETS}/{sheet_id}:batchUpdate", headers=headers,
+                          json={"requests": requests})
+        r.raise_for_status()
 
     # ── parse + cache ────────────────────────────────────────────────────────────────
     @staticmethod

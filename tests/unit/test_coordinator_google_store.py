@@ -90,7 +90,7 @@ def test_fetch_falls_back_to_media_on_403(monkeypatch):
         def __init__(self, **k): pass
         def __enter__(self): return self
         def __exit__(self, *a): return False
-        def get(self, url, params=None, headers=None):
+        def request(self, method, url, params=None, headers=None, **kw):
             seen["paths"].append(("export" if url.endswith("/export") else "media", params))
             return _Resp(403 if url.endswith("/export") else 200)
 
@@ -243,3 +243,136 @@ def test_write_cell_refuses_a_cell_the_download_never_reached(monkeypatch):
         store.write_cell("SID", "Secretaria", "A1:B10", 1, 9, "Aceita")
 
     assert pushed == [], "a refused coordinate must not reach the API"
+
+
+# ── IPv4-first connect with an IPv6/any fallback (the broken-IPv6 hotfix) ──────────────
+import httpx  # noqa: E402
+
+from cogno_praxis.coordinator.stores import google_sheets as _gs  # noqa: E402
+
+
+class _RecordingTransport:
+    """Stands in for ``httpx.HTTPTransport`` to record the ``local_address`` without opening a
+    socket; the IPv4 attempt builds one, the fallback builds none."""
+    made: list[dict] = []
+
+    def __init__(self, **kw):
+        self.kw = kw
+        _RecordingTransport.made.append(kw)
+
+
+class _ScriptedClient:
+    """Stands in for ``httpx.Client``. Each construction records its ``timeout``/``transport`` and
+    pops the next outcome (an ``Exception`` to raise from ``.request`` or an ``httpx.Response`` to
+    return)."""
+    builds: list[dict] = []
+    outcomes: list = []
+
+    def __init__(self, *, timeout=None, transport=None):
+        _ScriptedClient.builds.append({"timeout": timeout, "transport": transport})
+        self._outcome = _ScriptedClient.outcomes.pop(0)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def request(self, method, url, **kw):
+        if isinstance(self._outcome, BaseException):
+            raise self._outcome
+        return self._outcome
+
+
+def _install_script(monkeypatch, outcomes):
+    _RecordingTransport.made = []
+    _ScriptedClient.builds = []
+    _ScriptedClient.outcomes = list(outcomes)
+    monkeypatch.setattr(_gs.httpx, "HTTPTransport", _RecordingTransport)
+    monkeypatch.setattr(_gs.httpx, "Client", _ScriptedClient)
+
+
+def test_request_tries_ipv4_first_and_returns(monkeypatch):
+    _install_script(monkeypatch, [httpx.Response(200, content=b"ok")])
+    store = GoogleSheetsStore("tok")
+    r = store._request("GET", "https://example/x")
+    assert r.content == b"ok"
+    # exactly one attempt, bound to IPv4 (0.0.0.0) with the short connect cap
+    assert len(_ScriptedClient.builds) == 1
+    assert _RecordingTransport.made == [{"local_address": "0.0.0.0"}]
+    assert _ScriptedClient.builds[0]["transport"].kw == {"local_address": "0.0.0.0"}
+    assert _ScriptedClient.builds[0]["timeout"].connect == _gs._CONNECT_IPV4_S
+
+
+def test_request_falls_back_to_default_path_on_connect_error(monkeypatch, caplog):
+    _install_script(monkeypatch,
+                    [httpx.ConnectError("ipv6 route broken"), httpx.Response(200, content=b"v4")])
+    store = GoogleSheetsStore("tok")
+    with caplog.at_level(logging.INFO):
+        r = store._request("GET", "https://example/x")
+    assert r.content == b"v4"
+    assert len(_ScriptedClient.builds) == 2
+    # the fallback carries no IPv4 bind and uses the longer connect cap
+    assert _ScriptedClient.builds[1]["transport"] is None
+    assert _ScriptedClient.builds[1]["timeout"].connect == _gs._CONNECT_FALLBACK_S
+    assert any("event=google_ipv4_connect_failed" in r.getMessage() for r in caplog.records)
+
+
+def test_request_falls_back_on_connect_timeout(monkeypatch):
+    _install_script(monkeypatch,
+                    [httpx.ConnectTimeout("slow"), httpx.Response(200, content=b"v4")])
+    store = GoogleSheetsStore("tok")
+    assert store._request("GET", "https://example/x").content == b"v4"
+    assert len(_ScriptedClient.builds) == 2
+
+
+def test_request_propagates_cleanly_when_both_paths_fail(monkeypatch):
+    _install_script(monkeypatch,
+                    [httpx.ConnectError("v4 also broken"), httpx.ConnectError("and v6")])
+    store = GoogleSheetsStore("tok")
+    with pytest.raises(httpx.ConnectError):
+        store._request("GET", "https://example/x")
+    assert len(_ScriptedClient.builds) == 2
+
+
+def test_read_timeout_is_not_retried(monkeypatch):
+    # A ReadTimeout may mean the request left; the batchUpdate writes are not idempotent, so the
+    # connect-only retry must NOT fire — exactly one attempt.
+    _install_script(monkeypatch, [httpx.ReadTimeout("hung")])
+    store = GoogleSheetsStore("tok")
+    with pytest.raises(httpx.ReadTimeout):
+        store._request("GET", "https://example/x")
+    assert len(_ScriptedClient.builds) == 1
+
+
+def test_all_four_network_methods_go_through_request(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    class _Probe(Exception):
+        pass
+
+    def _rec(self, method, url, **kw):
+        calls.append((method, url))
+        raise _Probe()
+
+    monkeypatch.setattr(GoogleSheetsStore, "_request", _rec)
+    store = GoogleSheetsStore("tok")
+    for invoke in (
+        lambda: store._fetch("SID"),
+        lambda: store._push_values("SID", [{"range": "'T'!A1", "values": [["x"]]}]),
+        lambda: store._read_formats("SID", "T", [1]),
+        lambda: store._push_requests("SID", [{"updateCells": {}}]),
+    ):
+        with pytest.raises(_Probe):
+            invoke()
+    assert len(calls) == 4
+    assert calls[0][0] == "GET" and calls[0][1].endswith("/export")
+    assert calls[1] == ("POST", f"{_gs._SHEETS}/SID/values:batchUpdate")
+    assert calls[2] == ("GET", f"{_gs._SHEETS}/SID")
+    assert calls[3] == ("POST", f"{_gs._SHEETS}/SID:batchUpdate")
+
+
+def test_connect_budget_fits_the_dispatcher_ceiling():
+    # 3 (IPv4 connect) + 8 (fallback connect) + 15 (default read/write/pool) = 26 ≤ 27 < 30 s cap.
+    budget = _gs._CONNECT_IPV4_S + _gs._CONNECT_FALLBACK_S + GoogleSheetsStore("tok")._timeout
+    assert budget <= 27

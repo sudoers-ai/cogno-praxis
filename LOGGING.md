@@ -30,10 +30,11 @@ This library follows the Cogno house rule: **libraries emit, the host configures
   raising would be worse than continuing: a sheet that could not be read, a configuration line
   that was skipped, a mailbox variable that is not valid JSON, an index that could not be
   built, a seed file that could not be read whole.
-- **INFO** — 3 calls: the coordinator saying that `cogno-herald` is not installed, so no
-  calendar mail is configured; a rehearsal seed of classes that was applied; and the
+- **INFO** — 4 calls: the coordinator saying that `cogno-herald` is not installed, so no
+  calendar mail is configured; a rehearsal seed of classes that was applied; the
   services/products catalog being written through an admin door (how many valid, how many
-  rejected).
+  rejected); and the Google Sheets store falling back from a failed IPv4 connect to the default
+  path.
 - **DEBUG** — 6 calls: a race in the scheduler's store that resolved itself, a row of the
   hours tab whose total could not be read, a seed file that was NOT applied to this turn's
   tenant (the guard doing its job), and a catalog read finding services with nobody to perform
@@ -59,6 +60,7 @@ the logger, the event, the level, the `key=` fields and whether the line carries
 | `cogno_praxis.coordinator.service` | `email_refused` (`reason=invalid_recipient`, `path=calendar`, `source=professors_tab`, `count`) | WARNING | the professors tab HAS an e-mail for the professor whose calendar was asked for, and it is not ONE address (`email_address.is_one_address`, the host's rule): the calendar is not sent and nothing falls through to the registry (2026-11-02). The host's line for the same refusal has the same `event`, `reason` and `path`. How many cells, never which |
 | `cogno_praxis.coordinator.service` | `faculty_names_not_joined` (`pairs`) | WARNING | rows of the professors tab share an e-mail address and neither name is the other written out: they are NOT joined |
 | `cogno_praxis.coordinator.stores.google_sheets` | `sheet_format_swap_failed` | WARNING | a row swap moved the cell CONTENTS (`values.batchUpdate`) but the follow-up that moves the per-cell FORMATTING did not: the contents are swapped as before and the swap is reported as before. No cell text, no id |
+| `cogno_praxis.coordinator.stores.google_sheets` | `google_ipv4_connect_failed` (`error`) | INFO | the IPv4-first connect to a Google API failed (`ConnectError`/`ConnectTimeout`), so the request is retried once on the default path (IPv6/any); `error` is the exception CLASS only, never the url, the args or the token |
 | `cogno_praxis.coordinator.mailer` | `calendar_mail_not_accepted` | WARNING | the calendar mail was not accepted by the server |
 | `cogno_praxis.coordinator.mailer` | `smtp_env_ignored` (`reason=not_json\|not_an_object`, `var`) | WARNING | the mailbox variable is not valid JSON, or is JSON and not an object: ignored |
 | `cogno_praxis.coordinator.mailer` | `herald_not_installed` | INFO | `cogno-herald` is not installed, so no calendar mail is configured |
